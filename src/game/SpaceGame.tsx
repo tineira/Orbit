@@ -22,6 +22,7 @@ const INITIAL: HudSnapshot = {
   touching: false,
   gravityScale: 1,
   atmoScale: 1,
+  orbitShell: false,
 };
 
 export function SpaceGame() {

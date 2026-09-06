@@ -14,8 +14,35 @@ export const LAND_SPEED = 20;
 export const STEP = 1 / 60;
 export const ORBIT_LOCK_DWELL = 0.55;
 export const ORBIT_BREAK_COOLDOWN = 1.35;
+export const ORBIT_SHELL_MIN_ALT = 18;
+export const ORBIT_SHELL_MAX_ALT_FACTOR = 1.28;
+export const ORBIT_SHELL_MAX_ALT_CAP = 170;
+export const ORBIT_SHELL_MOON_MIN_ALT = 90;
+/** How far past a gas giant's atmosphere the outer lock ring extends. Inner stays at 18. */
+export const ORBIT_SHELL_GAS_CLEAR = 72;
 /** Atmosphere stronger than this dumps a locked orbit. */
 export const ORBIT_DRAG_BREAK = 0.4;
+
+export function orbitShellAlts(p: Planet, planets: Planet[] = []) {
+  const minAlt = ORBIT_SHELL_MIN_ALT;
+  let maxAlt = Math.min(p.radius * ORBIT_SHELL_MAX_ALT_FACTOR, ORBIT_SHELL_MAX_ALT_CAP);
+  if (p.kind === "moon") {
+    maxAlt = Math.max(maxAlt, ORBIT_SHELL_MOON_MIN_ALT);
+    const parent = p.parentId ? planets.find((b) => b.id === p.parentId) : undefined;
+    if (parent && p.orbitR != null && parent.mass > 0) {
+      const hill = p.orbitR * Math.cbrt(Math.max(0, p.mass / (3 * parent.mass)));
+      maxAlt = Math.max(maxAlt, hill - p.radius);
+      const toParent = p.orbitR - parent.radius - p.radius;
+      if (toParent > minAlt + 8) maxAlt = Math.min(maxAlt, toParent - 8);
+    }
+  } else if (p.kind === "gas") {
+    const atmoAlt = p.radius * 0.85;
+    maxAlt = Math.max(maxAlt, atmoAlt + ORBIT_SHELL_GAS_CLEAR);
+  }
+  if (maxAlt < minAlt) maxAlt = minAlt;
+  return { minAlt, maxAlt };
+}
+
 export const TAKEOFF_SPEED = 20;
 export const START_ALT = 220;
 

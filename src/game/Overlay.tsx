@@ -57,20 +57,6 @@ export function Overlay({ hud, onLaunch, onTakeoff, onReboot, onMute, onGravity,
     return () => window.removeEventListener("keydown", onKey, true);
   }, [hud.phase, onTakeoff]);
 
-  useEffect(() => {
-    if (hud.phase === "creating") return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const dir = physicsKeyDir(e);
-      if (!dir) return;
-      e.preventDefault();
-      if (e.shiftKey) onAtmo(dir);
-      else onGravity(dir);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [hud.phase, onGravity, onAtmo]);
-
   return (
     <div className="pointer-events-none absolute inset-0 text-fg">
       {hud.phase === "creating" ? <Creating /> : null}
@@ -115,9 +101,12 @@ export function Overlay({ hud, onLaunch, onTakeoff, onReboot, onMute, onGravity,
               {hud.muted ? <VolumeX className="size-4" strokeWidth={1.75} /> : <Volume2 className="size-4" strokeWidth={1.75} />}
             </button>
             <p className="font-mono text-xs leading-relaxed text-muted">
-              <span className="hidden sm:inline">Left / right yaw. Up burns. Down retro. + / − gravity. Shift + / − atmosphere.</span>
-              <span className="sm:hidden">Hold to point and burn</span>
+              <span className="hidden sm:inline">Left / right yaw. Up burns. Down retro. + / − or scroll to zoom. O orbit shell.</span>
+              <span className="sm:hidden">Hold to point and burn. Pinch to zoom.</span>
             </p>
+            {hud.orbitShell ? (
+              <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">Orbit shell · {hud.nearestName ?? "—"}</p>
+            ) : null}
             {hud.orbitHint && hud.phase !== "crashed" ? (
               <p
                 className={cn(
@@ -310,13 +299,6 @@ function fmt(n: number) {
   return Math.abs(n) >= 100 ? n.toFixed(0) : n.toFixed(1);
 }
 
-function physicsKeyDir(e: KeyboardEvent): -1 | 1 | null {
-  const { code, key } = e;
-  if (code === "Equal" || code === "NumpadAdd" || key === "+") return 1;
-  if (code === "Minus" || code === "NumpadSubtract" || key === "-" || key === "_") return -1;
-  return null;
-}
-
 function fmtScale(n: number) {
   if (n === 0) return "0×";
   return `${n.toFixed(2).replace(/\.?0+$/, "")}×`;
@@ -341,7 +323,6 @@ function PhysicsKnobs({
     >
       <ScaleRow
         label="Gravity"
-        keys="+ / −"
         value={gravityScale}
         min={GRAVITY_STEPS[0]}
         max={GRAVITY_STEPS[GRAVITY_STEPS.length - 1]!}
@@ -351,7 +332,6 @@ function PhysicsKnobs({
       <ScaleRow
         className="mt-2 pt-2 border-t border-border"
         label="Atmo"
-        keys="⇧+ / ⇧−"
         value={atmoScale}
         min={ATMO_STEPS[0]}
         max={ATMO_STEPS[ATMO_STEPS.length - 1]!}
@@ -364,7 +344,6 @@ function PhysicsKnobs({
 
 function ScaleRow({
   label,
-  keys,
   value,
   min,
   max,
@@ -373,7 +352,6 @@ function ScaleRow({
   className,
 }: {
   label: string;
-  keys: string;
   value: number;
   min: number;
   max: number;
@@ -383,10 +361,7 @@ function ScaleRow({
 }) {
   return (
     <div className={className}>
-      <div className="flex items-baseline justify-between gap-2">
-        <p className="font-mono text-[10px] tracking-[0.16em] uppercase text-muted">{label}</p>
-        <p className="font-mono text-[10px] text-subtle">{keys}</p>
-      </div>
+      <p className="font-mono text-[10px] tracking-[0.16em] uppercase text-muted">{label}</p>
       <div className="mt-1.5 flex items-center gap-2">
         <button
           type="button"

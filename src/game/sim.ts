@@ -6,6 +6,7 @@ import {
   ORBIT_BREAK_COOLDOWN,
   ORBIT_DRAG_BREAK,
   ORBIT_LOCK_DWELL,
+  orbitShellAlts,
   getStart,
   getSystem,
   RETRO_FORCE,
@@ -44,6 +45,7 @@ export type Sim = {
   reducedMotion: boolean;
   gravityScale: number;
   atmoScale: number;
+  showOrbitShell: boolean;
 };
 
 export const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
@@ -71,7 +73,7 @@ export function createSim(): Sim {
       hue: 0,
       alive: false,
     })),
-    camera: { x: start.x, y: start.y, zoom: 0.96, shake: 0, trauma: 0 },
+    camera: { x: start.x, y: start.y, zoom: 0.96, zoomAuto: 0.96, userZoom: 1, shake: 0, trauma: 0 },
     phase: "title",
     landedId: null,
     crashedId: null,
@@ -94,6 +96,7 @@ export function createSim(): Sim {
     reducedMotion: false,
     gravityScale: 1,
     atmoScale: 1,
+    showOrbitShell: false,
   };
 }
 
@@ -133,7 +136,8 @@ export function rebootSim(sim: Sim) {
   const start = getStart();
   sim.camera.x = start.x;
   sim.camera.y = start.y;
-  sim.camera.zoom = 0.96;
+  sim.camera.zoomAuto = 0.96;
+  sim.camera.zoom = 0.96 * sim.camera.userZoom;
   sim.camera.trauma = 0;
   sim.camera.shake = 0;
   for (const p of sim.particles) p.alive = false;
@@ -147,6 +151,15 @@ export function bodyMu(p: Planet, gravityScale: number) {
   return G * GRAVITY_BASE * gravityScale * p.mass;
 }
 
+function bodyAccel(p: Planet, x: number, y: number, gravityScale: number) {
+  const dx = p.x - x;
+  const dy = p.y - y;
+  const d = Math.hypot(dx, dy) || 1;
+  const soft = Math.max(d, p.radius * 0.55 + SOFT);
+  const a = bodyMu(p, gravityScale) / (soft * soft);
+  return { dx, dy, d, ax: (a * dx) / d, ay: (a * dy) / d, a };
+}
+
 function gravityAt(
   x: number,
   y: number,
@@ -158,20 +171,32 @@ function gravityAt(
   let nearest = planets[0]!;
   let best = Infinity;
   for (const p of planets) {
-    const dx = p.x - x;
-    const dy = p.y - y;
-    const d2 = dx * dx + dy * dy;
-    const d = Math.sqrt(d2);
-    if (d < best) {
-      best = d;
+    const pull = bodyAccel(p, x, y, gravityScale);
+    if (pull.d < best) {
+      best = pull.d;
       nearest = p;
     }
-    const soft = Math.max(d, p.radius * 0.55 + SOFT);
-    const a = bodyMu(p, gravityScale) / (soft * soft);
-    ax += (a * dx) / (d || 1);
-    ay += (a * dy) / (d || 1);
+    ax += pull.ax;
+    ay += pull.ay;
   }
   return { ax, ay, nearest, dist: best };
+}
+
+export type GravityPull = {
+  planet: Planet;
+  ax: number;
+  ay: number;
+  a: number;
+};
+
+export function gravityPulls(sim: Sim): GravityPull[] {
+  const { x, y } = sim.ship;
+  const out: GravityPull[] = [];
+  for (const p of sim.planets) {
+    const pull = bodyAccel(p, x, y, sim.gravityScale);
+    out.push({ planet: p, ax: pull.ax, ay: pull.ay, a: pull.a });
+  }
+  return out;
 }
 
 function atmoRadius(p: Planet) {
@@ -258,17 +283,25 @@ function stickToPlanet(sim: Sim, p: Planet) {
   sim.ship.vy = p.vy;
 }
 
-function updateMoons(sim: Sim, dt: number) {
-  for (const p of sim.planets) {
-    p.rotate += p.spin * dt;
-    if (!p.parentId || p.orbitR == null || p.orbitA == null || p.orbitW == null) {
+function copyPlanets(planets: Planet[]): Planet[] {
+  return planets.map((p) => ({ ...p }));
+}
+
+function isOrbiting(p: Planet) {
+  return p.parentId != null && p.orbitR != null && p.orbitA != null && p.orbitW != null;
+}
+
+function stepOrbitingBodies(planets: Planet[], dt: number, gravityScale: number) {
+  const wMul = Math.sqrt(Math.max(0, gravityScale));
+  for (const p of planets) {
+    if (!isOrbiting(p)) {
       p.vx = 0;
       p.vy = 0;
       continue;
     }
-    const parent = sim.planets.find((b) => b.id === p.parentId);
-    if (!parent) continue;
-    p.orbitA += p.orbitW * Math.sqrt(Math.max(0, sim.gravityScale)) * dt;
+    const parent = planets.find((b) => b.id === p.parentId);
+    if (!parent || p.orbitR == null || p.orbitA == null || p.orbitW == null) continue;
+    p.orbitA += p.orbitW * wMul * dt;
     const nx = parent.x + Math.cos(p.orbitA) * p.orbitR;
     const ny = parent.y + Math.sin(p.orbitA) * p.orbitR;
     p.vx = (nx - p.x) / dt;
@@ -276,6 +309,11 @@ function updateMoons(sim: Sim, dt: number) {
     p.x = nx;
     p.y = ny;
   }
+}
+
+function updateMoons(sim: Sim, dt: number) {
+  for (const p of sim.planets) p.rotate += p.spin * dt;
+  stepOrbitingBodies(sim.planets, dt, sim.gravityScale);
 }
 
 function applySteer(
@@ -374,6 +412,14 @@ function readKepler(p: Planet, ship: Ship, gravityScale: number): Kepler | null 
 function wellDominant(p: Planet, x: number, y: number, planets: Planet[]) {
   const d = Math.hypot(x - p.x, y - p.y) || 1;
   const aThis = (G * p.mass) / (d * d);
+  if (p.kind === "moon") {
+    for (const q of planets) {
+      if (q.id === p.id) continue;
+      const dq = Math.hypot(x - q.x, y - q.y) || 1;
+      if ((G * q.mass) / (dq * dq) >= aThis) return false;
+    }
+    return true;
+  }
   let aRest = 0;
   for (const q of planets) {
     if (q.id === p.id) continue;
@@ -650,8 +696,8 @@ function orbitReady(sim: Sim, nearest: Planet, dist: number) {
   if (sim.orbitLockCooldown > 0) return false;
   if (sim.ship.thrusting || sim.ship.reverse) return false;
   const alt = dist - nearest.radius;
-  const maxAlt = Math.min(nearest.radius * 1.28, 170);
-  if (alt < 18 || alt > maxAlt) return false;
+  const { minAlt, maxAlt } = orbitShellAlts(nearest, sim.planets);
+  if (alt < minAlt || alt > maxAlt) return false;
   if (!wellDominant(nearest, sim.ship.x, sim.ship.y, sim.planets)) return false;
   if (atmoDrag(sim) > ORBIT_DRAG_BREAK) return false;
   return readKepler(nearest, sim.ship, sim.gravityScale) != null;
@@ -723,6 +769,20 @@ function decayParticles(sim: Sim, dt: number) {
   }
 }
 
+export const USER_ZOOM_MIN = 0.12;
+export const USER_ZOOM_MAX = 3.4;
+
+export function applyUserZoom(sim: Sim, factor: number) {
+  const next = sim.camera.userZoom * factor;
+  sim.camera.userZoom = Math.min(USER_ZOOM_MAX, Math.max(USER_ZOOM_MIN, next));
+  sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
+}
+
+export function setUserZoom(sim: Sim, value: number) {
+  sim.camera.userZoom = Math.min(USER_ZOOM_MAX, Math.max(USER_ZOOM_MIN, value));
+  sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
+}
+
 function updateCamera(sim: Sim, dt: number) {
   const s = sim.ship;
   const look = 0.28;
@@ -734,7 +794,8 @@ function updateCamera(sim: Sim, dt: number) {
   sim.camera.y += (targetY - sim.camera.y) * a;
   const speed = Math.hypot(s.vx, s.vy);
   const zWant = speed > 42 ? 0.76 : speed > 24 ? 0.88 : 0.98;
-  sim.camera.zoom += (zWant - sim.camera.zoom) * (1 - Math.exp(-1.6 * dt));
+  sim.camera.zoomAuto += (zWant - sim.camera.zoomAuto) * (1 - Math.exp(-1.6 * dt));
+  sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
   sim.camera.trauma = Math.max(0, sim.camera.trauma - dt * 1.6);
   sim.camera.shake = sim.reducedMotion ? 0 : sim.camera.trauma * sim.camera.trauma;
 }
@@ -810,20 +871,42 @@ export function predictPath(sim: Sim, seconds = 9): { x: number; y: number }[] {
   let y = sim.ship.y;
   let vx = sim.ship.vx;
   let vy = sim.ship.vy;
+  const bodies = copyPlanets(sim.planets);
   const dt = 1 / 36;
   const n = Math.floor(seconds / dt);
   for (let i = 0; i < n; i++) {
-    const g = gravityAt(x, y, sim.planets, sim.gravityScale);
-    const drag = dragNear(x, y, vx, vy, sim.planets, sim.atmoScale);
+    stepOrbitingBodies(bodies, dt, sim.gravityScale);
+    const g = gravityAt(x, y, bodies, sim.gravityScale);
+    const drag = dragNear(x, y, vx, vy, bodies, sim.atmoScale);
     vx += (g.ax + drag.ax) * dt;
     vy += (g.ay + drag.ay) * dt;
     x += vx * dt;
     y += vy * dt;
-    const hit = sim.planets.some((p) => Math.hypot(x - p.x, y - p.y) < p.radius + 4);
+    const hit = bodies.some((p) => Math.hypot(x - p.x, y - p.y) < p.radius + 4);
     pts.push({ x, y });
     if (hit) break;
   }
   return pts;
+}
+
+export function predictPlanetPaths(sim: Sim, seconds = 10): { planet: Planet; path: { x: number; y: number }[] }[] {
+  const movers = sim.planets.filter(isOrbiting);
+  if (!movers.length) return [];
+  const ghosts = copyPlanets(sim.planets);
+  const byId = new Map(ghosts.map((p) => [p.id, p]));
+  const paths = new Map<string, { x: number; y: number }[]>();
+  for (const m of movers) paths.set(m.id, []);
+  const dt = 1 / 36;
+  const n = Math.floor(seconds / dt);
+  for (let i = 0; i < n; i++) {
+    stepOrbitingBodies(ghosts, dt, sim.gravityScale);
+    for (const m of movers) {
+      const g = byId.get(m.id);
+      if (!g) continue;
+      paths.get(m.id)!.push({ x: g.x, y: g.y });
+    }
+  }
+  return movers.map((p) => ({ planet: p, path: paths.get(p.id) ?? [] }));
 }
 
 export { STEP, atmoRadius };

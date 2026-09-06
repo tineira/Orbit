@@ -56,6 +56,8 @@ export type Camera = {
   x: number;
   y: number;
   zoom: number;
+  zoomAuto: number;
+  userZoom: number;
   shake: number;
   trauma: number;
 };
@@ -83,6 +85,7 @@ export type HudSnapshot = {
   touching: boolean;
   gravityScale: number;
   atmoScale: number;
+  orbitShell: boolean;
 };
 
 export type InputState = {

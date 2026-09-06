@@ -1,13 +1,15 @@
 import { createAudio } from "./audio";
 import { drawFrame } from "./draw";
-import { createInput, enterHeld, steerFrom, thrustFrom } from "./input";
+import { createInput, enterHeld, held, steerFrom, thrustFrom } from "./input";
 import {
   adjustAtmoScale,
   adjustGravityScale,
   atmoDrag,
   createSim,
+  predictPlanetPaths,
   launchSim,
   rebootSim,
+  setUserZoom,
   stepSim,
   STEP,
   takeoff,
@@ -41,11 +43,15 @@ declare global {
       getOrbitLock?: () => string | null;
       getOrbitE?: () => number;
       getNearestBody?: () => { id: string; x: number; y: number; mass: number; radius: number } | null;
+      getBodies?: () => { id: string; x: number; y: number; kind: string; parentId?: string; radius: number }[];
       getPos?: () => { x: number; y: number; vx: number; vy: number };
       getGravityScale?: () => number;
       getAtmoScale?: () => number;
       getDrag?: () => number;
       getOrbitHint?: () => string | null;
+      getPlanetPaths?: () => { id: string; n: number; travel: number }[];
+      getUserZoom?: () => number;
+      getOrbitShell?: () => boolean;
       adjustGravity?: (dir: number) => void;
       adjustAtmo?: (dir: number) => void;
     };
@@ -71,6 +77,7 @@ const CREATING_HUD: HudSnapshot = {
   touching: false,
   gravityScale: 1,
   atmoScale: 1,
+  orbitShell: false,
 };
 
 export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameHandle {
@@ -78,10 +85,14 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   if (!ctx) throw new Error("Canvas 2D is not available");
 
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const input = createInput(canvas);
-  const audio = createAudio();
-
   let sim: Sim | null = null;
+  const input = createInput(canvas, {
+    getUserZoom: () => sim?.camera.userZoom ?? 1,
+    setUserZoom: (z) => {
+      if (sim) setUserZoom(sim, z);
+    },
+  });
+  const audio = createAudio();
   let muted = false;
   let running = true;
   let acc = 0;
@@ -96,6 +107,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let prevCrashed: string | null = null;
   let prevTrauma = 0;
   let enterWasDown = false;
+  let oWasDown = false;
 
   const resize = () => {
     const rect = canvas.getBoundingClientRect();
@@ -142,6 +154,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       touching: !!input.state.pointer?.down,
       gravityScale: sim.gravityScale,
       atmoScale: sim.atmoScale,
+      orbitShell: sim.showOrbitShell,
     };
     onUi(hud);
   };
@@ -164,6 +177,13 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     const down = enterHeld(input.state);
     const pressed = down && !enterWasDown;
     enterWasDown = down;
+    return pressed;
+  };
+
+  const consumeOrbitShell = () => {
+    const down = held(input.state).has("KeyO");
+    const pressed = down && !oWasDown;
+    oWasDown = down;
     return pressed;
   };
 
@@ -207,11 +227,31 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         s.nearest
           ? { id: s.nearest.id, x: s.nearest.x, y: s.nearest.y, mass: s.nearest.mass, radius: s.nearest.radius }
           : null,
+      getBodies: () =>
+        s.planets.map((p) => ({
+          id: p.id,
+          x: p.x,
+          y: p.y,
+          kind: p.kind,
+          parentId: p.parentId,
+          radius: p.radius,
+        })),
       getPos: () => ({ x: s.ship.x, y: s.ship.y, vx: s.ship.vx, vy: s.ship.vy }),
       getGravityScale: () => s.gravityScale,
       getAtmoScale: () => s.atmoScale,
       getDrag: () => atmoDrag(s),
       getOrbitHint: () => s.orbitHint,
+      getUserZoom: () => s.camera.userZoom,
+      getOrbitShell: () => s.showOrbitShell,
+      getPlanetPaths: () =>
+        predictPlanetPaths(s, 10).map(({ planet, path }) => {
+          const end = path[path.length - 1];
+          return {
+            id: planet.id,
+            n: path.length,
+            travel: end ? Math.hypot(end.x - planet.x, end.y - planet.y) : 0,
+          };
+        }),
       adjustGravity: (dir) => adjustGravityScale(s, dir),
       adjustAtmo: (dir) => adjustAtmoScale(s, dir),
     };
@@ -224,6 +264,11 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     if (dt > 0.1) dt = 0.1;
     acc += dt;
     if (acc > 0.25) acc = 0.25;
+
+    if (consumeOrbitShell()) {
+      sim.showOrbitShell = !sim.showOrbitShell;
+      publish();
+    }
 
     if (consumeEnter()) {
       if (sim.phase === "title") {
@@ -309,11 +354,15 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     getOrbitLock: () => null,
     getOrbitE: () => 0,
     getNearestBody: () => null,
+    getBodies: () => [],
     getPos: () => ({ x: 0, y: 0, vx: 0, vy: 0 }),
     getGravityScale: () => 1,
     getAtmoScale: () => 1,
     getDrag: () => 0,
     getOrbitHint: () => null,
+    getUserZoom: () => 1,
+    getOrbitShell: () => false,
+    getPlanetPaths: () => [],
     adjustGravity: () => {},
     adjustAtmo: () => {},
   };
