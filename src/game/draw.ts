@@ -54,14 +54,15 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   const path = predictPath(sim, 10);
   drawPath(ctx, path, sim);
   const star = sim.planets.find((b) => b.kind === "star") ?? null;
-  for (const p of sim.planets) drawPlanet(ctx, p, cam, star);
+  for (const p of sim.planets) drawPlanet(ctx, p, cam, star, sim.planets);
   drawOrbitShell(ctx, sim);
   drawLagrangePoints(ctx, sim, cam);
   drawRelativePath(ctx, sim);
   drawPlanetPaths(ctx, sim);
   drawParticles(ctx, sim.particles);
   drawGravityArrows(ctx, sim);
-  drawShip(ctx, sim.ship, sim.phase !== "title" && sim.ship.thrusting);
+  const shipUmbra = star ? pointUmbraMax(sim.ship.x, sim.ship.y, sim.planets, star, null) : 0;
+  drawShip(ctx, sim.ship, sim.phase !== "title" && sim.ship.thrusting, shipUmbra);
   drawOrbitLockBars(ctx, sim, cam);
 
   ctx.restore();
@@ -507,7 +508,103 @@ function lightDir(p: Planet, star: Planet | null) {
   return { x: x / len, y: y / len };
 }
 
-function drawPlanet(ctx: CanvasRenderingContext2D, p: Planet, cam: Camera, star: Planet | null) {
+function occluderAxis(occ: Planet, star: Planet) {
+  const dx = occ.x - star.x;
+  const dy = occ.y - star.y;
+  const sep = Math.hypot(dx, dy) || 1;
+  return { ux: dx / sep, uy: dy / sep, sep };
+}
+
+function umbraRadius(occ: Planet, star: Planet, along: number, sep: number) {
+  return occ.radius - (along * (star.radius - occ.radius)) / sep;
+}
+
+function penumbraRadius(occ: Planet, star: Planet, along: number, sep: number) {
+  return occ.radius + (along * (star.radius + occ.radius)) / sep;
+}
+
+function pointUmbra(x: number, y: number, occ: Planet, star: Planet) {
+  if (Math.hypot(x - occ.x, y - occ.y) < occ.radius + 12) return 0;
+  const { ux, uy, sep } = occluderAxis(occ, star);
+  const rx = x - occ.x;
+  const ry = y - occ.y;
+  const along = rx * ux + ry * uy;
+  if (along < occ.radius * 0.55) return 0;
+  const perp = Math.abs(rx * uy - ry * ux);
+  const umbra = umbraRadius(occ, star, along, sep);
+  if (umbra > 0 && perp <= umbra) return 1;
+  const pen = penumbraRadius(occ, star, along, sep);
+  const inner = Math.max(0, umbra);
+  if (perp >= pen || pen <= inner) return 0;
+  return 1 - (perp - inner) / (pen - inner);
+}
+
+function pointUmbraMax(x: number, y: number, bodies: Planet[], star: Planet, skipId: string | null) {
+  let m = 0;
+  for (const o of bodies) {
+    if (o.kind === "star" || o.id === skipId) continue;
+    m = Math.max(m, pointUmbra(x, y, o, star));
+    if (m >= 1) return 1;
+  }
+  return m;
+}
+
+function fillOccluderShadow(
+  ctx: CanvasRenderingContext2D,
+  occ: Planet,
+  star: Planet,
+  originX: number,
+  originY: number,
+  alongEnd: number,
+  alpha: number,
+  kind: "umbra" | "penumbra",
+) {
+  const { ux, uy, sep } = occluderAxis(occ, star);
+  let end = alongEnd;
+  if (kind === "umbra" && star.radius > occ.radius) {
+    const tip = (occ.radius * sep) / (star.radius - occ.radius);
+    end = Math.min(end, tip);
+  }
+  const start = occ.radius * 0.9;
+  if (end <= start) return;
+  const radiusAt = kind === "umbra" ? umbraRadius : penumbraRadius;
+  const r0 = Math.max(0, radiusAt(occ, star, start, sep));
+  const r1 = Math.max(0, radiusAt(occ, star, end, sep));
+  if (r0 <= 0 && r1 <= 0) return;
+  const px = -uy;
+  const py = ux;
+  const x0 = occ.x - originX + ux * start;
+  const y0 = occ.y - originY + uy * start;
+  const x1 = occ.x - originX + ux * end;
+  const y1 = occ.y - originY + uy * end;
+  ctx.fillStyle = `rgba(7,8,12,${alpha})`;
+  ctx.beginPath();
+  ctx.moveTo(x0 + px * r0, y0 + py * r0);
+  ctx.lineTo(x1 + px * r1, y1 + py * r1);
+  ctx.lineTo(x1 - px * r1, y1 - py * r1);
+  ctx.lineTo(x0 - px * r0, y0 - py * r0);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function stampBodyShadows(ctx: CanvasRenderingContext2D, p: Planet, star: Planet, bodies: Planet[]) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
+  ctx.clip();
+  for (const o of bodies) {
+    if (o.id === p.id || o.kind === "star") continue;
+    const { ux, uy } = occluderAxis(o, star);
+    const along = (p.x - o.x) * ux + (p.y - o.y) * uy;
+    if (along < o.radius * 0.5) continue;
+    const end = along + p.radius;
+    fillOccluderShadow(ctx, o, star, p.x, p.y, end, 0.32, "penumbra");
+    fillOccluderShadow(ctx, o, star, p.x, p.y, end, 0.78, "umbra");
+  }
+  ctx.restore();
+}
+
+function drawPlanet(ctx: CanvasRenderingContext2D, p: Planet, cam: Camera, star: Planet | null, bodies: Planet[]) {
   const r = p.radius;
   const outer = haloOuter(p);
   if (p.kind !== "star") {
@@ -598,6 +695,7 @@ function drawPlanet(ctx: CanvasRenderingContext2D, p: Planet, cam: Camera, star:
     ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.fillStyle = shade;
     ctx.fill();
+    if (star) stampBodyShadows(ctx, p, star, bodies);
   }
 
   ctx.restore();
@@ -628,7 +726,7 @@ function drawParticles(ctx: CanvasRenderingContext2D, particles: Particle[]) {
   ctx.globalAlpha = 1;
 }
 
-function drawShip(ctx: CanvasRenderingContext2D, ship: Ship, thrusting: boolean) {
+function drawShip(ctx: CanvasRenderingContext2D, ship: Ship, thrusting: boolean, umbra = 0) {
   ctx.save();
   ctx.translate(ship.x, ship.y);
   ctx.rotate(-ship.yaw);
@@ -656,7 +754,9 @@ function drawShip(ctx: CanvasRenderingContext2D, ship: Ship, thrusting: boolean)
 
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
-  ctx.fillStyle = "#eceae4";
+  const dim = 1 - 0.72 * Math.max(0, Math.min(1, umbra));
+  const hull = Math.round(236 * dim);
+  ctx.fillStyle = `rgb(${hull}, ${Math.round(234 * dim)}, ${Math.round(228 * dim)})`;
   ctx.strokeStyle = "#07080c";
   ctx.lineWidth = 1.4;
   ctx.beginPath();
