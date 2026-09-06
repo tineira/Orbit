@@ -231,30 +231,30 @@ function railOmega(p: Planet, gravityScale: number) {
   return (p.orbitW ?? 0) * Math.sqrt(Math.max(0, gravityScale));
 }
 
-function railPoint(star: Planet, angle: number, r: number, w: number) {
+function railPoint(parent: Planet, angle: number, r: number, w: number) {
   const c = Math.cos(angle);
   const s = Math.sin(angle);
   return {
-    x: star.x + c * r,
-    y: star.y + s * r,
-    vx: star.vx - s * w * r,
-    vy: star.vy + c * w * r,
+    x: parent.x + c * r,
+    y: parent.y + s * r,
+    vx: parent.vx - s * w * r,
+    vy: parent.vy + c * w * r,
   };
 }
 
 function rayAccel(
   r: number,
   angle: number,
-  star: Planet,
-  planet: Planet,
+  parent: Planet,
+  body: Planet,
   w: number,
   gravityScale: number,
 ) {
-  const pos = railPoint(star, angle, r, w);
-  const g = gravityAt(pos.x, pos.y, [star, planet], gravityScale);
+  const pos = railPoint(parent, angle, r, w);
+  const g = gravityAt(pos.x, pos.y, [parent, body], gravityScale);
   const c = Math.cos(angle);
   const s = Math.sin(angle);
-  return (g.ax + w * w * (pos.x - star.x)) * c + (g.ay + w * w * (pos.y - star.y)) * s;
+  return (g.ax + w * w * (pos.x - parent.x)) * c + (g.ay + w * w * (pos.y - parent.y)) * s;
 }
 
 function findRayRoot(
@@ -299,55 +299,60 @@ function findRayRoot(
 
 function makeLagrange(
   kind: LagrangeKind,
-  planet: Planet,
-  star: Planet,
+  body: Planet,
+  parent: Planet,
   angle: number,
   r: number,
   w: number,
 ): LagrangePoint | null {
-  if (!Number.isFinite(r) || r < star.radius * 2.1) return null;
-  const pos = railPoint(star, angle, r, w);
+  if (!Number.isFinite(r) || r < parent.radius * 1.15) return null;
+  const pos = railPoint(parent, angle, r, w);
   if (kind === "L1" || kind === "L2") {
-    const d = Math.hypot(pos.x - planet.x, pos.y - planet.y);
-    if (d < planet.radius + 40) return null;
+    const d = Math.hypot(pos.x - body.x, pos.y - body.y);
+    if (d < body.radius + 24) return null;
   }
   return {
-    key: `${planet.id}:${kind}`,
+    key: `${body.id}:${kind}`,
     kind,
-    planetId: planet.id,
-    planetName: planet.name,
+    planetId: body.id,
+    planetName: body.name,
     ...pos,
   };
 }
 
+function pointsForPair(body: Planet, parent: Planet, gravityScale: number): LagrangePoint[] {
+  if (body.orbitR == null || body.orbitA == null || body.orbitW == null) return [];
+  const R = body.orbitR;
+  const a = body.orbitA;
+  const w = railOmega(body, gravityScale);
+  if (w <= 0 || R <= parent.radius * 2.2) return [];
+  const mu = body.mass / (parent.mass + body.mass);
+  const hill = R * Math.cbrt(Math.max(1e-8, mu / 3));
+  const fAlong = (r: number) => rayAccel(r, a, parent, body, w, gravityScale);
+  const fOpp = (r: number) => rayAccel(r, a + Math.PI, parent, body, w, gravityScale);
+  const pad = body.radius + 28;
+  const r1 = findRayRoot(fAlong, parent.radius * 1.2, R - pad) ?? Math.max(parent.radius * 1.25, R - hill);
+  const r2 = findRayRoot(fAlong, R + pad, R + Math.max(hill * 2.8, R * 0.55)) ?? R + hill;
+  const r3 = findRayRoot(fOpp, parent.radius * 1.2, R * 1.25) ?? R;
+  return [
+    makeLagrange("L4", body, parent, a + Math.PI / 3, R, w),
+    makeLagrange("L5", body, parent, a - Math.PI / 3, R, w),
+    makeLagrange("L1", body, parent, a, r1, w),
+    makeLagrange("L2", body, parent, a, r2, w),
+    makeLagrange("L3", body, parent, a + Math.PI, r3, w),
+  ].filter((pt): pt is LagrangePoint => pt != null);
+}
+
 export function listLagrangePoints(sim: Sim): LagrangePoint[] {
-  const star = sim.planets.find((p) => p.kind === "star");
-  if (!star || sim.gravityScale <= 0) return [];
+  if (sim.gravityScale <= 0) return [];
+  const byId = new Map(sim.planets.map((p) => [p.id, p]));
   const out: LagrangePoint[] = [];
   for (const p of sim.planets) {
-    if (p.kind === "star" || p.kind === "moon") continue;
-    if (p.parentId !== star.id || p.orbitR == null || p.orbitA == null || p.orbitW == null) continue;
-    const R = p.orbitR;
-    const a = p.orbitA;
-    const w = railOmega(p, sim.gravityScale);
-    if (w <= 0 || R <= star.radius * 3) continue;
-    const mu = p.mass / (star.mass + p.mass);
-    const hill = R * Math.cbrt(Math.max(1e-8, mu / 3));
-    const fAlong = (r: number) => rayAccel(r, a, star, p, w, sim.gravityScale);
-    const fOpp = (r: number) => rayAccel(r, a + Math.PI, star, p, w, sim.gravityScale);
-    const pad = p.radius + 48;
-    const r1 =
-      findRayRoot(fAlong, star.radius * 2.2, R - pad) ?? Math.max(star.radius * 2.4, R - hill);
-    const r2 = findRayRoot(fAlong, R + pad, R + Math.max(hill * 2.8, R * 0.55)) ?? R + hill;
-    const r3 = findRayRoot(fOpp, star.radius * 2.2, R * 1.25) ?? R;
-    const pts = [
-      makeLagrange("L4", p, star, a + Math.PI / 3, R, w),
-      makeLagrange("L5", p, star, a - Math.PI / 3, R, w),
-      makeLagrange("L1", p, star, a, r1, w),
-      makeLagrange("L2", p, star, a, r2, w),
-      makeLagrange("L3", p, star, a + Math.PI, r3, w),
-    ];
-    for (const pt of pts) if (pt) out.push(pt);
+    if (p.kind === "star") continue;
+    if (p.parentId == null || p.orbitR == null || p.orbitA == null || p.orbitW == null) continue;
+    const parent = byId.get(p.parentId);
+    if (!parent) continue;
+    out.push(...pointsForPair(p, parent, sim.gravityScale));
   }
   return out;
 }

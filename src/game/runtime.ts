@@ -44,7 +44,18 @@ declare global {
       getOrbitLock?: () => string | null;
       getOrbitE?: () => number;
       getNearestBody?: () => { id: string; x: number; y: number; mass: number; radius: number } | null;
-      getBodies?: () => { id: string; x: number; y: number; kind: string; parentId?: string; radius: number }[];
+      getBodies?: () => {
+        id: string;
+        x: number;
+        y: number;
+        kind: string;
+        parentId?: string;
+        radius: number;
+        orbitR?: number;
+        orbitA?: number;
+        orbitW?: number;
+        mass?: number;
+      }[];
       getPos?: () => { x: number; y: number; vx: number; vy: number };
       getGravityScale?: () => number;
       getAtmoScale?: () => number;
@@ -278,6 +289,10 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
           kind: p.kind,
           parentId: p.parentId,
           radius: p.radius,
+          orbitR: p.orbitR,
+          orbitA: p.orbitA,
+          orbitW: p.orbitW,
+          mass: p.mass,
         })),
       getPos: () => ({ x: s.ship.x, y: s.ship.y, vx: s.ship.vx, vy: s.ship.vy }),
       getGravityScale: () => s.gravityScale,
