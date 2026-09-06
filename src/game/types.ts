@@ -66,6 +66,31 @@ export type Phase = "creating" | "title" | "flight" | "landed" | "crashed";
 
 export type FlightStatus = "deep" | "approach" | "orbit" | "lagrange" | "too-fast" | "landed" | "crashed";
 
+export type VerboseDiag = {
+  gate: string;
+  ok: boolean;
+  relSpeed: number;
+  vCirc: number | null;
+  ecc: number | null;
+  eccLim: number;
+  energy: number | null;
+  alt: number | null;
+  shellMin: number | null;
+  shellMax: number | null;
+  drag: number;
+  dragLim: number;
+  perturb: number;
+  perturbLim: number;
+  accelG: number;
+  accelThrust: number;
+  accelDrag: number;
+  well: number | null;
+  wellLim: number | null;
+  periAlt: number | null;
+  apoAlt: number | null;
+  lagrange: string | null;
+};
+
 export type HudSnapshot = {
   phase: Phase;
   speed: number;
@@ -91,6 +116,8 @@ export type HudSnapshot = {
   lagrangeLabel: string | null;
   physicsMenu: boolean;
   gravityGrid: boolean;
+  verbose: boolean;
+  verboseDiag: VerboseDiag | null;
 };
 
 export type InputState = {

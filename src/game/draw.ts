@@ -549,57 +549,57 @@ function pointUmbraMax(x: number, y: number, bodies: Planet[], star: Planet, ski
   return m;
 }
 
-function fillOccluderShadow(
-  ctx: CanvasRenderingContext2D,
-  occ: Planet,
-  star: Planet,
-  originX: number,
-  originY: number,
-  alongEnd: number,
-  alpha: number,
-  kind: "umbra" | "penumbra",
-) {
-  const { ux, uy, sep } = occluderAxis(occ, star);
-  let end = alongEnd;
-  if (kind === "umbra" && star.radius > occ.radius) {
-    const tip = (occ.radius * sep) / (star.radius - occ.radius);
-    end = Math.min(end, tip);
-  }
-  const start = occ.radius * 0.9;
-  if (end <= start) return;
-  const radiusAt = kind === "umbra" ? umbraRadius : penumbraRadius;
-  const r0 = Math.max(0, radiusAt(occ, star, start, sep));
-  const r1 = Math.max(0, radiusAt(occ, star, end, sep));
-  if (r0 <= 0 && r1 <= 0) return;
-  const px = -uy;
-  const py = ux;
-  const x0 = occ.x - originX + ux * start;
-  const y0 = occ.y - originY + uy * start;
-  const x1 = occ.x - originX + ux * end;
-  const y1 = occ.y - originY + uy * end;
-  ctx.fillStyle = `rgba(7,8,12,${alpha})`;
-  ctx.beginPath();
-  ctx.moveTo(x0 + px * r0, y0 + py * r0);
-  ctx.lineTo(x1 + px * r1, y1 + py * r1);
-  ctx.lineTo(x1 - px * r1, y1 - py * r1);
-  ctx.lineTo(x0 - px * r0, y0 - py * r0);
-  ctx.closePath();
-  ctx.fill();
-}
-
 function stampBodyShadows(ctx: CanvasRenderingContext2D, p: Planet, star: Planet, bodies: Planet[]) {
+  const L = lightDir(p, star);
+  const lit = Math.atan2(L.y, L.x);
   ctx.save();
   ctx.beginPath();
   ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
   ctx.clip();
+  ctx.beginPath();
+  ctx.arc(0, 0, p.radius + 2, lit - Math.PI / 2, lit + Math.PI / 2);
+  ctx.lineTo(0, 0);
+  ctx.closePath();
+  ctx.clip();
+
   for (const o of bodies) {
     if (o.id === p.id || o.kind === "star") continue;
-    const { ux, uy } = occluderAxis(o, star);
-    const along = (p.x - o.x) * ux + (p.y - o.y) * uy;
-    if (along < o.radius * 0.5) continue;
-    const end = along + p.radius;
-    fillOccluderShadow(ctx, o, star, p.x, p.y, end, 0.32, "penumbra");
-    fillOccluderShadow(ctx, o, star, p.x, p.y, end, 0.78, "umbra");
+    if (Math.hypot(p.x - o.x, p.y - o.y) < o.radius + p.radius * 0.12) continue;
+    const { ux, uy, sep } = occluderAxis(o, star);
+    const rx = p.x - o.x;
+    const ry = p.y - o.y;
+    const along = rx * ux + ry * uy;
+    if (along < o.radius * 0.45) continue;
+
+    const umbra = umbraRadius(o, star, along, sep);
+    const occAng = o.radius / Math.max(along, 1);
+    const starAng = star.radius / Math.max(sep + along, 1);
+    const peak = umbra > 0 ? 1 : Math.min(1, (occAng / Math.max(starAng, 1e-6)) ** 2);
+    if (peak < 0.08) continue;
+
+    const core = umbra > 0 ? umbra : o.radius * Math.sqrt(peak);
+    const radius = Math.max(2.5, core * (umbra > 0 ? 1.4 : 1.55));
+    const push = p.radius * 0.3;
+    const cx = o.x + ux * along - p.x + L.x * push;
+    const cy = o.y + uy * along - p.y + L.y * push;
+    if (Math.hypot(cx, cy) > p.radius + radius) continue;
+
+    const night = p.kind === "moon" ? 0.9 : p.kind === "gas" ? 0.78 : 0.84;
+    const alpha = Math.min(night * 0.58, 0.5) * (0.4 + 0.6 * peak);
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    const coreT = Math.min(0.78, Math.max(0, umbra) / radius);
+    if (umbra > 0 && peak > 0.85 && coreT > 0.08) {
+      g.addColorStop(0, `rgba(7,8,12,${alpha})`);
+      g.addColorStop(coreT, `rgba(7,8,12,${alpha * 0.9})`);
+      g.addColorStop(1, "rgba(7,8,12,0)");
+    } else {
+      g.addColorStop(0, `rgba(7,8,12,${alpha})`);
+      g.addColorStop(1, "rgba(7,8,12,0)");
+    }
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
   }
   ctx.restore();
 }

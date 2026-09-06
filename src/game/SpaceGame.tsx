@@ -28,6 +28,8 @@ const INITIAL: HudSnapshot = {
   lagrangeLabel: null,
   physicsMenu: false,
   gravityGrid: false,
+  verbose: false,
+  verboseDiag: null,
 };
 
 export function SpaceGame() {
@@ -74,6 +76,9 @@ export function SpaceGame() {
   const onToggleGravityGrid = useCallback(() => {
     gameRef.current?.toggleGravityGrid();
   }, []);
+  const onToggleVerbose = useCallback(() => {
+    gameRef.current?.toggleVerbose();
+  }, []);
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-bg text-fg">
@@ -94,6 +99,7 @@ export function SpaceGame() {
         onToggleOrbitShell={onToggleOrbitShell}
         onToggleLagrange={onToggleLagrange}
         onToggleGravityGrid={onToggleGravityGrid}
+        onToggleVerbose={onToggleVerbose}
       />
     </div>
   );

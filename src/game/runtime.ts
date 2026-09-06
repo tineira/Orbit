@@ -14,6 +14,7 @@ import {
   stepSim,
   STEP,
   takeoff,
+  verboseDiag,
   wrapPi,
   type Sim,
 } from "./sim";
@@ -30,6 +31,7 @@ export type GameHandle = {
   toggleOrbitShell: () => void;
   toggleLagrange: () => void;
   toggleGravityGrid: () => void;
+  toggleVerbose: () => void;
   destroy: () => void;
 };
 
@@ -72,6 +74,7 @@ declare global {
       getLagrangePoints?: () => { key: string; kind: string; x: number; y: number; vx: number; vy: number }[];
       getPhysicsMenu?: () => boolean;
       getGravityGrid?: () => boolean;
+      getVerbose?: () => boolean;
       adjustGravity?: (dir: number) => void;
       adjustAtmo?: (dir: number) => void;
     };
@@ -103,6 +106,8 @@ const CREATING_HUD: HudSnapshot = {
   lagrangeLabel: null,
   physicsMenu: false,
   gravityGrid: false,
+  verbose: false,
+  verboseDiag: null,
 };
 
 export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameHandle {
@@ -136,6 +141,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let lWasDown = false;
   let pWasDown = false;
   let gWasDown = false;
+  let vWasDown = false;
 
   const resize = () => {
     const rect = canvas.getBoundingClientRect();
@@ -188,6 +194,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       lagrangeLabel: (sim.lagrangeLockKey ?? sim.lagrangeDwellKey)?.split(":")[1] ?? null,
       physicsMenu: sim.showPhysics,
       gravityGrid: sim.showGravityGrid,
+      verbose: sim.showVerbose,
+      verboseDiag: sim.showVerbose ? verboseDiag(sim) : null,
     };
     onUi(hud);
   };
@@ -238,6 +246,13 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     const down = held(input.state).has("KeyG");
     const pressed = down && !gWasDown;
     gWasDown = down;
+    return pressed;
+  };
+
+  const consumeVerbose = () => {
+    const down = held(input.state).has("KeyV");
+    const pressed = down && !vWasDown;
+    vWasDown = down;
     return pressed;
   };
 
@@ -309,6 +324,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getLagrangeShown: () => s.showLagrange,
       getPhysicsMenu: () => s.showPhysics,
       getGravityGrid: () => s.showGravityGrid,
+      getVerbose: () => s.showVerbose,
       getLagrangePoints: () =>
         listLagrangePoints(s).map((p) => ({ key: p.key, kind: p.kind, x: p.x, y: p.y, vx: p.vx, vy: p.vy })),
       getPlanetPaths: () =>
@@ -347,6 +363,10 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     }
     if (consumeGravityGrid()) {
       sim.showGravityGrid = !sim.showGravityGrid;
+      publish();
+    }
+    if (consumeVerbose()) {
+      sim.showVerbose = !sim.showVerbose;
       publish();
     }
 
@@ -447,6 +467,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     getLagrangePoints: () => [],
     getPhysicsMenu: () => false,
     getGravityGrid: () => false,
+    getVerbose: () => false,
     getPlanetPaths: () => [],
     adjustGravity: () => {},
     adjustAtmo: () => {},
@@ -503,6 +524,11 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     toggleGravityGrid() {
       if (!sim) return;
       sim.showGravityGrid = !sim.showGravityGrid;
+      publish();
+    },
+    toggleVerbose() {
+      if (!sim) return;
+      sim.showVerbose = !sim.showVerbose;
       publish();
     },
     destroy() {

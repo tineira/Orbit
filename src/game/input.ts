@@ -21,6 +21,7 @@ const GAME_CODES = new Set([
   "KeyL",
   "KeyP",
   "KeyG",
+  "KeyV",
 ]);
 
 const ZOOM_KEY_FACTOR = 1.14;

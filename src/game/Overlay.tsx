@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Minus, Plus, Volume2, VolumeX } from "lucide-react";
-import type { HudSnapshot } from "./types";
+import type { HudSnapshot, VerboseDiag } from "./types";
 import { ATMO_STEPS, GRAVITY_STEPS, getPlanets, planetById } from "./world";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +22,7 @@ type Props = {
   onToggleOrbitShell: () => void;
   onToggleLagrange: () => void;
   onToggleGravityGrid: () => void;
+  onToggleVerbose: () => void;
 };
 
 function isEnterKey(e: KeyboardEvent) {
@@ -39,6 +40,7 @@ export function Overlay({
   onToggleOrbitShell,
   onToggleLagrange,
   onToggleGravityGrid,
+  onToggleVerbose,
 }: Props) {
   const landed = hud.landedId ? planetById(hud.landedId) : null;
   const crashed = hud.crashedId ? planetById(hud.crashedId) : null;
@@ -69,7 +71,7 @@ export function Overlay({
   useEffect(() => {
     if (hud.phase !== "landed") return;
     const onKey = (e: KeyboardEvent) => {
-      if (!isEnterKey(e) && e.code !== "Space") return;
+      if (!isEnterKey(e)) return;
       e.preventDefault();
       onTakeoff();
     };
@@ -90,37 +92,42 @@ export function Overlay({
           onToggleOrbitShell={onToggleOrbitShell}
           onToggleLagrange={onToggleLagrange}
           onToggleGravityGrid={onToggleGravityGrid}
+          verbose={hud.verbose}
+          onToggleVerbose={onToggleVerbose}
         />
       ) : null}
 
       {hud.phase !== "title" && hud.phase !== "creating" ? (
         <>
-          <header className="absolute top-0 left-0 right-0 flex items-start justify-between gap-4 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:p-6">
-            <div className="min-w-0">
-              <p className="font-mono text-xs tracking-[0.18em] uppercase text-muted">Nearest body</p>
-              <p className="mt-1 font-display text-2xl leading-tight font-medium tracking-tight text-fg">{hud.nearestName ?? "—"}</p>
-              <p className="mt-1 font-mono text-xs tabular-nums text-muted">
-                {hud.altitude != null ? `ALT ${fmt(hud.altitude)}` : "DEEP SPACE"}
-                <span className="mx-2 text-subtle">/</span>
-                {statusLabel(hud)}
-              </p>
-            </div>
-            <div className="flex flex-col items-end gap-3">
-              <div className="text-right">
-                <p className="font-mono text-xs tracking-[0.18em] uppercase text-muted">Ship</p>
-                <p className="mt-1 font-mono text-sm tabular-nums text-fg">
-                  {fmt(hud.speed)} <span className="text-muted">u/s</span>
-                  <span className="mx-2 text-subtle">·</span>
-                  {fmt(hud.drag)} <span className="text-muted">drag</span>
-                </p>
-                <p className="mt-0.5 font-mono text-xs tabular-nums text-muted">
-                  HDG {hud.headingDeg.toFixed(0).padStart(3, "0")}° · MASS {hud.mass.toFixed(1)}
+          <header className="absolute top-0 left-0 right-0 flex flex-col gap-3 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="font-mono text-xs tracking-[0.18em] uppercase text-muted">Nearest body</p>
+                <p className="mt-1 font-display text-2xl leading-tight font-medium tracking-tight text-fg">{hud.nearestName ?? "—"}</p>
+                <p className="mt-1 font-mono text-xs tabular-nums text-muted">
+                  {hud.altitude != null ? `ALT ${fmt(hud.altitude)}` : "DEEP SPACE"}
+                  <span className="mx-2 text-subtle">/</span>
+                  {statusLabel(hud)}
                 </p>
               </div>
-              {hud.physicsMenu ? (
-                <PhysicsKnobs gravityScale={hud.gravityScale} atmoScale={hud.atmoScale} onGravity={onGravity} onAtmo={onAtmo} />
-              ) : null}
+              <div className="flex flex-col items-end gap-3">
+                <div className="text-right">
+                  <p className="font-mono text-xs tracking-[0.18em] uppercase text-muted">Ship</p>
+                  <p className="mt-1 font-mono text-sm tabular-nums text-fg">
+                    {fmt(hud.speed)} <span className="text-muted">u/s</span>
+                    <span className="mx-2 text-subtle">·</span>
+                    {fmt(hud.drag)} <span className="text-muted">drag</span>
+                  </p>
+                  <p className="mt-0.5 font-mono text-xs tabular-nums text-muted">
+                    HDG {hud.headingDeg.toFixed(0).padStart(3, "0")}° · MASS {hud.mass.toFixed(1)}
+                  </p>
+                </div>
+                {hud.physicsMenu ? (
+                  <PhysicsKnobs gravityScale={hud.gravityScale} atmoScale={hud.atmoScale} onGravity={onGravity} onAtmo={onAtmo} />
+                ) : null}
+              </div>
             </div>
+            {hud.verbose && hud.verboseDiag ? <VerbosePanel diag={hud.verboseDiag} /> : null}
           </header>
 
           <div className="absolute bottom-16 left-0 p-4 sm:p-6 max-w-[22rem]">
@@ -143,9 +150,11 @@ export function Overlay({
                 lagrangePoints={hud.lagrangePoints}
                 physicsMenu={hud.physicsMenu}
                 gravityGrid={hud.gravityGrid}
+                verbose={hud.verbose}
                 onToggleOrbitShell={onToggleOrbitShell}
                 onToggleLagrange={onToggleLagrange}
                 onToggleGravityGrid={onToggleGravityGrid}
+                onToggleVerbose={onToggleVerbose}
               />
             </p>
             {hud.orbitShell ? (
@@ -156,6 +165,9 @@ export function Overlay({
             ) : null}
             {hud.gravityGrid ? (
               <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">Gravity grid</p>
+            ) : null}
+            {hud.verbose ? (
+              <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">Verbose</p>
             ) : null}
             {hud.orbitHint && hud.phase !== "crashed" ? (
               <p
@@ -229,18 +241,22 @@ function Title({
   orbitShell,
   lagrangePoints,
   gravityGrid,
+  verbose,
   onToggleOrbitShell,
   onToggleLagrange,
   onToggleGravityGrid,
+  onToggleVerbose,
 }: {
   onLaunch: () => void;
   physicsMenu: boolean;
   orbitShell: boolean;
   lagrangePoints: boolean;
   gravityGrid: boolean;
+  verbose: boolean;
   onToggleOrbitShell: () => void;
   onToggleLagrange: () => void;
   onToggleGravityGrid: () => void;
+  onToggleVerbose: () => void;
 }) {
   const destinations = getPlanets().filter((p) => p.kind !== "star");
   return (
@@ -274,15 +290,17 @@ function Title({
           <p className="font-mono text-xs text-subtle max-w-xs">
             Press Enter to take off. Left / right rotate. Up burns. On a phone, tap the sky.
           </p>
-          <p className="flex font-mono text-xs max-w-[12.5rem]">
+          <p className="flex font-mono text-xs max-w-[16rem]">
             <KeyTips
               orbitShell={orbitShell}
               lagrangePoints={lagrangePoints}
               physicsMenu={physicsMenu}
               gravityGrid={gravityGrid}
+              verbose={verbose}
               onToggleOrbitShell={onToggleOrbitShell}
               onToggleLagrange={onToggleLagrange}
               onToggleGravityGrid={onToggleGravityGrid}
+              onToggleVerbose={onToggleVerbose}
             />
           </p>
           <button
@@ -384,6 +402,82 @@ function fmt(n: number) {
   return Math.abs(n) >= 100 ? n.toFixed(0) : n.toFixed(1);
 }
 
+function fmtV(n: number | null, digits = 2) {
+  if (n == null) return "—";
+  if (!Number.isFinite(n)) return "∞";
+  const a = Math.abs(n);
+  if (a >= 100) return n.toFixed(0);
+  return n.toFixed(digits);
+}
+
+function VCell({
+  label,
+  value,
+  warn,
+  wide,
+}: {
+  label: string;
+  value: string;
+  warn?: boolean;
+  wide?: boolean;
+}) {
+  return (
+    <span className={cn("whitespace-nowrap", wide ? "sm:col-span-2" : undefined, warn ? "text-warn" : undefined)}>
+      <span className="text-subtle">{label}</span> {value}
+    </span>
+  );
+}
+
+function VerbosePanel({ diag }: { diag: VerboseDiag }) {
+  const vOverC = diag.vCirc && diag.vCirc > 0 ? diag.relSpeed / diag.vCirc : null;
+  const shellWarn =
+    diag.alt != null && diag.shellMin != null && diag.shellMax != null
+      ? diag.alt < diag.shellMin || diag.alt > diag.shellMax
+      : false;
+  const shell =
+    diag.alt != null && diag.shellMin != null && diag.shellMax != null
+      ? `${fmtV(diag.alt, 1)} [${fmtV(diag.shellMin, 0)}–${fmtV(diag.shellMax, 0)}]`
+      : null;
+  return (
+    <div className="max-w-[22rem] font-mono text-[10px] leading-4 tabular-nums uppercase tracking-wide">
+      <p className={diag.ok ? "text-ok" : "text-warn"}>{diag.gate}</p>
+      <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 text-muted">
+        <VCell label="Rel" value={fmtV(diag.relSpeed, 1)} />
+        <VCell label="V/Vc" value={fmtV(vOverC)} />
+        <VCell
+          label="Ecc"
+          value={diag.ecc == null ? "—" : `${fmtV(diag.ecc, 3)} / ${fmtV(diag.eccLim, 2)}`}
+          warn={diag.ecc != null && diag.ecc >= diag.eccLim}
+        />
+        <VCell label="Eng" value={fmtV(diag.energy)} />
+        {shell ? <VCell label="Shell" value={shell} warn={shellWarn} wide /> : null}
+        <VCell label="Drag" value={`${fmtV(diag.drag)} / ${fmtV(diag.dragLim)}`} warn={diag.drag > diag.dragLim} />
+        <VCell
+          label="Pert"
+          value={`${fmtV(diag.perturb)} / ${fmtV(diag.perturbLim)}`}
+          warn={Number.isFinite(diag.perturb) && diag.perturb > diag.perturbLim}
+        />
+        <VCell
+          label="A"
+          value={`G ${fmtV(diag.accelG)}  T ${fmtV(diag.accelThrust, 1)}  D ${fmtV(diag.accelDrag)}`}
+          wide
+        />
+        {diag.well != null && diag.wellLim != null ? (
+          <VCell
+            label="Well"
+            value={`${fmtV(diag.well)} / ${fmtV(diag.wellLim)}`}
+            warn={diag.well <= diag.wellLim}
+          />
+        ) : null}
+        {diag.periAlt != null || diag.apoAlt != null ? (
+          <VCell label="Pe/Ap" value={`${fmtV(diag.periAlt, 1)}  ${fmtV(diag.apoAlt, 1)}`} />
+        ) : null}
+      </div>
+      {diag.lagrange ? <p className="mt-1 text-muted">{diag.lagrange}</p> : null}
+    </div>
+  );
+}
+
 function fmtScale(n: number) {
   if (n === 0) return "0×";
   return `${n.toFixed(2).replace(/\.?0+$/, "")}×`;
@@ -394,17 +488,21 @@ function KeyTips({
   lagrangePoints,
   physicsMenu,
   gravityGrid,
+  verbose,
   onToggleOrbitShell,
   onToggleLagrange,
   onToggleGravityGrid,
+  onToggleVerbose,
 }: {
   orbitShell: boolean;
   lagrangePoints: boolean;
   physicsMenu: boolean;
   gravityGrid: boolean;
+  verbose: boolean;
   onToggleOrbitShell: () => void;
   onToggleLagrange: () => void;
   onToggleGravityGrid: () => void;
+  onToggleVerbose: () => void;
 }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 sm:gap-x-3">
@@ -412,6 +510,7 @@ function KeyTips({
       <KeyTip code="L" label="Lagrange" on={lagrangePoints} onToggle={onToggleLagrange} />
       <KeyTip code="P" label="physics" on={physicsMenu} className="hidden sm:inline-flex" />
       <KeyTip code="G" label="grid" on={gravityGrid} onToggle={onToggleGravityGrid} />
+      <KeyTip code="V" label="verbose" on={verbose} onToggle={onToggleVerbose} />
     </span>
   );
 }

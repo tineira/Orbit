@@ -1,4 +1,4 @@
-import type { Camera, FlightStatus, Particle, Planet, Ship } from "./types";
+import type { Camera, FlightStatus, Particle, Planet, Ship, VerboseDiag } from "./types";
 import {
   G,
   GRAVITY_BASE,
@@ -53,6 +53,7 @@ export type Sim = {
   showLagrange: boolean;
   showPhysics: boolean;
   showGravityGrid: boolean;
+  showVerbose: boolean;
   lagrangeLockKey: string | null;
   lagrangeDwellKey: string | null;
   lagrangeDwell: number;
@@ -110,6 +111,7 @@ export function createSim(): Sim {
     showLagrange: false,
     showPhysics: false,
     showGravityGrid: false,
+    showVerbose: false,
     lagrangeLockKey: null,
     lagrangeDwellKey: null,
     lagrangeDwell: 0,
@@ -544,16 +546,27 @@ function stickToPlanet(sim: Sim, p: Planet) {
   sim.ship.vy = p.vy;
 }
 
+function faceRadial(sim: Sim) {
+  sim.ship.yaw = wrapPi(-sim.landedAngle);
+}
+
+function carryOnSurface(sim: Sim, p: Planet, dt: number) {
+  const dAng = p.spin * dt * 0.35;
+  sim.landedAngle += dAng;
+  sim.ship.yaw -= dAng;
+  stickToPlanet(sim, p);
+}
+
 function landOnHome(sim: Sim) {
   const home =
     sim.planets.find((p) => p.kicker === "Home") ?? sim.planets.find((p) => p.kind === "rocky");
   if (!home) return;
   sim.landedId = home.id;
   sim.landedAngle = 0;
-  sim.ship.yaw = 0;
   sim.ship.thrusting = false;
   sim.ship.reverse = false;
   stickToPlanet(sim, home);
+  faceRadial(sim);
   sim.nearest = home;
   sim.altitude = SHIP_HULL * 0.85;
   sim.status = "landed";
@@ -641,62 +654,121 @@ function applyKepler(ship: Ship, p: Planet, k: Kepler) {
   return r;
 }
 
-function readKepler(p: Planet, ship: Ship, gravityScale: number): Kepler | null {
+const KEPLER_ENERGY_BOUND = -0.02;
+const KEPLER_E_MAX = 0.92;
+const KEPLER_H_MIN = 10;
+const KEPLER_E_CIRC = 0.04;
+const WELL_DOMINANT_FACTOR = 2.2;
+
+type KeplerReject =
+  | "close"
+  | "gravity"
+  | "radial"
+  | "unbound"
+  | "semimajor"
+  | "eccentric"
+  | "periapsis"
+  | "apoapsis";
+
+type KeplerInspect = {
+  r: number;
+  mu: number;
+  h: number;
+  energy: number | null;
+  a: number | null;
+  e: number | null;
+  periapsis: number | null;
+  apoapsis: number | null;
+  minR: number;
+  maxApo: number;
+  reject: KeplerReject | null;
+  dx: number;
+  dy: number;
+  ex: number;
+  ey: number;
+};
+
+function inspectKepler(p: Planet, ship: Ship, gravityScale: number): KeplerInspect | null {
   const dx = ship.x - p.x;
   const dy = ship.y - p.y;
   const r = Math.hypot(dx, dy);
+  if (r < 1e-8) return null;
   const minR = p.radius + SHIP_HULL + 16;
-  if (r < minR) return null;
   const rvx = ship.vx - p.vx;
   const rvy = ship.vy - p.vy;
   const mu = bodyMu(p, gravityScale);
-  if (mu <= 0) return null;
   const h = dx * rvy - dy * rvx;
-  if (Math.abs(h) < 10) return null;
   const v2 = rvx * rvx + rvy * rvy;
-  const energy = 0.5 * v2 - mu / r;
-  if (energy >= -0.02) return null;
-  const a = -mu / (2 * energy);
-  if (a <= 0 || !Number.isFinite(a)) return null;
-  const ex = (rvy * h) / mu - dx / r;
-  const ey = (-rvx * h) / mu - dy / r;
-  const e = Math.hypot(ex, ey);
-  if (e >= 0.92) return null;
-  const periapsis = a * (1 - e);
-  if (periapsis < minR) return null;
-  const apoapsis = a * (1 + e);
   const maxApo = p.radius + Math.min(p.radius * 4.8, 720);
-  if (apoapsis > maxApo) return null;
+  let energy: number | null = null;
+  let a: number | null = null;
+  let e: number | null = null;
+  let ex = 0;
+  let ey = 0;
+  let periapsis: number | null = null;
+  let apoapsis: number | null = null;
+  if (mu > 0) {
+    energy = 0.5 * v2 - mu / r;
+    if (energy !== 0 && Number.isFinite(energy)) a = -mu / (2 * energy);
+    ex = (rvy * h) / mu - dx / r;
+    ey = (-rvx * h) / mu - dy / r;
+    e = Math.hypot(ex, ey);
+    if (a != null && a > 0 && Number.isFinite(a) && e != null) {
+      periapsis = a * (1 - e);
+      apoapsis = a * (1 + e);
+    }
+  }
+  let reject: KeplerReject | null = null;
+  if (r < minR) reject = "close";
+  else if (mu <= 0) reject = "gravity";
+  else if (Math.abs(h) < KEPLER_H_MIN) reject = "radial";
+  else if (energy == null || energy >= KEPLER_ENERGY_BOUND) reject = "unbound";
+  else if (a == null || a <= 0 || !Number.isFinite(a)) reject = "semimajor";
+  else if (e != null && e >= KEPLER_E_MAX) reject = "eccentric";
+  else if (periapsis != null && periapsis < minR) reject = "periapsis";
+  else if (apoapsis != null && apoapsis > maxApo) reject = "apoapsis";
+  return { r, mu, h, energy, a, e, periapsis, apoapsis, minR, maxApo, reject, dx, dy, ex, ey };
+}
 
-  if (e < 0.04) {
-    const sign = h >= 0 ? 1 : -1;
+function keplerFromInspect(info: KeplerInspect): Kepler | null {
+  if (info.reject || info.e == null || info.mu <= 0) return null;
+  if (info.e < KEPLER_E_CIRC) {
+    const sign = info.h >= 0 ? 1 : -1;
     return {
       e: 0,
-      h: sign * Math.sqrt(mu * r),
-      peri: Math.atan2(dy, dx),
+      h: sign * Math.sqrt(info.mu * info.r),
+      peri: Math.atan2(info.dy, info.dx),
       nu: 0,
-      mu,
+      mu: info.mu,
     };
   }
   return {
-    e,
-    h,
-    peri: Math.atan2(ey, ex),
-    nu: wrapPi(Math.atan2(dy, dx) - Math.atan2(ey, ex)),
-    mu,
+    e: info.e,
+    h: info.h,
+    peri: Math.atan2(info.ey, info.ex),
+    nu: wrapPi(Math.atan2(info.dy, info.dx) - Math.atan2(info.ey, info.ex)),
+    mu: info.mu,
   };
 }
 
-function wellDominant(p: Planet, x: number, y: number, planets: Planet[]) {
+function readKepler(p: Planet, ship: Ship, gravityScale: number): Kepler | null {
+  const info = inspectKepler(p, ship, gravityScale);
+  if (!info) return null;
+  return keplerFromInspect(info);
+}
+
+function wellInspect(p: Planet, x: number, y: number, planets: Planet[]) {
   const d = Math.hypot(x - p.x, y - p.y) || 1;
   const aThis = (G * p.mass) / (d * d);
   if (p.kind === "moon") {
+    let aMax = 0;
     for (const q of planets) {
       if (q.id === p.id) continue;
       const dq = Math.hypot(x - q.x, y - q.y) || 1;
-      if ((G * q.mass) / (dq * dq) >= aThis) return false;
+      aMax = Math.max(aMax, (G * q.mass) / (dq * dq));
     }
-    return true;
+    const ratio = aMax <= 0 ? Infinity : aThis / aMax;
+    return { ratio, limit: 1, ok: aThis > aMax };
   }
   let aRest = 0;
   for (const q of planets) {
@@ -704,7 +776,12 @@ function wellDominant(p: Planet, x: number, y: number, planets: Planet[]) {
     const dq = Math.hypot(x - q.x, y - q.y) || 1;
     aRest += (G * q.mass) / (dq * dq);
   }
-  return aThis > aRest * 2.2;
+  const ratio = aRest <= 0 ? Infinity : aThis / aRest;
+  return { ratio, limit: WELL_DOMINANT_FACTOR, ok: aThis > aRest * WELL_DOMINANT_FACTOR };
+}
+
+function wellDominant(p: Planet, x: number, y: number, planets: Planet[]) {
+  return wellInspect(p, x, y, planets).ok;
 }
 
 function captureOrbit(sim: Sim, p: Planet) {
@@ -879,8 +956,7 @@ export function stepSim(
     if (sim.crashedId) {
       const p = sim.planets.find((b) => b.id === sim.crashedId);
       if (p) {
-        sim.landedAngle += p.spin * dt * 0.35;
-        stickToPlanet(sim, p);
+        carryOnSurface(sim, p, dt);
         sim.nearest = p;
         sim.altitude = SHIP_HULL * 0.85;
       }
@@ -899,23 +975,19 @@ export function stepSim(
   if (sim.phase === "landed" && sim.landedId) {
     const p = sim.planets.find((b) => b.id === sim.landedId);
     if (p) {
-      sim.landedAngle += p.spin * dt * 0.35;
-      stickToPlanet(sim, p);
-      if (controls.steer) ship.yaw += controls.steer * TURN_RATE * dt;
+      carryOnSurface(sim, p, dt);
+      if (controls.steer) sim.landedAngle -= controls.steer * TURN_RATE * dt;
       if (controls.aimYaw != null) {
-        let d = wrapPi(controls.aimYaw - ship.yaw);
+        const want = wrapPi(-controls.aimYaw);
+        let d = wrapPi(want - sim.landedAngle);
         const max = TURN_RATE * dt;
         if (d > max) d = max;
         if (d < -max) d = -max;
-        ship.yaw += d;
+        sim.landedAngle += d;
       }
+      stickToPlanet(sim, p);
+      faceRadial(sim);
       ship.thrusting = false;
-      if (controls.forward || controls.aimThrust) {
-        const f = forwardOf(ship.yaw);
-        const nx = (ship.x - p.x) / (p.radius || 1);
-        const ny = (ship.y - p.y) / (p.radius || 1);
-        if (f.x * nx + f.y * ny > 0.18) takeoff(sim);
-      }
     }
     decayParticles(sim, dt);
     updateCamera(sim, dt);
@@ -1057,6 +1129,7 @@ function collidePlanets(sim: Sim) {
       sim.lagrangeDwell = 0;
       s.vx = p.vx;
       s.vy = p.vy;
+      faceRadial(sim);
       sim.camera.trauma = Math.min(1, sim.camera.trauma + 0.18);
       return;
     }
@@ -1076,6 +1149,135 @@ function orbitReady(sim: Sim, nearest: Planet, dist: number) {
   if (atmoDrag(sim) > ORBIT_DRAG_BREAK) return false;
   if (orbitPerturbRatio(nearest, sim.ship.x, sim.ship.y, sim.planets, sim.gravityScale) > ORBIT_PERTURB_BREAK) return false;
   return readKepler(nearest, sim.ship, sim.gravityScale) != null;
+}
+
+function fmtDiag(n: number, digits = 2) {
+  if (!Number.isFinite(n)) return "∞";
+  const a = Math.abs(n);
+  if (a >= 100) return n.toFixed(0);
+  return n.toFixed(digits);
+}
+
+function keplerGate(info: KeplerInspect, p: Planet): string | null {
+  switch (info.reject) {
+    case "close":
+      return "CLOSE";
+    case "gravity":
+      return "GRAVITY OFF";
+    case "radial":
+      return "RADIAL";
+    case "unbound":
+      return "UNBOUND";
+    case "semimajor":
+      return "UNBOUND";
+    case "eccentric":
+      return `ECC ${fmtDiag(info.e ?? 0)} / ${fmtDiag(KEPLER_E_MAX)}`;
+    case "periapsis":
+      return `PERI ${fmtDiag((info.periapsis ?? 0) - p.radius)}`;
+    case "apoapsis":
+      return `APO ${fmtDiag((info.apoapsis ?? 0) - p.radius)} / ${fmtDiag(info.maxApo - p.radius)}`;
+    default:
+      return null;
+  }
+}
+
+export function verboseDiag(sim: Sim): VerboseDiag {
+  const ship = sim.ship;
+  const host =
+    (sim.orbitLockId ? sim.planets.find((b) => b.id === sim.orbitLockId) : null) ?? sim.nearest;
+  const g = gravityAt(ship.x, ship.y, sim.planets, sim.gravityScale);
+  const dragVec = dragNear(ship.x, ship.y, ship.vx, ship.vy, sim.planets, sim.atmoScale);
+  const drag = Math.hypot(dragVec.ax, dragVec.ay);
+  const accelG = Math.hypot(g.ax, g.ay);
+  const accelDrag = Math.hypot(dragVec.ax, dragVec.ay);
+  const accelThrust = ship.thrusting ? THRUST_FORCE / ship.mass : ship.reverse ? RETRO_FORCE / ship.mass : 0;
+
+  const info = host ? inspectKepler(host, ship, sim.gravityScale) : null;
+  const well = host ? wellInspect(host, ship.x, ship.y, sim.planets) : null;
+  const shell = host ? orbitShellAlts(host, sim.planets) : null;
+  const alt = host ? Math.hypot(ship.x - host.x, ship.y - host.y) - host.radius : sim.altitude;
+  const relSpeed = host ? Math.hypot(ship.vx - host.vx, ship.vy - host.vy) : Math.hypot(ship.vx, ship.vy);
+  const vCirc = info && info.mu > 0 && info.r > 0 ? Math.sqrt(info.mu / info.r) : null;
+
+  let perturb = 0;
+  if (sim.lagrangeLockKey) {
+    const pt = listLagrangePoints(sim).find((p) => p.key === sim.lagrangeLockKey);
+    perturb = pt ? lagrangePerturbRatio(pt, sim) : Infinity;
+  } else if (host) {
+    perturb = orbitPerturbRatio(host, ship.x, ship.y, sim.planets, sim.gravityScale);
+  }
+
+  let lagrange: string | null = null;
+  let nearL: LagrangePoint | null = null;
+  let nearLd = Infinity;
+  for (const pt of listLagrangePoints(sim)) {
+    const d = Math.hypot(ship.x - pt.x, ship.y - pt.y);
+    if (d < nearLd) {
+      nearLd = d;
+      nearL = pt;
+    }
+  }
+  if (nearL && nearLd <= LAGRANGE_CAPTURE_R * 3) {
+    const rel = Math.hypot(ship.vx - nearL.vx, ship.vy - nearL.vy);
+    lagrange = `${nearL.kind} Δr ${fmtDiag(nearLd)} / ${LAGRANGE_CAPTURE_R}  Δv ${fmtDiag(rel)} / ${LAGRANGE_CAPTURE_V}`;
+  }
+
+  let gate = "COAST";
+  let ok = false;
+  if (sim.phase === "landed") gate = "LANDED";
+  else if (sim.phase === "crashed") gate = "CRASH";
+  else if (sim.phase === "title") gate = "TITLE";
+  else if (sim.lagrangeLockKey) {
+    const kind = sim.lagrangeLockKey.split(":")[1] ?? "L";
+    gate = `${kind} LOCKED`;
+    ok = true;
+  } else if (sim.orbitLockId) {
+    gate = sim.orbitLockE >= 0.08 ? "ELLIPSE LOCKED" : "LOCKED";
+    ok = true;
+  } else if (sim.ship.thrusting || sim.ship.reverse) gate = "THRUST";
+  else if (sim.orbitLockCooldown > 0) gate = `COOLDOWN ${fmtDiag(sim.orbitLockCooldown)}`;
+  else if (nearL && lagrangeReady(sim, nearL)) {
+    gate = `CAPTURING ${nearL.kind} ${fmtDiag(sim.lagrangeDwell)} / ${fmtDiag(LAGRANGE_LOCK_DWELL)}`;
+    ok = true;
+  } else if (host && shell) {
+    const hostAlt = Math.hypot(ship.x - host.x, ship.y - host.y) - host.radius;
+    if (hostAlt < shell.minAlt || hostAlt > shell.maxAlt) {
+      gate = `SHELL ${fmtDiag(hostAlt, 1)} [${fmtDiag(shell.minAlt, 0)}–${fmtDiag(shell.maxAlt, 0)}]`;
+    }
+    else if (well && !well.ok) gate = `WELL ${fmtDiag(well.ratio)} / ${fmtDiag(well.limit)}`;
+    else if (drag > ORBIT_DRAG_BREAK) gate = `DRAG ${fmtDiag(drag)} / ${fmtDiag(ORBIT_DRAG_BREAK)}`;
+    else if (perturb > ORBIT_PERTURB_BREAK) gate = `PERTURB ${fmtDiag(perturb)} / ${fmtDiag(ORBIT_PERTURB_BREAK)}`;
+    else if (info?.reject) gate = keplerGate(info, host) ?? "KEPLER";
+    else {
+      gate = `CAPTURING ${fmtDiag(sim.orbitDwell)} / ${fmtDiag(ORBIT_LOCK_DWELL)}`;
+      ok = true;
+    }
+  }
+
+  return {
+    gate,
+    ok,
+    relSpeed,
+    vCirc,
+    ecc: info?.e ?? null,
+    eccLim: KEPLER_E_MAX,
+    energy: info?.energy ?? null,
+    alt,
+    shellMin: shell?.minAlt ?? null,
+    shellMax: shell?.maxAlt ?? null,
+    drag,
+    dragLim: ORBIT_DRAG_BREAK,
+    perturb,
+    perturbLim: ORBIT_PERTURB_BREAK,
+    accelG,
+    accelThrust,
+    accelDrag,
+    well: well?.ratio ?? null,
+    wellLim: well?.limit ?? null,
+    periAlt: info?.periapsis != null && host ? info.periapsis - host.radius : null,
+    apoAlt: info?.apoapsis != null && host ? info.apoapsis - host.radius : null,
+    lagrange,
+  };
 }
 
 function classify(sim: Sim, nearest: Planet, dist: number) {
