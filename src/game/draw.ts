@@ -90,7 +90,7 @@ function starRgb(i: number): [number, number, number] {
 const GRID_WARP_K = 280;
 
 function gridSpacing(zoom: number) {
-  const target = 40 / Math.max(0.12, zoom);
+  const target = 40 / Math.max(0.04, zoom);
   return 2 ** Math.round(Math.log2(Math.max(16, target)));
 }
 
@@ -114,15 +114,15 @@ function warpGridPoint(x: number, y: number, sim: Sim, step: number) {
 }
 
 function drawGravityGrid(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera, cssW: number, cssH: number) {
-  const zoom = Math.max(0.12, cam.zoom);
+  const zoom = Math.max(0.04, cam.zoom);
   const step = gridSpacing(zoom);
-  const pad = step * 5;
+  const pad = step * 9;
   const halfW = cssW / (2 * zoom) + pad;
   const halfH = cssH / (2 * zoom) + pad;
   const x0 = Math.floor((cam.x - halfW) / step) * step;
   const y0 = Math.floor((cam.y - halfH) / step) * step;
-  const cols = Math.min(56, Math.ceil((cam.x + halfW - x0) / step) + 1);
-  const rows = Math.min(40, Math.ceil((cam.y + halfH - y0) / step) + 1);
+  const cols = Math.min(96, Math.ceil((cam.x + halfW - x0) / step) + 1);
+  const rows = Math.min(72, Math.ceil((cam.y + halfH - y0) / step) + 1);
   const n = cols * rows;
   const xs = new Float64Array(n);
   const ys = new Float64Array(n);
