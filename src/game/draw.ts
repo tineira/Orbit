@@ -4,6 +4,7 @@ import {
   atmoRadius,
   bodyMu,
   forwardOf,
+  gravityAt,
   gravityPulls,
   LAGRANGE_CAPTURE_R,
   listLagrangePoints,
@@ -39,12 +40,13 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   const shakeX = sim.reducedMotion ? 0 : (hash(performance.now() * 0.08) - 0.5) * cam.shake * 18;
   const shakeY = sim.reducedMotion ? 0 : (hash(performance.now() * 0.09 + 9) - 0.5) * cam.shake * 18;
 
-  drawStars(ctx, cam, cssW, cssH, shakeX, shakeY);
+  if (!sim.showGravityGrid) drawStars(ctx, cam, cssW, cssH, shakeX, shakeY);
   ctx.save();
   ctx.translate(cssW / 2 + shakeX, cssH / 2 + shakeY);
   ctx.scale(cam.zoom, cam.zoom);
   ctx.translate(-cam.x, -cam.y);
 
+  if (sim.showGravityGrid) drawGravityGrid(ctx, sim, cam, cssW, cssH);
   drawSunBloom(ctx, sim);
   drawLockRing(ctx, sim);
   const path = predictPath(sim, 10);
@@ -82,6 +84,100 @@ function starRgb(i: number): [number, number, number] {
   if (t < 0.8) return [248, 248, 252];
   if (t < 0.93) return [255, 232, 196];
   return [255, 186, 138];
+}
+
+/** World units of mesh slide per unit of acceleration. Linear so the star's gradient reads at planet distance. */
+const GRID_WARP_K = 280;
+
+function gridSpacing(zoom: number) {
+  const target = 40 / Math.max(0.12, zoom);
+  return 2 ** Math.round(Math.log2(Math.max(16, target)));
+}
+
+function gridBuried(x: number, y: number, planets: Planet[]) {
+  for (const p of planets) {
+    if (Math.hypot(x - p.x, y - p.y) < p.radius * 0.88) return true;
+  }
+  return false;
+}
+
+function warpGridPoint(x: number, y: number, sim: Sim, step: number) {
+  const g = gravityAt(x, y, sim.planets, sim.gravityScale);
+  const mag = Math.hypot(g.ax, g.ay);
+  if (mag < 1e-8) return { x, y };
+  let dist = GRID_WARP_K * mag;
+  const room = Math.max(0, g.dist - g.nearest.radius * 0.9);
+  dist = Math.min(dist, room * 0.84);
+  const cellCap = step * 8;
+  dist = dist / (1 + dist / cellCap);
+  return { x: x + (g.ax / mag) * dist, y: y + (g.ay / mag) * dist };
+}
+
+function drawGravityGrid(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera, cssW: number, cssH: number) {
+  const zoom = Math.max(0.12, cam.zoom);
+  const step = gridSpacing(zoom);
+  const pad = step * 5;
+  const halfW = cssW / (2 * zoom) + pad;
+  const halfH = cssH / (2 * zoom) + pad;
+  const x0 = Math.floor((cam.x - halfW) / step) * step;
+  const y0 = Math.floor((cam.y - halfH) / step) * step;
+  const cols = Math.min(56, Math.ceil((cam.x + halfW - x0) / step) + 1);
+  const rows = Math.min(40, Math.ceil((cam.y + halfH - y0) / step) + 1);
+  const n = cols * rows;
+  const xs = new Float64Array(n);
+  const ys = new Float64Array(n);
+  const hide = new Uint8Array(n);
+
+  for (let j = 0; j < rows; j++) {
+    const gy = y0 + j * step;
+    for (let i = 0; i < cols; i++) {
+      const gx = x0 + i * step;
+      const k = j * cols + i;
+      hide[k] = gridBuried(gx, gy, sim.planets) ? 1 : 0;
+      const w = warpGridPoint(gx, gy, sim, step);
+      xs[k] = w.x;
+      ys[k] = w.y;
+    }
+  }
+
+  ctx.save();
+  ctx.lineWidth = 1.05 / zoom;
+  ctx.strokeStyle = "rgba(183, 192, 204, 0.16)";
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  for (let j = 0; j < rows; j++) {
+    ctx.beginPath();
+    let pen = false;
+    for (let i = 0; i < cols; i++) {
+      const k = j * cols + i;
+      if (hide[k]) {
+        pen = false;
+        continue;
+      }
+      if (!pen) {
+        ctx.moveTo(xs[k]!, ys[k]!);
+        pen = true;
+      } else ctx.lineTo(xs[k]!, ys[k]!);
+    }
+    ctx.stroke();
+  }
+  for (let i = 0; i < cols; i++) {
+    ctx.beginPath();
+    let pen = false;
+    for (let j = 0; j < rows; j++) {
+      const k = j * cols + i;
+      if (hide[k]) {
+        pen = false;
+        continue;
+      }
+      if (!pen) {
+        ctx.moveTo(xs[k]!, ys[k]!);
+        pen = true;
+      } else ctx.lineTo(xs[k]!, ys[k]!);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawStarDot(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, rgb: [number, number, number], a: number) {

@@ -57,6 +57,7 @@ declare global {
       getLagrangeShown?: () => boolean;
       getLagrangePoints?: () => { key: string; kind: string; x: number; y: number; vx: number; vy: number }[];
       getPhysicsMenu?: () => boolean;
+      getGravityGrid?: () => boolean;
       adjustGravity?: (dir: number) => void;
       adjustAtmo?: (dir: number) => void;
     };
@@ -87,6 +88,7 @@ const CREATING_HUD: HudSnapshot = {
   lagrangeLocked: false,
   lagrangeLabel: null,
   physicsMenu: false,
+  gravityGrid: false,
 };
 
 export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameHandle {
@@ -119,6 +121,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let oWasDown = false;
   let lWasDown = false;
   let pWasDown = false;
+  let gWasDown = false;
 
   const resize = () => {
     const rect = canvas.getBoundingClientRect();
@@ -170,6 +173,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       lagrangeLocked: !!sim.lagrangeLockKey,
       lagrangeLabel: (sim.lagrangeLockKey ?? sim.lagrangeDwellKey)?.split(":")[1] ?? null,
       physicsMenu: sim.showPhysics,
+      gravityGrid: sim.showGravityGrid,
     };
     onUi(hud);
   };
@@ -213,6 +217,13 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     const down = held(input.state).has("KeyP");
     const pressed = down && !pWasDown;
     pWasDown = down;
+    return pressed;
+  };
+
+  const consumeGravityGrid = () => {
+    const down = held(input.state).has("KeyG");
+    const pressed = down && !gWasDown;
+    gWasDown = down;
     return pressed;
   };
 
@@ -278,6 +289,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getLagrangeLock: () => s.lagrangeLockKey,
       getLagrangeShown: () => s.showLagrange,
       getPhysicsMenu: () => s.showPhysics,
+      getGravityGrid: () => s.showGravityGrid,
       getLagrangePoints: () =>
         listLagrangePoints(s).map((p) => ({ key: p.key, kind: p.kind, x: p.x, y: p.y, vx: p.vx, vy: p.vy })),
       getPlanetPaths: () =>
@@ -312,6 +324,10 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     }
     if (consumePhysics()) {
       sim.showPhysics = !sim.showPhysics;
+      publish();
+    }
+    if (consumeGravityGrid()) {
+      sim.showGravityGrid = !sim.showGravityGrid;
       publish();
     }
 
@@ -411,6 +427,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     getLagrangeShown: () => false,
     getLagrangePoints: () => [],
     getPhysicsMenu: () => false,
+    getGravityGrid: () => false,
     getPlanetPaths: () => [],
     adjustGravity: () => {},
     adjustAtmo: () => {},

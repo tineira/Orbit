@@ -66,6 +66,7 @@ export function Overlay({ hud, onLaunch, onTakeoff, onReboot, onMute, onGravity,
           physicsMenu={hud.physicsMenu}
           orbitShell={hud.orbitShell}
           lagrangePoints={hud.lagrangePoints}
+          gravityGrid={hud.gravityGrid}
         />
       ) : null}
 
@@ -114,13 +115,21 @@ export function Overlay({ hud, onLaunch, onTakeoff, onReboot, onMute, onGravity,
               <span className="sm:hidden">Hold to point and burn. Pinch to zoom.</span>
             </p>
             <p className="mt-2 hidden sm:flex font-mono text-xs">
-              <KeyTips orbitShell={hud.orbitShell} lagrangePoints={hud.lagrangePoints} physicsMenu={hud.physicsMenu} />
+              <KeyTips
+                orbitShell={hud.orbitShell}
+                lagrangePoints={hud.lagrangePoints}
+                physicsMenu={hud.physicsMenu}
+                gravityGrid={hud.gravityGrid}
+              />
             </p>
             {hud.orbitShell ? (
               <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">Orbit shell · {hud.nearestName ?? "—"}</p>
             ) : null}
             {hud.lagrangePoints ? (
               <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">Lagrange points</p>
+            ) : null}
+            {hud.gravityGrid ? (
+              <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">Gravity grid</p>
             ) : null}
             {hud.orbitHint && hud.phase !== "crashed" ? (
               <p
@@ -189,11 +198,13 @@ function Title({
   physicsMenu,
   orbitShell,
   lagrangePoints,
+  gravityGrid,
 }: {
   onLaunch: () => void;
   physicsMenu: boolean;
   orbitShell: boolean;
   lagrangePoints: boolean;
+  gravityGrid: boolean;
 }) {
   const destinations = getPlanets().filter((p) => p.kind !== "star");
   return (
@@ -228,7 +239,12 @@ function Title({
             Press Enter to take off. Left / right rotate. Up burns. On a phone, tap the sky.
           </p>
           <p className="hidden sm:flex font-mono text-xs max-w-[12.5rem]">
-            <KeyTips orbitShell={orbitShell} lagrangePoints={lagrangePoints} physicsMenu={physicsMenu} />
+            <KeyTips
+              orbitShell={orbitShell}
+              lagrangePoints={lagrangePoints}
+              physicsMenu={physicsMenu}
+              gravityGrid={gravityGrid}
+            />
           </p>
           <button
             type="button"
@@ -338,16 +354,19 @@ function KeyTips({
   orbitShell,
   lagrangePoints,
   physicsMenu,
+  gravityGrid,
 }: {
   orbitShell: boolean;
   lagrangePoints: boolean;
   physicsMenu: boolean;
+  gravityGrid: boolean;
 }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
       <KeyTip code="O" label="orbit shell" on={orbitShell} />
       <KeyTip code="L" label="Lagrange" on={lagrangePoints} />
       <KeyTip code="P" label="physics" on={physicsMenu} />
+      <KeyTip code="G" label="grid" on={gravityGrid} />
     </span>
   );
 }

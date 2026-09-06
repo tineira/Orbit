@@ -48,6 +48,7 @@ export type Sim = {
   showOrbitShell: boolean;
   showLagrange: boolean;
   showPhysics: boolean;
+  showGravityGrid: boolean;
   lagrangeLockKey: string | null;
   lagrangeDwellKey: string | null;
   lagrangeDwell: number;
@@ -104,6 +105,7 @@ export function createSim(): Sim {
     showOrbitShell: false,
     showLagrange: false,
     showPhysics: false,
+    showGravityGrid: false,
     lagrangeLockKey: null,
     lagrangeDwellKey: null,
     lagrangeDwell: 0,
@@ -169,7 +171,7 @@ function bodyAccel(p: Planet, x: number, y: number, gravityScale: number) {
   return { dx, dy, d, ax: (a * dx) / d, ay: (a * dy) / d, a };
 }
 
-function gravityAt(
+export function gravityAt(
   x: number,
   y: number,
   planets: Planet[],

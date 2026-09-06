@@ -90,6 +90,7 @@ export type HudSnapshot = {
   lagrangeLocked: boolean;
   lagrangeLabel: string | null;
   physicsMenu: boolean;
+  gravityGrid: boolean;
 };
 
 export type InputState = {
