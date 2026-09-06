@@ -59,6 +59,8 @@ declare global {
         orbitR?: number;
         orbitA?: number;
         orbitW?: number;
+        orbitE?: number;
+        orbitPeri?: number;
         mass?: number;
       }[];
       getPos?: () => { x: number; y: number; vx: number; vy: number };
@@ -311,6 +313,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
           orbitR: p.orbitR,
           orbitA: p.orbitA,
           orbitW: p.orbitW,
+          orbitE: p.orbitE,
+          orbitPeri: p.orbitPeri,
           mass: p.mass,
         })),
       getPos: () => ({ x: s.ship.x, y: s.ship.y, vx: s.ship.vx, vy: s.ship.vy }),

@@ -35,9 +35,10 @@ export function orbitShellAlts(p: Planet, planets: Planet[] = []) {
     maxAlt = Math.max(maxAlt, ORBIT_SHELL_MOON_MIN_ALT);
     const parent = p.parentId ? planets.find((b) => b.id === p.parentId) : undefined;
     if (parent && p.orbitR != null && parent.mass > 0) {
-      const hill = p.orbitR * Math.cbrt(Math.max(0, p.mass / (3 * parent.mass)));
+      const rPeri = p.orbitR * (1 - (p.orbitE ?? 0));
+      const hill = rPeri * Math.cbrt(Math.max(0, p.mass / (3 * parent.mass)));
       maxAlt = Math.max(maxAlt, hill - p.radius);
-      const toParent = p.orbitR - parent.radius - p.radius;
+      const toParent = rPeri - parent.radius - p.radius;
       if (toParent > minAlt + 8) maxAlt = Math.min(maxAlt, toParent - 8);
     }
   } else if (p.kind === "gas") {
@@ -176,26 +177,61 @@ function shuffle<T>(rng: () => number, list: T[]): T[] {
   return out;
 }
 
+/** Polar Kepler rail around a focus at the origin. `orbitR` is semi-major axis. */
+export function keplerRail(a: number, e: number, peri: number, theta: number, mu: number) {
+  const ecc = Math.min(0.95, Math.max(0, e));
+  const oneE2 = Math.max(0, 1 - ecc * ecc);
+  const nu = theta - peri;
+  const r = ecc < 1e-8 ? a : (a * oneE2) / (1 + ecc * Math.cos(nu));
+  const n = Math.sqrt(Math.max(0, mu) / Math.max(1e-8, a * a * a));
+  const h = n * a * a * Math.sqrt(oneE2);
+  const vr = ecc < 1e-8 || h < 1e-8 ? 0 : (mu * ecc * Math.sin(nu)) / h;
+  const vt = h / Math.max(r, 1e-8);
+  const c = Math.cos(theta);
+  const s = Math.sin(theta);
+  return {
+    r,
+    n,
+    x: c * r,
+    y: s * r,
+    vx: vr * c + vt * -s,
+    vy: vr * s + vt * c,
+  };
+}
+
 function placeOnRails(
   rng: () => number,
   star: Planet,
   drafts: { radius: number }[],
-): { orbitR: number; orbitA: number; orbitW: number; x: number; y: number; vx: number; vy: number }[] {
+): {
+  orbitR: number;
+  orbitA: number;
+  orbitW: number;
+  orbitE: number;
+  orbitPeri: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+}[] {
   const mu = G * GRAVITY_BASE * star.mass;
-  let r = star.radius + 3400;
+  let a = star.radius + 3400;
   return drafts.map((d, i) => {
-    r += (i === 0 ? 0 : 2050) + d.radius * 1.35 + rng() * 380;
+    a += (i === 0 ? 0 : 2050) + d.radius * 1.35 + rng() * 380;
+    const orbitE = lerp(0.055, 0.12, rng());
+    const orbitPeri = rng() * Math.PI * 2;
     const orbitA = rng() * Math.PI * 2;
-    const orbitW = Math.sqrt(mu / (r * r * r));
-    const spd = orbitW * r;
+    const k = keplerRail(a, orbitE, orbitPeri, orbitA, mu);
     return {
-      orbitR: r,
+      orbitR: a,
       orbitA,
-      orbitW,
-      x: Math.cos(orbitA) * r,
-      y: Math.sin(orbitA) * r,
-      vx: -Math.sin(orbitA) * spd,
-      vy: Math.cos(orbitA) * spd,
+      orbitW: k.n,
+      orbitE,
+      orbitPeri,
+      x: k.x,
+      y: k.y,
+      vx: k.vx,
+      vy: k.vy,
     };
   });
 }
@@ -261,6 +297,8 @@ function makeSystem(seed: number): Planet[] {
       orbitR: seat.orbitR,
       orbitA: seat.orbitA,
       orbitW: seat.orbitW,
+      orbitE: seat.orbitE,
+      orbitPeri: seat.orbitPeri,
       x: seat.x,
       y: seat.y,
       vx: seat.vx,
@@ -323,18 +361,19 @@ function makeSystem(seed: number): Planet[] {
     const radius = lerp(26, 44, rng());
     const surfaceG = lerp(4.2, 6.4, rng());
     const orbitR = gas.radius * (4.1 + m * 2.3 + rng() * 0.8);
+    const orbitE = lerp(0.03, 0.07, rng());
+    const orbitPeri = rng() * Math.PI * 2;
     const orbitA = rng() * Math.PI * 2 + m * 1.7;
-    const orbitW = Math.sqrt((G * GRAVITY_BASE * gas.mass) / (orbitR * orbitR * orbitR));
-    const rel = orbitW * orbitR;
+    const k = keplerRail(orbitR, orbitE, orbitPeri, orbitA, G * GRAVITY_BASE * gas.mass);
     const pal = moonPal[m % moonPal.length]!;
     planets.push({
       id: slug(name, planets.length),
       name,
       kind: "moon",
-      x: gas.x + Math.cos(orbitA) * orbitR,
-      y: gas.y + Math.sin(orbitA) * orbitR,
-      vx: gas.vx + -Math.sin(orbitA) * rel,
-      vy: gas.vy + Math.cos(orbitA) * rel,
+      x: gas.x + k.x,
+      y: gas.y + k.y,
+      vx: gas.vx + k.vx,
+      vy: gas.vy + k.vy,
       radius,
       surfaceG,
       mass: massFrom(radius, surfaceG),
@@ -347,7 +386,9 @@ function makeSystem(seed: number): Planet[] {
       parentId: gas.id,
       orbitR,
       orbitA,
-      orbitW,
+      orbitW: k.n,
+      orbitE,
+      orbitPeri,
       kicker: "Moon",
       title: name,
       body: `A quiet moon of ${gas.name}. Slow down. The well will hold you if you let it.`,
@@ -393,7 +434,16 @@ export function createSystem(seed = (Math.random() * 0xffffffff) >>> 0): Charted
     },
     minimapWorldR: Math.max(
       10800,
-      planets.reduce((m, p) => Math.max(m, Math.hypot(p.x, p.y) + p.radius), 0) * 1.12,
+      planets.reduce((m, p) => {
+        if (p.kind === "star" || p.orbitR == null) return Math.max(m, Math.hypot(p.x, p.y) + p.radius);
+        const apo = p.orbitR * (1 + (p.orbitE ?? 0));
+        if (p.kind === "moon") {
+          const parent = p.parentId ? planets.find((b) => b.id === p.parentId) : undefined;
+          const parentApo = parent?.orbitR != null ? parent.orbitR * (1 + (parent.orbitE ?? 0)) : Math.hypot(parent?.x ?? 0, parent?.y ?? 0);
+          return Math.max(m, parentApo + apo + p.radius);
+        }
+        return Math.max(m, apo + p.radius);
+      }, 0) * 1.12,
     ),
   };
   return system;

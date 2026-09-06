@@ -22,6 +22,8 @@ export type Planet = {
   orbitR?: number;
   orbitA?: number;
   orbitW?: number;
+  orbitE?: number;
+  orbitPeri?: number;
   kicker: string;
   title: string;
   body: string;

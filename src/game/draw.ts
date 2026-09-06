@@ -926,13 +926,30 @@ function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH
   const byId = new Map(sim.planets.map((p) => [p.id, p]));
   ctx.lineWidth = 1;
   for (const p of sim.planets) {
-    // Star-centric rails only. Moon orbits collapse to a few pixels around the giant.
-    if (p.kind === "star" || p.kind === "moon" || p.orbitR == null) continue;
+    if (p.kind === "star" || p.orbitR == null) continue;
     const parent = p.parentId ? byId.get(p.parentId) : undefined;
-    ctx.beginPath();
-    ctx.arc(cx + (parent?.x ?? 0) * scale, cy + (parent?.y ?? 0) * scale, p.orbitR * scale, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(236, 234, 228, 0.18)";
-    ctx.stroke();
+    const a = p.orbitR;
+    const e = p.orbitE ?? 0;
+    const peri = p.orbitPeri ?? 0;
+    const px = parent?.x ?? 0;
+    const py = parent?.y ?? 0;
+    ctx.strokeStyle = p.kind === "moon" ? "rgba(236, 234, 228, 0.12)" : "rgba(236, 234, 228, 0.18)";
+    if (e < 0.008) {
+      ctx.beginPath();
+      ctx.arc(cx + px * scale, cy + py * scale, a * scale, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      const b = a * Math.sqrt(Math.max(0, 1 - e * e));
+      const ox = px - Math.cos(peri) * a * e;
+      const oy = py - Math.sin(peri) * a * e;
+      ctx.save();
+      ctx.translate(cx + ox * scale, cy + oy * scale);
+      ctx.rotate(peri);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, a * scale, b * scale, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   for (const p of sim.planets) {

@@ -10,6 +10,7 @@ import {
   ORBIT_LOCK_DWELL,
   ORBIT_PERTURB_BREAK,
   orbitShellAlts,
+  keplerRail,
   getStart,
   getSystem,
   RETRO_FORCE,
@@ -238,6 +239,24 @@ function railOmega(p: Planet, gravityScale: number) {
   return (p.orbitW ?? 0) * Math.sqrt(Math.max(0, gravityScale));
 }
 
+function bodyOrbitRadius(p: Planet) {
+  const a = p.orbitR ?? 0;
+  const e = p.orbitE ?? 0;
+  if (e < 1e-8) return a;
+  const nu = (p.orbitA ?? 0) - (p.orbitPeri ?? 0);
+  return (a * Math.max(0, 1 - e * e)) / (1 + e * Math.cos(nu));
+}
+
+function bodyOrbitOmega(p: Planet, gravityScale: number) {
+  const n = railOmega(p, gravityScale);
+  const e = p.orbitE ?? 0;
+  if (e < 1e-8) return n;
+  const a = p.orbitR ?? 0;
+  const r = bodyOrbitRadius(p);
+  if (r < 1e-8) return n;
+  return n * ((a * a) / (r * r)) * Math.sqrt(Math.max(0, 1 - e * e));
+}
+
 function railPoint(parent: Planet, angle: number, r: number, w: number) {
   const c = Math.cos(angle);
   const s = Math.sin(angle);
@@ -329,9 +348,9 @@ function makeLagrange(
 
 function pointsForPair(body: Planet, parent: Planet, gravityScale: number): LagrangePoint[] {
   if (body.orbitR == null || body.orbitA == null || body.orbitW == null) return [];
-  const R = body.orbitR;
+  const R = bodyOrbitRadius(body);
   const a = body.orbitA;
-  const w = railOmega(body, gravityScale);
+  const w = bodyOrbitOmega(body, gravityScale);
   if (w <= 0 || R <= parent.radius * 2.2) return [];
   const mu = body.mass / (parent.mass + body.mass);
   const hill = R * Math.cbrt(Math.max(1e-8, mu / 3));
@@ -583,7 +602,6 @@ function isOrbiting(p: Planet) {
 }
 
 function stepOrbitingBodies(planets: Planet[], dt: number, gravityScale: number) {
-  const wMul = Math.sqrt(Math.max(0, gravityScale));
   for (const p of planets) {
     if (!isOrbiting(p)) {
       p.vx = 0;
@@ -592,13 +610,18 @@ function stepOrbitingBodies(planets: Planet[], dt: number, gravityScale: number)
     }
     const parent = planets.find((b) => b.id === p.parentId);
     if (!parent || p.orbitR == null || p.orbitA == null || p.orbitW == null) continue;
-    p.orbitA += p.orbitW * wMul * dt;
-    const nx = parent.x + Math.cos(p.orbitA) * p.orbitR;
-    const ny = parent.y + Math.sin(p.orbitA) * p.orbitR;
-    p.vx = (nx - p.x) / dt;
-    p.vy = (ny - p.y) / dt;
-    p.x = nx;
-    p.y = ny;
+    const a = p.orbitR;
+    const e = p.orbitE ?? 0;
+    const peri = p.orbitPeri ?? 0;
+    const n = railOmega(p, gravityScale);
+    const r = bodyOrbitRadius(p);
+    const dTheta = n * ((a * a) / Math.max(r * r, 1e-8)) * Math.sqrt(Math.max(0, 1 - e * e)) * dt;
+    p.orbitA += dTheta;
+    const k = keplerRail(a, e, peri, p.orbitA, bodyMu(parent, gravityScale));
+    p.vx = parent.vx + k.vx;
+    p.vy = parent.vy + k.vy;
+    p.x = parent.x + k.x;
+    p.y = parent.y + k.y;
   }
 }
 
