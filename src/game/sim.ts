@@ -385,7 +385,10 @@ function lagrangeReady(sim: Sim, pt: LagrangePoint) {
   const d = Math.hypot(sim.ship.x - pt.x, sim.ship.y - pt.y);
   if (d > LAGRANGE_CAPTURE_R) return false;
   const rel = Math.hypot(sim.ship.vx - pt.vx, sim.ship.vy - pt.vy);
-  return rel <= LAGRANGE_CAPTURE_V;
+  if (rel > LAGRANGE_CAPTURE_V) return false;
+  if (atmoDrag(sim) > ORBIT_DRAG_BREAK) return false;
+  if (lagrangePerturbRatio(pt, sim) > ORBIT_PERTURB_BREAK) return false;
+  return true;
 }
 
 function captureLagrange(sim: Sim, pt: LagrangePoint) {
@@ -425,6 +428,14 @@ function stepLockedLagrange(
   ship.reverse = controls.reverse && !ship.thrusting;
   if (ship.thrusting || ship.reverse) {
     breakLagrangeLock(sim);
+    return false;
+  }
+  if (atmoDrag(sim) > ORBIT_DRAG_BREAK) {
+    dumpCurrentLock(sim, ORBIT_DRAG_HINT);
+    return false;
+  }
+  if (lagrangePerturbRatio(pt, sim) > ORBIT_PERTURB_BREAK) {
+    dumpCurrentLock(sim, ORBIT_PERTURB_HINT);
     return false;
   }
   ship.x = pt.x;
@@ -732,12 +743,13 @@ function breakOrbitLock(sim: Sim) {
   sim.orbitLockCooldown = ORBIT_BREAK_COOLDOWN;
 }
 
-function dumpLockedOrbit(sim: Sim, hint: string) {
+function dumpCurrentLock(sim: Sim, hint: string) {
   sim.orbitDragAlarm = true;
   sim.orbitDragHintT = 1.6;
   sim.orbitBreakHint = hint;
   sim.orbitHint = hint;
-  breakOrbitLock(sim);
+  if (sim.lagrangeLockKey) breakLagrangeLock(sim);
+  else breakOrbitLock(sim);
 }
 
 /** Other bodies' gravity at the ship, minus the same pull at the host. Kepler already rides the host's frame. */
@@ -756,12 +768,42 @@ function orbitPerturbRatio(host: Planet, x: number, y: number, planets: Planet[]
   return Math.hypot(ax, ay) / hostPull;
 }
 
+/** Extra bodies beyond the Lagrange pair. The pair is the lock, not a perturbation. */
+function lagrangePerturbRatio(pt: LagrangePoint, sim: Sim) {
+  const body = sim.planets.find((p) => p.id === pt.planetId);
+  const parent = body?.parentId ? sim.planets.find((p) => p.id === body.parentId) : undefined;
+  if (!body || !parent) return Infinity;
+  const pair = new Set([body.id, parent.id]);
+  let ax = 0;
+  let ay = 0;
+  let charA = 0;
+  for (const q of sim.planets) {
+    const pull = bodyAccel(q, sim.ship.x, sim.ship.y, sim.gravityScale);
+    if (pair.has(q.id)) {
+      if (pull.a > charA) charA = pull.a;
+      continue;
+    }
+    ax += pull.ax;
+    ay += pull.ay;
+  }
+  if (charA < 1e-8) return Infinity;
+  return Math.hypot(ax, ay) / charA;
+}
+
 export function orbitPerturb(sim: Sim) {
-  if (!sim.orbitLockId) return 0;
-  const p = sim.planets.find((b) => b.id === sim.orbitLockId);
-  if (!p) return 0;
-  const r = orbitPerturbRatio(p, sim.ship.x, sim.ship.y, sim.planets, sim.gravityScale);
-  return Number.isFinite(r) ? r : 1;
+  if (sim.orbitLockId) {
+    const p = sim.planets.find((b) => b.id === sim.orbitLockId);
+    if (!p) return 0;
+    const r = orbitPerturbRatio(p, sim.ship.x, sim.ship.y, sim.planets, sim.gravityScale);
+    return Number.isFinite(r) ? r : 1;
+  }
+  if (sim.lagrangeLockKey) {
+    const pt = listLagrangePoints(sim).find((p) => p.key === sim.lagrangeLockKey);
+    if (!pt) return 0;
+    const r = lagrangePerturbRatio(pt, sim);
+    return Number.isFinite(r) ? r : 1;
+  }
+  return 0;
 }
 
 function stepLockedOrbit(
@@ -783,11 +825,11 @@ function stepLockedOrbit(
     return false;
   }
   if (atmoDrag(sim) > ORBIT_DRAG_BREAK) {
-    dumpLockedOrbit(sim, ORBIT_DRAG_HINT);
+    dumpCurrentLock(sim, ORBIT_DRAG_HINT);
     return false;
   }
   if (orbitPerturbRatio(p, ship.x, ship.y, sim.planets, sim.gravityScale) > ORBIT_PERTURB_BREAK) {
-    dumpLockedOrbit(sim, ORBIT_PERTURB_HINT);
+    dumpCurrentLock(sim, ORBIT_PERTURB_HINT);
     return false;
   }
   const k = lockedKepler(sim);

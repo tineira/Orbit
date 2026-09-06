@@ -671,7 +671,7 @@ function drawLockBar(ctx: CanvasRenderingContext2D, x: number, y: number, remain
 }
 
 function drawOrbitLockBars(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera) {
-  if (!sim.orbitLockId) return;
+  if (!sim.orbitLockId && !sim.lagrangeLockKey) return;
   const zoom = Math.max(0.04, cam.zoom);
   const dragLeft = 1 - Math.min(1, atmoDrag(sim) / ORBIT_DRAG_BREAK);
   const gravLeft = 1 - Math.min(1, orbitPerturb(sim) / ORBIT_PERTURB_BREAK);
