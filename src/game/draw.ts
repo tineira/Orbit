@@ -1,6 +1,15 @@
 import type { Camera, FlightStatus, Particle, Planet, Ship } from "./types";
 import type { Sim } from "./sim";
-import { atmoRadius, bodyMu, forwardOf, gravityPulls, predictPath, predictPlanetPaths } from "./sim";
+import {
+  atmoRadius,
+  bodyMu,
+  forwardOf,
+  gravityPulls,
+  predictPath,
+  predictPlanetPaths,
+  predictRelativePath,
+  relativePathTarget,
+} from "./sim";
 import { getMinimapWorldR, orbitShellAlts } from "./world";
 
 type DrawOpts = {
@@ -40,6 +49,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   drawPath(ctx, path, sim);
   for (const p of sim.planets) drawPlanet(ctx, p, cam);
   drawOrbitShell(ctx, sim);
+  drawRelativePath(ctx, sim);
   drawPlanetPaths(ctx, sim);
   drawParticles(ctx, sim.particles);
   drawGravityArrows(ctx, sim);
@@ -251,6 +261,21 @@ function drawPath(ctx: CanvasRenderingContext2D, path: { x: number; y: number }[
   ctx.strokeStyle = "rgba(232, 230, 224, 0.22)";
   ctx.lineWidth = 1.1;
   ctx.setLineDash([5, 7]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawRelativePath(ctx: CanvasRenderingContext2D, sim: Sim) {
+  const target = relativePathTarget(sim);
+  if (!target) return;
+  const path = predictRelativePath(sim, target, 24);
+  if (path.length < 2) return;
+  ctx.beginPath();
+  ctx.moveTo(sim.ship.x, sim.ship.y);
+  for (const p of path) ctx.lineTo(p.x, p.y);
+  ctx.strokeStyle = hexRgbaLift(target.colorA, 0.82);
+  ctx.lineWidth = 1.55;
+  ctx.setLineDash([4, 6]);
   ctx.stroke();
   ctx.setLineDash([]);
 }

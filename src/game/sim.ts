@@ -881,6 +881,44 @@ export function adjustAtmoScale(sim: Sim, dir: number) {
   return true;
 }
 
+export function relativePathTarget(sim: Sim): Planet | null {
+  if (sim.phase !== "flight" || sim.landedId || sim.orbitLockId) return null;
+  const p = sim.nearest;
+  if (!p || p.kind === "star") return null;
+  const dist = Math.hypot(sim.ship.x - p.x, sim.ship.y - p.y);
+  const alt = dist - p.radius;
+  const { maxAlt } = orbitShellAlts(p, sim.planets);
+  const near = Math.max(maxAlt * 2.4, atmoRadius(p) - p.radius + 40, 220);
+  if (alt > near || alt < -2) return null;
+  return p;
+}
+
+export function predictRelativePath(sim: Sim, target: Planet, seconds = 24): { x: number; y: number }[] {
+  const pts: { x: number; y: number }[] = [];
+  let x = sim.ship.x;
+  let y = sim.ship.y;
+  let vx = sim.ship.vx;
+  let vy = sim.ship.vy;
+  const bodies = copyPlanets(sim.planets);
+  const origin = { x: target.x, y: target.y };
+  const dt = 1 / 36;
+  const n = Math.floor(seconds / dt);
+  for (let i = 0; i < n; i++) {
+    stepOrbitingBodies(bodies, dt, sim.gravityScale);
+    const g = gravityAt(x, y, bodies, sim.gravityScale);
+    const drag = dragNear(x, y, vx, vy, bodies, sim.atmoScale);
+    vx += (g.ax + drag.ax) * dt;
+    vy += (g.ay + drag.ay) * dt;
+    x += vx * dt;
+    y += vy * dt;
+    const body = bodies.find((b) => b.id === target.id);
+    if (!body) break;
+    pts.push({ x: origin.x + (x - body.x), y: origin.y + (y - body.y) });
+    if (Math.hypot(x - body.x, y - body.y) < body.radius + 4) break;
+  }
+  return pts;
+}
+
 export function predictPath(sim: Sim, seconds = 9): { x: number; y: number }[] {
   if (sim.orbitLockId) {
     const p = sim.planets.find((b) => b.id === sim.orbitLockId);
