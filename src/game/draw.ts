@@ -1,6 +1,7 @@
 import type { Camera, FlightStatus, Particle, Planet, Ship } from "./types";
 import type { Sim } from "./sim";
 import {
+  atmoDrag,
   atmoRadius,
   bodyMu,
   forwardOf,
@@ -8,12 +9,13 @@ import {
   gravityPulls,
   LAGRANGE_CAPTURE_R,
   listLagrangePoints,
+  orbitPerturb,
   predictPath,
   predictPlanetPaths,
   predictRelativePath,
   relativePathTarget,
 } from "./sim";
-import { getMinimapWorldR, orbitShellAlts } from "./world";
+import { getMinimapWorldR, ORBIT_DRAG_BREAK, ORBIT_PERTURB_BREAK, orbitShellAlts } from "./world";
 
 type DrawOpts = {
   w: number;
@@ -59,6 +61,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   drawParticles(ctx, sim.particles);
   drawGravityArrows(ctx, sim);
   drawShip(ctx, sim.ship, sim.phase !== "title" && sim.ship.thrusting);
+  drawOrbitLockBars(ctx, sim, cam);
 
   ctx.restore();
   drawVignette(ctx, cssW, cssH);
@@ -629,6 +632,56 @@ function drawShip(ctx: CanvasRenderingContext2D, ship: Ship, thrusting: boolean)
   ctx.lineTo(4, 6);
   ctx.stroke();
 
+  ctx.restore();
+}
+
+const LOCK_PIPS = 8;
+const LOCK_PIP_W = 6;
+const LOCK_PIP_H = 8;
+const LOCK_PIP_GAP = 2;
+const LOCK_BAR_PAD = 2;
+const LOCK_BAR_W = LOCK_BAR_PAD * 2 + LOCK_PIPS * LOCK_PIP_W + (LOCK_PIPS - 1) * LOCK_PIP_GAP;
+const LOCK_BAR_H = LOCK_BAR_PAD * 2 + LOCK_PIP_H;
+
+function lockBarColor(remaining: number, healthy: string) {
+  if (remaining > 0.55) return healthy;
+  if (remaining > 0.28) return "#c4a05a";
+  return "#c45c4a";
+}
+
+function drawLockBar(ctx: CanvasRenderingContext2D, x: number, y: number, remaining: number, healthy: string) {
+  const t = Math.max(0, Math.min(1, remaining));
+  const filled = Math.round(t * LOCK_PIPS);
+  const color = lockBarColor(t, healthy);
+  ctx.fillStyle = "#07080c";
+  ctx.fillRect(x, y, LOCK_BAR_W, LOCK_BAR_H);
+  for (let i = 0; i < LOCK_PIPS; i++) {
+    const px = x + LOCK_BAR_PAD + i * (LOCK_PIP_W + LOCK_PIP_GAP);
+    const py = y + LOCK_BAR_PAD;
+    if (i < filled) {
+      ctx.fillStyle = color;
+      ctx.fillRect(px, py, LOCK_PIP_W, LOCK_PIP_H);
+      ctx.fillStyle = "rgba(236, 234, 228, 0.45)";
+      ctx.fillRect(px, py, LOCK_PIP_W, 2);
+    } else {
+      ctx.fillStyle = "#1a1d24";
+      ctx.fillRect(px, py, LOCK_PIP_W, LOCK_PIP_H);
+    }
+  }
+}
+
+function drawOrbitLockBars(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera) {
+  if (!sim.orbitLockId) return;
+  const zoom = Math.max(0.04, cam.zoom);
+  const dragLeft = 1 - Math.min(1, atmoDrag(sim) / ORBIT_DRAG_BREAK);
+  const gravLeft = 1 - Math.min(1, orbitPerturb(sim) / ORBIT_PERTURB_BREAK);
+  ctx.save();
+  ctx.translate(sim.ship.x, sim.ship.y);
+  ctx.scale(1 / zoom, 1 / zoom);
+  const x = -Math.round(LOCK_BAR_W / 2);
+  const y = Math.round(13 * zoom + 10);
+  drawLockBar(ctx, x, y, dragLeft, "#7d9b86");
+  drawLockBar(ctx, x, y + LOCK_BAR_H + 3, gravLeft, "#b7c0cc");
   ctx.restore();
 }
 

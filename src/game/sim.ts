@@ -756,6 +756,14 @@ function orbitPerturbRatio(host: Planet, x: number, y: number, planets: Planet[]
   return Math.hypot(ax, ay) / hostPull;
 }
 
+export function orbitPerturb(sim: Sim) {
+  if (!sim.orbitLockId) return 0;
+  const p = sim.planets.find((b) => b.id === sim.orbitLockId);
+  if (!p) return 0;
+  const r = orbitPerturbRatio(p, sim.ship.x, sim.ship.y, sim.planets, sim.gravityScale);
+  return Number.isFinite(r) ? r : 1;
+}
+
 function stepLockedOrbit(
   sim: Sim,
   dt: number,
