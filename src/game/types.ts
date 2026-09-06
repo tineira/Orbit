@@ -64,6 +64,18 @@ export type Camera = {
   trauma: number;
 };
 
+export type SolarFlare = {
+  angle: number;
+  span: number;
+  spin: number;
+  reach: number;
+  baseW: number;
+  life: number;
+  max: number;
+  seed: number;
+  strands: number;
+};
+
 export type Phase = "creating" | "title" | "flight" | "landed" | "crashed";
 
 export type FlightStatus = "deep" | "approach" | "orbit" | "lagrange" | "too-fast" | "landed" | "crashed";
@@ -108,6 +120,7 @@ export type HudSnapshot = {
   orbitEcc: number;
   landedId: string | null;
   crashedId: string | null;
+  burned: boolean;
   muted: boolean;
   touching: boolean;
   gravityScale: number;

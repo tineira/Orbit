@@ -213,7 +213,7 @@ export function Overlay({
       ) : null}
 
       {hud.phase === "crashed" && crashed ? (
-        <CrashCard planet={crashed} onReboot={onReboot} />
+        <CrashCard planet={crashed} burned={hud.burned} onReboot={onReboot} />
       ) : null}
     </div>
   );
@@ -365,9 +365,11 @@ function LandingCard({
 
 function CrashCard({
   planet,
+  burned,
   onReboot,
 }: {
   planet: NonNullable<ReturnType<typeof planetById>>;
+  burned: boolean;
   onReboot: () => void;
 }) {
   return (
@@ -377,9 +379,11 @@ function CrashCard({
         className="pointer-events-auto w-full max-w-md rounded-xl bg-surface border border-border p-5 sm:p-6 shadow-lg"
       >
         <p className="font-mono text-xs tracking-[0.2em] uppercase text-warn">Hull loss</p>
-        <h2 className="mt-2 font-display text-3xl leading-tight text-fg">You crashed</h2>
+        <h2 className="mt-2 font-display text-3xl leading-tight text-fg">{burned ? "You burned" : "You crashed"}</h2>
         <p className="mt-3 text-sm leading-relaxed text-muted">
-          The approach into {planet.name} was too fast. The well won. Bring the craft back and try a slower pass — or catch an orbit first.
+          {burned
+            ? `A flare from ${planet.name} reached the craft.`
+            : `The approach into ${planet.name} was too fast. The well won. Bring the craft back and try a slower pass — or catch an orbit first.`}
         </p>
         <div className="mt-5">
           <button

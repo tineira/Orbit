@@ -46,6 +46,8 @@ declare global {
       getPhase?: () => string;
       getLanded?: () => string | null;
       getCrashed?: () => string | null;
+      getBurned?: () => boolean;
+      getFlares?: () => { angle: number; span: number; reach: number; life: number; max: number }[];
       getOrbitLock?: () => string | null;
       getOrbitE?: () => number;
       getNearestBody?: () => { id: string; x: number; y: number; mass: number; radius: number } | null;
@@ -98,6 +100,7 @@ const CREATING_HUD: HudSnapshot = {
   orbitEcc: 0,
   landedId: null,
   crashedId: null,
+  burned: false,
   muted: false,
   touching: false,
   gravityScale: 1,
@@ -186,6 +189,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       orbitEcc: sim.orbitLockId ? sim.orbitLockE : 0,
       landedId: sim.landedId,
       crashedId: sim.crashedId,
+      burned: sim.burned,
       muted,
       touching: !!input.state.pointer?.down,
       gravityScale: sim.gravityScale,
@@ -272,6 +276,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         s.phase = "flight";
         s.landedId = null;
         s.crashedId = null;
+        s.burned = false;
         s.orbitLockId = null;
         s.orbitDwell = 0;
         s.orbitLockCooldown = 0;
@@ -296,6 +301,9 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getPhase: () => s.phase,
       getLanded: () => s.landedId,
       getCrashed: () => s.crashedId,
+      getBurned: () => s.burned,
+      getFlares: () =>
+        s.flares.map((f) => ({ angle: f.angle, span: f.span, reach: f.reach, life: f.life, max: f.max })),
       getOrbitLock: () => s.orbitLockId,
       getOrbitE: () => (s.orbitLockId ? s.orbitLockE : 0),
       getNearestBody: () =>
@@ -455,6 +463,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     getPhase: () => "creating",
     getLanded: () => null,
     getCrashed: () => null,
+    getBurned: () => false,
+    getFlares: () => [],
     getOrbitLock: () => null,
     getOrbitE: () => 0,
     getNearestBody: () => null,

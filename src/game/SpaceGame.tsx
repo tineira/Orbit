@@ -18,6 +18,7 @@ const INITIAL: HudSnapshot = {
   orbitEcc: 0,
   landedId: null,
   crashedId: null,
+  burned: false,
   muted: false,
   touching: false,
   gravityScale: 1,

@@ -30,6 +30,8 @@ export const ORBIT_SHELL_STAR_MAX_PAD = 520;
 /** Kepler apoapsis altitude cap for star locks. */
 export const KEPLER_STAR_APO_FACTOR = 6;
 export const KEPLER_STAR_APO_CAP = 1600;
+export const FLARE_CAP = 2;
+export const FLARE_LONG_CHANCE = 0.18;
 /** Atmosphere stronger than this dumps a locked orbit. */
 export const ORBIT_DRAG_BREAK = 0.4;
 /** Tidal pull / host gravity. Same 0.4 feel as drag, but a ratio — raw n-body vs host would dump every moon orbit (the parent is always pulling). */

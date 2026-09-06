@@ -1,4 +1,4 @@
-import type { Camera, FlightStatus, Particle, Planet, Ship } from "./types";
+import type { Camera, FlightStatus, Particle, Planet, Ship, SolarFlare } from "./types";
 import type { Sim } from "./sim";
 import {
   atmoDrag,
@@ -14,8 +14,10 @@ import {
   predictPlanetPaths,
   predictRelativePath,
   relativePathTarget,
+  flareArcPoints,
+  flareApexNow,
 } from "./sim";
-import { getMinimapWorldR, ORBIT_DRAG_BREAK, ORBIT_PERTURB_BREAK, orbitShellAlts } from "./world";
+import { getMinimapWorldR, ORBIT_DRAG_BREAK, ORBIT_PERTURB_BREAK, orbitShellAlts, STAR_ATMO_FACTOR } from "./world";
 
 type DrawOpts = {
   w: number;
@@ -50,11 +52,13 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
 
   if (sim.showGravityGrid) drawGravityGrid(ctx, sim, cam, cssW, cssH);
   drawSunBloom(ctx, sim);
+  drawStarCorona(ctx, sim);
   drawLockRing(ctx, sim);
   const path = predictPath(sim, 10);
   drawPath(ctx, path, sim);
   const star = sim.planets.find((b) => b.kind === "star") ?? null;
   for (const p of sim.planets) drawPlanet(ctx, p, cam, star, sim.planets);
+  drawSolarFlares(ctx, sim);
   drawOrbitShell(ctx, sim);
   drawLagrangePoints(ctx, sim, cam);
   drawRelativePath(ctx, sim);
@@ -287,14 +291,118 @@ function drawStars(ctx: CanvasRenderingContext2D, cam: Camera, cssW: number, css
 function drawSunBloom(ctx: CanvasRenderingContext2D, sim: Sim) {
   const star = sim.planets.find((p) => p.kind === "star");
   if (!star) return;
-  const g = ctx.createRadialGradient(star.x, star.y, star.radius * 0.85, star.x, star.y, star.radius * 2.8);
-  g.addColorStop(0, "rgba(255, 186, 74, 0.1)");
-  g.addColorStop(0.45, "rgba(255, 170, 70, 0.05)");
-  g.addColorStop(1, "rgba(255, 170, 70, 0)");
+  const outer = star.radius * 3.15;
+  const g = ctx.createRadialGradient(star.x, star.y, star.radius * 0.7, star.x, star.y, outer);
+  g.addColorStop(0, "rgba(255, 196, 90, 0.16)");
+  g.addColorStop(0.38, "rgba(255, 170, 70, 0.07)");
+  g.addColorStop(1, "rgba(255, 150, 50, 0)");
   ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.arc(star.x, star.y, star.radius * 2.8, 0, Math.PI * 2);
+  ctx.arc(star.x, star.y, outer, 0, Math.PI * 2);
   ctx.fill();
+}
+
+function drawStarCorona(ctx: CanvasRenderingContext2D, sim: Sim) {
+  const star = sim.planets.find((p) => p.kind === "star");
+  if (!star) return;
+  const R = star.radius;
+  const corona = R * STAR_ATMO_FACTOR;
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const g = ctx.createRadialGradient(star.x, star.y, R * 0.92, star.x, star.y, corona);
+  g.addColorStop(0, hexRgba(star.colorA, 0.34));
+  g.addColorStop(0.28, hexRgba(star.colorB, 0.16));
+  g.addColorStop(1, "rgba(255, 140, 40, 0)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(star.x, star.y, corona, 0, Math.PI * 2);
+  ctx.fill();
+
+  const lobes = sim.reducedMotion ? 5 : 9;
+  const t = sim.reducedMotion ? 0 : performance.now() * 0.00012;
+  for (let i = 0; i < lobes; i++) {
+    const a = t + i * ((Math.PI * 2) / lobes) + hash(i * 3.1) * 0.7;
+    const reach = R * (1.12 + hash(i * 7.4) * 0.38);
+    const w = R * (0.16 + hash(i * 2.2) * 0.12);
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    const lg = ctx.createRadialGradient(star.x + c * R * 0.2, star.y + s * R * 0.2, R * 0.1, star.x + c * reach * 0.55, star.y + s * reach * 0.55, w);
+    lg.addColorStop(0, `rgba(255, 210, 120, ${sim.reducedMotion ? 0.07 : 0.11})`);
+    lg.addColorStop(1, "rgba(255, 140, 40, 0)");
+    ctx.fillStyle = lg;
+    ctx.beginPath();
+    ctx.ellipse(star.x + c * (reach * 0.35), star.y + s * (reach * 0.35), w, reach * 0.42, a, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function strokeLoop(ctx: CanvasRenderingContext2D, pts: { x: number; y: number }[]) {
+  if (pts.length < 2) return;
+  ctx.beginPath();
+  ctx.moveTo(pts[0]!.x, pts[0]!.y);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
+  ctx.stroke();
+}
+
+function drawSolarFlares(ctx: CanvasRenderingContext2D, sim: Sim) {
+  const star = sim.planets.find((p) => p.kind === "star");
+  if (!star || !sim.flares.length) return;
+  const now = performance.now();
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  for (const f of sim.flares) {
+    if (flareApexNow(f, star.radius) <= star.radius + 8) continue;
+    const age = 1 - Math.max(0, Math.min(1, f.life / f.max));
+    const env = age < 0.2 ? age / 0.2 : age > 0.72 ? 1 - (age - 0.72) / 0.28 : 1;
+    const glow = Math.max(0.2, env);
+    const main = flareArcPoints(star, f, 28);
+    if (main.length < 3) continue;
+
+    ctx.strokeStyle = `rgba(255, 90, 40, ${0.1 * glow})`;
+    ctx.lineWidth = f.baseW * 2.4;
+    strokeLoop(ctx, main);
+    ctx.strokeStyle = `rgba(255, 140, 55, ${0.22 * glow})`;
+    ctx.lineWidth = f.baseW * 1.15;
+    strokeLoop(ctx, main);
+
+    const strands = sim.reducedMotion ? Math.min(3, f.strands) : f.strands;
+    for (let i = 0; i < strands; i++) {
+      const ghost: SolarFlare = {
+        ...f,
+        angle: f.angle + (hash(f.seed + i * 3.7) - 0.5) * 0.1,
+        span: f.span * (0.82 + hash(f.seed + i * 1.9) * 0.28),
+        reach: f.reach * (0.88 + hash(f.seed + i * 5.1) * 0.2),
+      };
+      const pts = flareArcPoints(star, ghost, 24);
+      const bright = 0.28 + hash(f.seed + i) * 0.35;
+      ctx.strokeStyle = `rgba(255, ${150 + Math.round(hash(i + 4) * 70)}, ${70 + Math.round(hash(i + 8) * 50)}, ${bright * glow})`;
+      ctx.lineWidth = Math.max(1.4, f.baseW * (0.18 + hash(i * 2.4) * 0.22));
+      strokeLoop(ctx, pts);
+    }
+
+    ctx.strokeStyle = `rgba(255, 220, 150, ${0.42 * glow})`;
+    ctx.lineWidth = Math.max(1.2, f.baseW * 0.22);
+    strokeLoop(ctx, main);
+
+    if (!sim.reducedMotion && age > 0.28 && age < 0.92) {
+      const rain = 7 + Math.floor(hash(f.seed) * 6);
+      for (let i = 0; i < rain; i++) {
+        const fall = ((now * 0.00013 + hash(f.seed + i * 9) + age * 0.85) % 1);
+        const side = hash(f.seed + i * 2) < 0.5 ? fall * 0.5 : 1 - fall * 0.5;
+        const k = Math.min(main.length - 1, Math.max(0, Math.floor(side * (main.length - 1))));
+        const p = main[k]!;
+        const sz = 1.6 + hash(i * 6.1) * 2.2;
+        ctx.fillStyle = `rgba(255, 190, 110, ${0.35 * glow})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, sz, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  ctx.restore();
 }
 
 function drawOrbitShell(ctx: CanvasRenderingContext2D, sim: Sim) {
@@ -496,7 +604,7 @@ function haloOuter(p: Planet) {
   const a = atmoRadius(p);
   if (p.kind === "moon") return p.radius + (a - p.radius) * 0.42;
   if (p.kind === "gas") return a;
-  if (p.kind === "star") return p.radius * 1.15;
+  if (p.kind === "star") return p.radius * STAR_ATMO_FACTOR;
   return p.radius + (a - p.radius) * 0.72;
 }
 

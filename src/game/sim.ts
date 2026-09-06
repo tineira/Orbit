@@ -1,4 +1,4 @@
-import type { Camera, FlightStatus, Particle, Planet, Ship, VerboseDiag } from "./types";
+import type { Camera, FlightStatus, Particle, Planet, Ship, SolarFlare, VerboseDiag } from "./types";
 import {
   G,
   GRAVITY_BASE,
@@ -14,6 +14,8 @@ import {
   STAR_ATMO_FACTOR,
   KEPLER_STAR_APO_FACTOR,
   KEPLER_STAR_APO_CAP,
+  FLARE_CAP,
+  FLARE_LONG_CHANCE,
   getStart,
   getSystem,
   RETRO_FORCE,
@@ -61,6 +63,9 @@ export type Sim = {
   lagrangeLockKey: string | null;
   lagrangeDwellKey: string | null;
   lagrangeDwell: number;
+  flares: SolarFlare[];
+  flareWait: number;
+  burned: boolean;
 };
 
 export const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
@@ -119,6 +124,9 @@ export function createSim(): Sim {
     lagrangeLockKey: null,
     lagrangeDwellKey: null,
     lagrangeDwell: 0,
+    flares: [],
+    flareWait: 6,
+    burned: false,
   };
   landOnHome(sim);
   return sim;
@@ -157,6 +165,9 @@ export function rebootSim(sim: Sim) {
   sim.lagrangeLockKey = null;
   sim.lagrangeDwellKey = null;
   sim.lagrangeDwell = 0;
+  sim.flares = [];
+  sim.flareWait = 5 + Math.random() * 6;
+  sim.burned = false;
   landOnHome(sim);
   sim.camera.zoomAuto = 0.96;
   sim.camera.zoom = 0.96 * sim.camera.userZoom;
@@ -960,6 +971,7 @@ export function stepSim(
   controls: { steer: number; forward: boolean; reverse: boolean; aimYaw: number | null; aimThrust: boolean },
 ) {
   updateMoons(sim, dt);
+  stepFlares(sim, dt);
 
   const ship = sim.ship;
   if (sim.phase === "title") {
@@ -982,7 +994,13 @@ export function stepSim(
   }
 
   if (sim.phase === "crashed") {
-    if (sim.crashedId) {
+    if (sim.burned) {
+      ship.vx *= Math.max(0, 1 - dt * 1.8);
+      ship.vy *= Math.max(0, 1 - dt * 1.8);
+      const g = gravityAt(ship.x, ship.y, sim.planets, sim.gravityScale);
+      sim.nearest = g.nearest;
+      sim.altitude = g.dist - g.nearest.radius;
+    } else if (sim.crashedId) {
       const p = sim.planets.find((b) => b.id === sim.crashedId);
       if (p) {
         carryOnSurface(sim, p, dt);
@@ -1025,6 +1043,7 @@ export function stepSim(
 
   if (sim.lagrangeLockKey) {
     if (stepLockedLagrange(sim, dt, controls)) {
+      if (shipHitsFlare(sim)) burnInFlare(sim);
       decayParticles(sim, dt);
       updateCamera(sim, dt);
       return;
@@ -1033,6 +1052,7 @@ export function stepSim(
 
   if (sim.orbitLockId) {
     if (stepLockedOrbit(sim, dt, controls)) {
+      if (shipHitsFlare(sim)) burnInFlare(sim);
       decayParticles(sim, dt);
       updateCamera(sim, dt);
       return;
@@ -1068,6 +1088,7 @@ export function stepSim(
   ship.y += ship.vy * dt;
 
   collidePlanets(sim);
+  if (sim.phase === "flight" && shipHitsFlare(sim)) burnInFlare(sim);
 
   sim.nearest = nearest;
   sim.altitude = dist - nearest.radius;
@@ -1100,6 +1121,7 @@ function crashInto(sim: Sim, p: Planet, nx: number, ny: number, rel: number) {
   const s = sim.ship;
   sim.phase = "crashed";
   sim.crashedId = p.id;
+  sim.burned = false;
   sim.landedId = null;
   sim.landedAngle = Math.atan2(nx, -ny);
   sim.orbitLockId = null;
@@ -1126,6 +1148,144 @@ function crashInto(sim: Sim, p: Planet, nx: number, ny: number, rel: number) {
     );
   }
   void rel;
+}
+
+export function flareApexNow(f: SolarFlare, starR: number) {
+  const age = 1 - Math.max(0, Math.min(1, f.life / f.max));
+  let env = 0;
+  if (age < 0.2) {
+    const t = age / 0.2;
+    env = t * t * (3 - 2 * t);
+  } else if (age < 0.72) env = 1;
+  else {
+    const t = (age - 0.72) / 0.28;
+    env = 1 - t * t * (3 - 2 * t);
+  }
+  return starR + (f.reach - starR) * env;
+}
+
+function spawnFlare(star: Planet, reduced: boolean): SolarFlare {
+  const long = Math.random() < FLARE_LONG_CHANCE;
+  const reach = star.radius * (long ? 3.05 + Math.random() * 0.95 : 1.52 + Math.random() * 0.72);
+  const max = reduced ? 12 + Math.random() * 6 : 8.5 + Math.random() * 7.5;
+  return {
+    angle: Math.random() * Math.PI * 2,
+    span: (long ? 0.52 : 0.36) + Math.random() * 0.55,
+    spin: reduced ? 0 : (Math.random() - 0.5) * 0.045,
+    reach,
+    baseW: 7 + Math.random() * 6,
+    life: max,
+    max,
+    seed: Math.random() * 1000,
+    strands: reduced ? 3 : 5 + Math.floor(Math.random() * 3),
+  };
+}
+
+function stepFlares(sim: Sim, dt: number) {
+  const star = sim.planets.find((p) => p.kind === "star");
+  if (!star) {
+    sim.flares.length = 0;
+    return;
+  }
+  for (const f of sim.flares) {
+    f.life -= dt;
+    f.angle += f.spin * dt;
+  }
+  sim.flares = sim.flares.filter((f) => f.life > 0);
+  const cap = sim.reducedMotion ? 1 : FLARE_CAP;
+  sim.flareWait -= dt;
+  if (sim.flareWait > 0) return;
+  if (sim.flares.length < cap) sim.flares.push(spawnFlare(star, sim.reducedMotion));
+  sim.flareWait = sim.reducedMotion ? 14 + Math.random() * 8 : 8 + Math.random() * 10;
+}
+
+function distPointSeg(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const l2 = dx * dx + dy * dy;
+  if (l2 < 1e-8) return { d: Math.hypot(px - ax, py - ay), t: 0 };
+  let t = ((px - ax) * dx + (py - ay) * dy) / l2;
+  if (t < 0) t = 0;
+  else if (t > 1) t = 1;
+  return { d: Math.hypot(px - (ax + t * dx), py - (ay + t * dy)), t };
+}
+
+export function flareArcPoints(star: Planet, f: SolarFlare, n = 22): { x: number; y: number }[] {
+  const R = star.radius;
+  const apex = flareApexNow(f, R);
+  if (apex < R + 8) return [];
+  const alpha = Math.max(0.12, f.span * 0.5);
+  const ux = Math.cos(f.angle);
+  const uy = Math.sin(f.angle);
+  const ax = star.x + Math.cos(f.angle - alpha) * R;
+  const ay = star.y + Math.sin(f.angle - alpha) * R;
+  const bx = star.x + Math.cos(f.angle + alpha) * R;
+  const by = star.y + Math.sin(f.angle + alpha) * R;
+  const cDist = 2 * apex - R * Math.cos(alpha);
+  const cx = star.x + ux * cDist;
+  const cy = star.y + uy * cDist;
+  const pts: { x: number; y: number }[] = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const mt = 1 - t;
+    pts.push({
+      x: mt * mt * ax + 2 * mt * t * cx + t * t * bx,
+      y: mt * mt * ay + 2 * mt * t * cy + t * t * by,
+    });
+  }
+  return pts;
+}
+
+export function shipHitsFlare(sim: Sim): boolean {
+  const star = sim.planets.find((p) => p.kind === "star");
+  if (!star || !sim.flares.length) return false;
+  const sx = sim.ship.x;
+  const sy = sim.ship.y;
+  for (const f of sim.flares) {
+    const pts = flareArcPoints(star, f, 18);
+    if (pts.length < 2) continue;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1]!;
+      const b = pts[i]!;
+      const hit = distPointSeg(sx, sy, a.x, a.y, b.x, b.y);
+      if (hit.d < f.baseW + SHIP_HULL * 0.65) return true;
+    }
+  }
+  return false;
+}
+
+function burnInFlare(sim: Sim) {
+  const star = sim.planets.find((p) => p.kind === "star");
+  if (!star || sim.phase === "crashed") return;
+  const s = sim.ship;
+  sim.phase = "crashed";
+  sim.burned = true;
+  sim.crashedId = star.id;
+  sim.landedId = null;
+  sim.orbitLockId = null;
+  sim.orbitDwell = 0;
+  sim.lagrangeLockKey = null;
+  sim.lagrangeDwell = 0;
+  sim.status = "crashed";
+  sim.orbitHint = null;
+  s.thrusting = false;
+  s.reverse = false;
+  s.vx *= 0.35;
+  s.vy *= 0.35;
+  sim.camera.trauma = 1;
+  const n = sim.reducedMotion ? 8 : 22;
+  for (let i = 0; i < n; i++) {
+    spawn(
+      sim,
+      s.x,
+      s.y,
+      s.vx + (Math.random() - 0.5) * 110,
+      s.vy + (Math.random() - 0.5) * 110,
+      0.4 + Math.random() * 0.45,
+      1.3 + Math.random() * 2.2,
+      22 + Math.random() * 28,
+    );
+  }
 }
 
 function collidePlanets(sim: Sim) {
