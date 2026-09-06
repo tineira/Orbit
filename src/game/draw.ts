@@ -53,7 +53,8 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   drawLockRing(ctx, sim);
   const path = predictPath(sim, 10);
   drawPath(ctx, path, sim);
-  for (const p of sim.planets) drawPlanet(ctx, p, cam);
+  const star = sim.planets.find((b) => b.kind === "star") ?? null;
+  for (const p of sim.planets) drawPlanet(ctx, p, cam, star);
   drawOrbitShell(ctx, sim);
   drawLagrangePoints(ctx, sim, cam);
   drawRelativePath(ctx, sim);
@@ -285,13 +286,13 @@ function drawStars(ctx: CanvasRenderingContext2D, cam: Camera, cssW: number, css
 function drawSunBloom(ctx: CanvasRenderingContext2D, sim: Sim) {
   const star = sim.planets.find((p) => p.kind === "star");
   if (!star) return;
-  const g = ctx.createRadialGradient(star.x, star.y, star.radius * 0.2, star.x, star.y, star.radius * 3.4);
-  g.addColorStop(0, "rgba(255, 210, 120, 0.18)");
-  g.addColorStop(0.35, "rgba(255, 170, 70, 0.07)");
+  const g = ctx.createRadialGradient(star.x, star.y, star.radius * 0.85, star.x, star.y, star.radius * 2.8);
+  g.addColorStop(0, "rgba(255, 186, 74, 0.1)");
+  g.addColorStop(0.45, "rgba(255, 170, 70, 0.05)");
   g.addColorStop(1, "rgba(255, 170, 70, 0)");
   ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.arc(star.x, star.y, star.radius * 3.4, 0, Math.PI * 2);
+  ctx.arc(star.x, star.y, star.radius * 2.8, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -490,85 +491,119 @@ function drawGravityArrows(ctx: CanvasRenderingContext2D, sim: Sim) {
   ctx.restore();
 }
 
-function drawPlanet(ctx: CanvasRenderingContext2D, p: Planet, cam: Camera) {
-  const atmo = atmoRadius(p);
-  const halo = ctx.createRadialGradient(p.x, p.y, p.radius * 0.9, p.x, p.y, atmo);
-  halo.addColorStop(0, p.atmo);
-  halo.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = halo;
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, atmo, 0, Math.PI * 2);
-  ctx.fill();
+function haloOuter(p: Planet) {
+  const a = atmoRadius(p);
+  if (p.kind === "moon") return p.radius + (a - p.radius) * 0.42;
+  if (p.kind === "gas") return a;
+  if (p.kind === "star") return p.radius * 1.15;
+  return p.radius + (a - p.radius) * 0.72;
+}
+
+function lightDir(p: Planet, star: Planet | null) {
+  if (!star || star.id === p.id) return { x: -0.55, y: -0.62 };
+  const x = star.x - p.x;
+  const y = star.y - p.y;
+  const len = Math.hypot(x, y) || 1;
+  return { x: x / len, y: y / len };
+}
+
+function drawPlanet(ctx: CanvasRenderingContext2D, p: Planet, cam: Camera, star: Planet | null) {
+  const r = p.radius;
+  const outer = haloOuter(p);
+  if (p.kind !== "star") {
+    const halo = ctx.createRadialGradient(p.x, p.y, r, p.x, p.y, outer);
+    halo.addColorStop(0, p.atmo);
+    halo.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, outer, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   ctx.save();
   ctx.translate(p.x, p.y);
-  ctx.rotate(p.rotate);
-  const body = ctx.createRadialGradient(-p.radius * 0.35, -p.radius * 0.4, p.radius * 0.15, 0, 0, p.radius);
-  body.addColorStop(0, p.colorA);
-  body.addColorStop(1, p.colorB);
-  ctx.fillStyle = body;
+
+  ctx.fillStyle = p.colorA;
   ctx.beginPath();
-  ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.save();
   ctx.beginPath();
-  ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.clip();
 
   if (p.kind === "gas" && p.bands) {
+    const steps = 28;
     p.bands.forEach((c, i) => {
-      ctx.globalAlpha = 0.28;
+      const mid = -r + ((i + 0.5) / p.bands!.length) * r * 2;
+      const h = r * 0.26;
+      const amp = r * 0.04;
+      const freq = 2.4 + i * 0.35;
+      const phase = p.rotate * (1.15 + i * 0.12) + i * 0.9;
+      ctx.globalAlpha = 0.55;
       ctx.fillStyle = c;
-      const y = -p.radius + ((i + 0.5) / p.bands!.length) * p.radius * 2;
-      ctx.fillRect(-p.radius, y, p.radius * 2, p.radius * 0.22);
+      ctx.beginPath();
+      for (let s = 0; s <= steps; s++) {
+        const x = -r + (2 * r * s) / steps;
+        const y = mid - h / 2 + Math.sin((x / r) * freq + phase) * amp;
+        if (s === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      for (let s = steps; s >= 0; s--) {
+        const x = -r + (2 * r * s) / steps;
+        const y = mid + h / 2 + Math.sin((x / r) * freq + phase + 0.6) * amp * 0.7;
+        ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fill();
     });
     ctx.globalAlpha = 1;
   } else if (p.kind !== "star") {
-    ctx.globalAlpha = 0.22;
+    ctx.rotate(p.rotate);
     ctx.fillStyle = p.colorB;
-    for (let i = 0; i < 5; i++) {
+    const n = p.kind === "moon" ? 8 : 6;
+    for (let i = 0; i < n; i++) {
       const a = hash(i * 3.1 + p.radius) * Math.PI * 2;
-      const r = hash(i * 7.7 + p.mass) * p.radius * 0.55;
-      const s = p.radius * (0.12 + hash(i * 2.2) * 0.22);
+      const cr = Math.sqrt(hash(i * 7.7 + p.mass)) * r * 0.78;
+      const s = r * (0.035 + hash(i * 2.2) * 0.11);
+      ctx.globalAlpha = 0.42 + hash(i * 5.9) * 0.2;
       ctx.beginPath();
-      ctx.ellipse(Math.cos(a) * r, Math.sin(a) * r, s * 1.4, s * 0.7, a, 0, Math.PI * 2);
+      ctx.arc(Math.cos(a) * cr, Math.sin(a) * cr, s, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
   }
-
-  const shade = ctx.createLinearGradient(-p.radius, 0, p.radius, p.radius * 0.4);
-  shade.addColorStop(0, "rgba(0,0,0,0.18)");
-  shade.addColorStop(0.45, "rgba(0,0,0,0)");
-  shade.addColorStop(1, "rgba(0,0,0,0.38)");
-  ctx.fillStyle = shade;
-  ctx.fillRect(-p.radius, -p.radius, p.radius * 2, p.radius * 2);
-  ctx.restore();
-
-  ctx.strokeStyle = "rgba(255,255,255,0.08)";
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
-  ctx.stroke();
   ctx.restore();
 
   if (p.kind === "star") {
-    ctx.save();
-    ctx.globalCompositeOperation = "lighter";
-    const core = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius);
-    core.addColorStop(0, "rgba(255, 248, 220, 0.95)");
-    core.addColorStop(0.45, "rgba(255, 196, 90, 0.7)");
-    core.addColorStop(1, "rgba(210, 110, 30, 0.15)");
+    const core = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+    core.addColorStop(0, p.colorA);
+    core.addColorStop(0.5, hexRgba(p.colorA, 0.85));
+    core.addColorStop(1, p.colorB);
     ctx.fillStyle = core;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.fill();
-    ctx.restore();
+  } else {
+    const L = lightDir(p, star);
+    const night = p.kind === "moon" ? 0.9 : p.kind === "gas" ? 0.78 : 0.84;
+    const shade = ctx.createLinearGradient(-L.x * r, -L.y * r, L.x * r, L.y * r);
+    shade.addColorStop(0, `rgba(7,8,12,${night})`);
+    shade.addColorStop(0.44, `rgba(7,8,12,${night * 0.55})`);
+    shade.addColorStop(0.5, "rgba(7,8,12,0.18)");
+    shade.addColorStop(0.58, "rgba(7,8,12,0)");
+    shade.addColorStop(1, "rgba(7,8,12,0)");
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fillStyle = shade;
+    ctx.fill();
   }
 
+  ctx.restore();
+
   ctx.save();
-  ctx.translate(p.x + p.radius + 12 / cam.zoom, p.y);
+  ctx.translate(p.x + r + 12 / cam.zoom, p.y);
   ctx.scale(1 / cam.zoom, 1 / cam.zoom);
   ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
   ctx.fillStyle = "rgba(236, 234, 228, 0.55)";
