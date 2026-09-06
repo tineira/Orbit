@@ -59,7 +59,7 @@ const SOFT = 18;
 export function createSim(): Sim {
   const { planets: src, start } = getSystem();
   const planets = src.map((p) => ({ ...p }));
-  return {
+  const sim: Sim = {
     ship: freshShip(),
     planets,
     particles: Array.from({ length: PARTICLE_CAP }, () => ({
@@ -98,16 +98,17 @@ export function createSim(): Sim {
     atmoScale: 1,
     showOrbitShell: false,
   };
+  landOnHome(sim);
+  return sim;
 }
 
-function freshShip(gravityScale = 1): Ship {
+function freshShip(): Ship {
   const start = getStart();
-  const k = Math.sqrt(Math.max(0, gravityScale));
   return {
     x: start.x,
     y: start.y,
-    vx: start.vx * k,
-    vy: start.vy * k,
+    vx: start.vx,
+    vy: start.vy,
     yaw: start.yaw,
     mass: SHIP_MASS,
     thrusting: false,
@@ -116,12 +117,9 @@ function freshShip(gravityScale = 1): Ship {
 }
 
 export function rebootSim(sim: Sim) {
-  sim.ship = freshShip(sim.gravityScale);
-  sim.phase = "flight";
-  sim.landedId = null;
+  sim.ship = freshShip();
+  sim.phase = "landed";
   sim.crashedId = null;
-  sim.landedAngle = 0;
-  sim.status = "deep";
   sim.orbitHint = null;
   sim.orbitLockId = null;
   sim.orbitLockR = 0;
@@ -133,9 +131,7 @@ export function rebootSim(sim: Sim) {
   sim.orbitLockCooldown = 0;
   sim.orbitDragAlarm = false;
   sim.orbitDragHintT = 0;
-  const start = getStart();
-  sim.camera.x = start.x;
-  sim.camera.y = start.y;
+  landOnHome(sim);
   sim.camera.zoomAuto = 0.96;
   sim.camera.zoom = 0.96 * sim.camera.userZoom;
   sim.camera.trauma = 0;
@@ -246,11 +242,13 @@ function spawn(sim: Sim, x: number, y: number, vx: number, vy: number, life: num
 
 export function launchSim(sim: Sim) {
   if (sim.phase !== "title") return;
-  sim.phase = "flight";
+  if (sim.landedId) takeoff(sim);
+  else sim.phase = "flight";
 }
 
 export function takeoff(sim: Sim) {
-  if (sim.phase !== "landed" || !sim.landedId) return;
+  if (!sim.landedId) return;
+  if (sim.phase !== "landed" && sim.phase !== "title") return;
   const p = sim.planets.find((b) => b.id === sim.landedId);
   if (!p) return;
   const f = forwardOf(sim.ship.yaw);
@@ -262,8 +260,13 @@ export function takeoff(sim: Sim) {
     sim.ship.yaw = yawWant;
   }
   const dir = forwardOf(sim.ship.yaw);
-  sim.ship.vx = p.vx + dir.x * TAKEOFF_SPEED;
-  sim.ship.vy = p.vy + dir.y * TAKEOFF_SPEED;
+  const r = Math.hypot(sim.ship.x - p.x, sim.ship.y - p.y) || p.radius + SHIP_HULL;
+  const mu = bodyMu(p, sim.gravityScale);
+  const rApo = r + 200;
+  const v2 = Math.max(0, 2 * (mu / r - mu / rApo));
+  const kick = Math.max(TAKEOFF_SPEED, Math.sqrt(v2));
+  sim.ship.vx = p.vx + dir.x * kick;
+  sim.ship.vy = p.vy + dir.y * kick;
   sim.ship.x += dir.x * 8;
   sim.ship.y += dir.y * 8;
   sim.phase = "flight";
@@ -281,6 +284,23 @@ function stickToPlanet(sim: Sim, p: Planet) {
   sim.ship.y = p.y - Math.cos(ang) * pad;
   sim.ship.vx = p.vx;
   sim.ship.vy = p.vy;
+}
+
+function landOnHome(sim: Sim) {
+  const home =
+    sim.planets.find((p) => p.kicker === "Home") ?? sim.planets.find((p) => p.kind === "rocky");
+  if (!home) return;
+  sim.landedId = home.id;
+  sim.landedAngle = 0;
+  sim.ship.yaw = 0;
+  sim.ship.thrusting = false;
+  sim.ship.reverse = false;
+  stickToPlanet(sim, home);
+  sim.nearest = home;
+  sim.altitude = SHIP_HULL * 0.85;
+  sim.status = "landed";
+  sim.camera.x = sim.ship.x;
+  sim.camera.y = sim.ship.y;
 }
 
 function copyPlanets(planets: Planet[]): Planet[] {
@@ -515,11 +535,21 @@ export function stepSim(
 
   const ship = sim.ship;
   if (sim.phase === "title") {
+    if (sim.landedId) {
+      const p = sim.planets.find((b) => b.id === sim.landedId);
+      if (p) {
+        stickToPlanet(sim, p);
+        sim.nearest = p;
+        sim.altitude = SHIP_HULL * 0.85;
+        sim.status = "landed";
+      }
+    } else {
+      const g = gravityAt(ship.x, ship.y, sim.planets, sim.gravityScale);
+      sim.nearest = g.nearest;
+      sim.altitude = g.dist - g.nearest.radius;
+    }
     decayParticles(sim, dt);
     updateCamera(sim, dt);
-    const g = gravityAt(ship.x, ship.y, sim.planets, sim.gravityScale);
-    sim.nearest = g.nearest;
-    sim.altitude = g.dist - g.nearest.radius;
     return;
   }
 
@@ -825,7 +855,7 @@ function stepAlong(steps: readonly number[], value: number, dir: number) {
 }
 
 function syncTitleVelocity(sim: Sim) {
-  if (sim.phase !== "title") return;
+  if (sim.phase !== "title" || sim.landedId) return;
   const start = getStart();
   const k = Math.sqrt(Math.max(0, sim.gravityScale));
   sim.ship.vx = start.vx * k;

@@ -198,7 +198,7 @@ function Title({ onLaunch }: { onLaunch: () => void }) {
         </ul>
         <div className="flex flex-col items-start gap-3">
           <p className="font-mono text-xs text-subtle max-w-xs">
-            Press Enter to fly. Left / right rotate. Up burns. On a phone, tap the sky.
+            Press Enter to take off. Left / right rotate. Up burns. On a phone, tap the sky.
           </p>
           <button
             type="button"
@@ -206,7 +206,7 @@ function Title({ onLaunch }: { onLaunch: () => void }) {
             onClick={onLaunch}
             className="pointer-events-auto h-12 px-5 rounded-lg bg-fg text-accent-fg text-sm font-medium tracking-wide inline-flex items-center gap-3 hover:opacity-90 active:scale-[0.98] transition-[opacity,transform] duration-[var(--motion-quick)] ease-[var(--ease-out)]"
           >
-            <span>Enter the system</span>
+            <span>Take off</span>
             <kbd className="font-mono text-xs tracking-widest uppercase px-1.5 py-0.5 rounded border border-accent-fg/25 opacity-70">
               Enter
             </kbd>

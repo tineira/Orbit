@@ -44,7 +44,6 @@ export function orbitShellAlts(p: Planet, planets: Planet[] = []) {
 }
 
 export const TAKEOFF_SPEED = 20;
-export const START_ALT = 220;
 
 function massFrom(radius: number, surfaceG: number) {
   return (surfaceG * radius * radius) / G;
@@ -172,53 +171,28 @@ function shuffle<T>(rng: () => number, list: T[]): T[] {
   return out;
 }
 
-function placeAroundStar(
+function placeOnRails(
   rng: () => number,
-  starR: number,
-  radii: number[],
-): { x: number; y: number }[] {
-  const n = radii.length;
-  const base = rng() * Math.PI * 2;
-  const pos = radii.map((radius, i) => {
-    const ang = base + (i / n) * Math.PI * 2 + (rng() - 0.5) * 0.42;
-    const dist = lerp(5600, 9400, rng());
+  star: Planet,
+  drafts: { radius: number }[],
+): { orbitR: number; orbitA: number; orbitW: number; x: number; y: number; vx: number; vy: number }[] {
+  const mu = G * GRAVITY_BASE * star.mass;
+  let r = star.radius + 3400;
+  return drafts.map((d, i) => {
+    r += (i === 0 ? 0 : 2050) + d.radius * 1.35 + rng() * 380;
+    const orbitA = rng() * Math.PI * 2;
+    const orbitW = Math.sqrt(mu / (r * r * r));
+    const spd = orbitW * r;
     return {
-      x: Math.cos(ang) * dist,
-      y: Math.sin(ang) * dist,
-      radius,
+      orbitR: r,
+      orbitA,
+      orbitW,
+      x: Math.cos(orbitA) * r,
+      y: Math.sin(orbitA) * r,
+      vx: -Math.sin(orbitA) * spd,
+      vy: Math.cos(orbitA) * spd,
     };
   });
-
-  for (let iter = 0; iter < 28; iter++) {
-    for (let i = 0; i < n; i++) {
-      const a = pos[i]!;
-      const dStar = Math.hypot(a.x, a.y);
-      const minStar = starR + a.radius + 3200;
-      if (dStar < minStar && dStar > 1) {
-        const s = minStar / dStar;
-        a.x *= s;
-        a.y *= s;
-      }
-      for (let j = i + 1; j < n; j++) {
-        const b = pos[j]!;
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const d = Math.hypot(dx, dy);
-        const min = a.radius + b.radius + 3600;
-        if (d > 0.1 && d < min) {
-          const push = (min - d) * 0.52;
-          const nx = dx / d;
-          const ny = dy / d;
-          a.x -= nx * push * 0.5;
-          a.y -= ny * push * 0.5;
-          b.x += nx * push * 0.5;
-          b.y += ny * push * 0.5;
-        }
-      }
-    }
-  }
-
-  return pos.map(({ x, y }) => ({ x, y }));
 }
 
 function makeSystem(seed: number): Planet[] {
@@ -272,15 +246,21 @@ function makeSystem(seed: number): Planet[] {
   const gasG = lerp(13, 17, rng());
   drafts.push({ kind: "gas", radius: gasR, surfaceG: gasG });
 
-  const seats = placeAroundStar(
-    rng,
-    starR,
-    drafts.map((d) => d.radius),
-  );
+  const seats = placeOnRails(rng, star, drafts);
   let rockyI = 0;
 
   drafts.forEach((draft, i) => {
     const seat = seats[i]!;
+    const rail = {
+      parentId: star.id,
+      orbitR: seat.orbitR,
+      orbitA: seat.orbitA,
+      orbitW: seat.orbitW,
+      x: seat.x,
+      y: seat.y,
+      vx: seat.vx,
+      vy: seat.vy,
+    };
     if (draft.kind === "gas") {
       const name = takeName(rng, WORLD_NAMES, used);
       const pal = pick(rng, GAS_PALETTES);
@@ -288,10 +268,7 @@ function makeSystem(seed: number): Planet[] {
         id: slug(name, planets.length),
         name,
         kind: "gas",
-        x: seat.x,
-        y: seat.y,
-        vx: 0,
-        vy: 0,
+        ...rail,
         radius: draft.radius,
         surfaceG: draft.surfaceG,
         mass: massFrom(draft.radius, draft.surfaceG),
@@ -318,10 +295,7 @@ function makeSystem(seed: number): Planet[] {
       id: slug(name, planets.length),
       name,
       kind: "rocky",
-      x: seat.x,
-      y: seat.y,
-      vx: 0,
-      vy: 0,
+      ...rail,
       radius: draft.radius,
       surfaceG: draft.surfaceG,
       mass: massFrom(draft.radius, draft.surfaceG),
@@ -345,6 +319,8 @@ function makeSystem(seed: number): Planet[] {
     const surfaceG = lerp(4.2, 6.4, rng());
     const orbitR = gas.radius * (4.1 + m * 2.3 + rng() * 0.8);
     const orbitA = rng() * Math.PI * 2 + m * 1.7;
+    const orbitW = Math.sqrt((G * GRAVITY_BASE * gas.mass) / (orbitR * orbitR * orbitR));
+    const rel = orbitW * orbitR;
     const pal = moonPal[m % moonPal.length]!;
     planets.push({
       id: slug(name, planets.length),
@@ -352,8 +328,8 @@ function makeSystem(seed: number): Planet[] {
       kind: "moon",
       x: gas.x + Math.cos(orbitA) * orbitR,
       y: gas.y + Math.sin(orbitA) * orbitR,
-      vx: 0,
-      vy: 0,
+      vx: gas.vx + -Math.sin(orbitA) * rel,
+      vy: gas.vy + Math.cos(orbitA) * rel,
       radius,
       surfaceG,
       mass: massFrom(radius, surfaceG),
@@ -366,7 +342,7 @@ function makeSystem(seed: number): Planet[] {
       parentId: gas.id,
       orbitR,
       orbitA,
-      orbitW: Math.sqrt((G * GRAVITY_BASE * gas.mass) / (orbitR * orbitR * orbitR)),
+      orbitW,
       kicker: "Moon",
       title: name,
       body: `A quiet moon of ${gas.name}. Slow down. The well will hold you if you let it.`,
@@ -398,21 +374,21 @@ export function getSystem(): ChartedSystem {
 export function createSystem(seed = (Math.random() * 0xffffffff) >>> 0): ChartedSystem {
   const planets = makeSystem(seed);
   const home = planets.find((p) => p.kicker === "Home") ?? planets.find((p) => p.kind === "rocky")!;
-  const startR = home.radius + START_ALT;
+  const pad = home.radius + SHIP_HULL * 0.85;
   system = {
     seed,
     planets,
     home,
     start: {
       x: home.x,
-      y: home.y - startR,
-      vx: Math.sqrt((G * GRAVITY_BASE * home.mass) / startR),
-      vy: 0,
-      yaw: -Math.PI * 0.5,
+      y: home.y - pad,
+      vx: home.vx,
+      vy: home.vy,
+      yaw: 0,
     },
     minimapWorldR: Math.max(
       10800,
-      planets.reduce((m, p) => Math.max(m, Math.hypot(p.x, p.y) + (p.orbitR ?? 0) + p.radius), 0) * 1.12,
+      planets.reduce((m, p) => Math.max(m, Math.hypot(p.x, p.y) + p.radius), 0) * 1.12,
     ),
   };
   return system;

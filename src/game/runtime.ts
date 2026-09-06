@@ -304,7 +304,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
 
     audio.setThrust(sim.ship.thrusting && playing(), Math.min(1, Math.hypot(sim.ship.vx, sim.ship.vy) / 120));
 
-    if (sim.landedId && sim.landedId !== prevLanded) audio.land();
+    if (sim.landedId && sim.landedId !== prevLanded && sim.phase !== "title") audio.land();
     prevLanded = sim.landedId;
     if (sim.crashedId && sim.crashedId !== prevCrashed) audio.crash();
     prevCrashed = sim.crashedId;

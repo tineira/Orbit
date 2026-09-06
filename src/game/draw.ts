@@ -264,6 +264,7 @@ function drawPlanetPaths(ctx: CanvasRenderingContext2D, sim: Sim) {
   ctx.setLineDash([5, 7]);
   for (const { planet, path } of predictPlanetPaths(sim, 10)) {
     if (path.length < 2) continue;
+    if (sim.landedId === planet.id) continue;
     const end = path[path.length - 1]!;
     if (Math.hypot(end.x - planet.x, end.y - planet.y) < 6) continue;
     ctx.beginPath();
@@ -310,7 +311,7 @@ function hexRgbaLift(hex: string, alpha: number, lift = 0.42) {
 }
 
 function drawGravityArrows(ctx: CanvasRenderingContext2D, sim: Sim) {
-  if (sim.phase === "landed" || sim.phase === "crashed" || sim.phase === "creating") return;
+  if (sim.phase === "landed" || sim.phase === "crashed" || sim.phase === "creating" || sim.landedId) return;
   const ship = sim.ship;
   ctx.save();
   ctx.lineCap = "round";
