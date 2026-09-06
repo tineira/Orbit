@@ -13,13 +13,27 @@ type Props = {
   onMute: () => void;
   onGravity: (dir: number) => void;
   onAtmo: (dir: number) => void;
+  onToggleOrbitShell: () => void;
+  onToggleLagrange: () => void;
+  onToggleGravityGrid: () => void;
 };
 
 function isEnterKey(e: KeyboardEvent) {
   return e.code === "Enter" || e.code === "NumpadEnter" || e.key === "Enter";
 }
 
-export function Overlay({ hud, onLaunch, onTakeoff, onReboot, onMute, onGravity, onAtmo }: Props) {
+export function Overlay({
+  hud,
+  onLaunch,
+  onTakeoff,
+  onReboot,
+  onMute,
+  onGravity,
+  onAtmo,
+  onToggleOrbitShell,
+  onToggleLagrange,
+  onToggleGravityGrid,
+}: Props) {
   const landed = hud.landedId ? planetById(hud.landedId) : null;
   const crashed = hud.crashedId ? planetById(hud.crashedId) : null;
 
@@ -67,6 +81,9 @@ export function Overlay({ hud, onLaunch, onTakeoff, onReboot, onMute, onGravity,
           orbitShell={hud.orbitShell}
           lagrangePoints={hud.lagrangePoints}
           gravityGrid={hud.gravityGrid}
+          onToggleOrbitShell={onToggleOrbitShell}
+          onToggleLagrange={onToggleLagrange}
+          onToggleGravityGrid={onToggleGravityGrid}
         />
       ) : null}
 
@@ -114,12 +131,15 @@ export function Overlay({ hud, onLaunch, onTakeoff, onReboot, onMute, onGravity,
               <span className="hidden sm:inline">Left / right yaw. Up burns. Down retro. + / − or scroll to zoom.</span>
               <span className="sm:hidden">Hold to point and burn. Pinch to zoom.</span>
             </p>
-            <p className="mt-2 hidden sm:flex font-mono text-xs">
+            <p className="mt-2 flex font-mono text-xs">
               <KeyTips
                 orbitShell={hud.orbitShell}
                 lagrangePoints={hud.lagrangePoints}
                 physicsMenu={hud.physicsMenu}
                 gravityGrid={hud.gravityGrid}
+                onToggleOrbitShell={onToggleOrbitShell}
+                onToggleLagrange={onToggleLagrange}
+                onToggleGravityGrid={onToggleGravityGrid}
               />
             </p>
             {hud.orbitShell ? (
@@ -199,12 +219,18 @@ function Title({
   orbitShell,
   lagrangePoints,
   gravityGrid,
+  onToggleOrbitShell,
+  onToggleLagrange,
+  onToggleGravityGrid,
 }: {
   onLaunch: () => void;
   physicsMenu: boolean;
   orbitShell: boolean;
   lagrangePoints: boolean;
   gravityGrid: boolean;
+  onToggleOrbitShell: () => void;
+  onToggleLagrange: () => void;
+  onToggleGravityGrid: () => void;
 }) {
   const destinations = getPlanets().filter((p) => p.kind !== "star");
   return (
@@ -238,12 +264,15 @@ function Title({
           <p className="font-mono text-xs text-subtle max-w-xs">
             Press Enter to take off. Left / right rotate. Up burns. On a phone, tap the sky.
           </p>
-          <p className="hidden sm:flex font-mono text-xs max-w-[12.5rem]">
+          <p className="flex font-mono text-xs max-w-[12.5rem]">
             <KeyTips
               orbitShell={orbitShell}
               lagrangePoints={lagrangePoints}
               physicsMenu={physicsMenu}
               gravityGrid={gravityGrid}
+              onToggleOrbitShell={onToggleOrbitShell}
+              onToggleLagrange={onToggleLagrange}
+              onToggleGravityGrid={onToggleGravityGrid}
             />
           </p>
           <button
@@ -355,33 +384,77 @@ function KeyTips({
   lagrangePoints,
   physicsMenu,
   gravityGrid,
+  onToggleOrbitShell,
+  onToggleLagrange,
+  onToggleGravityGrid,
 }: {
   orbitShell: boolean;
   lagrangePoints: boolean;
   physicsMenu: boolean;
   gravityGrid: boolean;
+  onToggleOrbitShell: () => void;
+  onToggleLagrange: () => void;
+  onToggleGravityGrid: () => void;
 }) {
   return (
-    <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
-      <KeyTip code="O" label="orbit shell" on={orbitShell} />
-      <KeyTip code="L" label="Lagrange" on={lagrangePoints} />
-      <KeyTip code="P" label="physics" on={physicsMenu} />
-      <KeyTip code="G" label="grid" on={gravityGrid} />
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 sm:gap-x-3">
+      <KeyTip code="O" label="orbit shell" on={orbitShell} onToggle={onToggleOrbitShell} />
+      <KeyTip code="L" label="Lagrange" on={lagrangePoints} onToggle={onToggleLagrange} />
+      <KeyTip code="P" label="physics" on={physicsMenu} className="hidden sm:inline-flex" />
+      <KeyTip code="G" label="grid" on={gravityGrid} onToggle={onToggleGravityGrid} />
     </span>
   );
 }
 
-function KeyTip({ code, label, on }: { code: string; label: string; on?: boolean }) {
-  return (
-    <span className={cn("inline-flex items-center gap-1.5", on ? "text-ok" : "text-muted")}>
-      <kbd
+function KeyTip({
+  code,
+  label,
+  on,
+  onToggle,
+  className,
+}: {
+  code: string;
+  label: string;
+  on?: boolean;
+  onToggle?: () => void;
+  className?: string;
+}) {
+  const kbd = (
+    <kbd
+      className={cn(
+        "font-mono text-[10px] tracking-widest uppercase px-1.5 py-0.5 rounded border",
+        on ? "border-ok/40 text-ok" : "border-border text-fg/70",
+      )}
+    >
+      {code}
+    </kbd>
+  );
+  const color = on ? "text-ok" : "text-muted";
+  if (onToggle) {
+    return (
+      <button
+        type="button"
+        data-ui
+        aria-label={label}
+        aria-pressed={on}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle();
+        }}
         className={cn(
-          "font-mono text-[10px] tracking-widest uppercase px-1 py-0.5 rounded border",
-          on ? "border-ok/40 text-ok" : "border-border text-fg/70",
+          "pointer-events-auto inline-flex items-center gap-1.5 rounded-md min-h-11 px-1.5 sm:min-h-0 sm:px-0",
+          color,
+          className,
         )}
       >
-        {code}
-      </kbd>
+        {kbd}
+        <span className="hidden sm:inline">{label}</span>
+      </button>
+    );
+  }
+  return (
+    <span className={cn("inline-flex items-center gap-1.5", color, className)}>
+      {kbd}
       <span>{label}</span>
     </span>
   );

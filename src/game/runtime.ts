@@ -27,6 +27,9 @@ export type GameHandle = {
   setMuted: (muted: boolean) => void;
   adjustGravity: (dir: number) => void;
   adjustAtmo: (dir: number) => void;
+  toggleOrbitShell: () => void;
+  toggleLagrange: () => void;
+  toggleGravityGrid: () => void;
   destroy: () => void;
 };
 
@@ -485,6 +488,21 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     adjustAtmo(dir) {
       if (!sim) return;
       if (adjustAtmoScale(sim, dir)) publish();
+    },
+    toggleOrbitShell() {
+      if (!sim) return;
+      sim.showOrbitShell = !sim.showOrbitShell;
+      publish();
+    },
+    toggleLagrange() {
+      if (!sim) return;
+      sim.showLagrange = !sim.showLagrange;
+      publish();
+    },
+    toggleGravityGrid() {
+      if (!sim) return;
+      sim.showGravityGrid = !sim.showGravityGrid;
+      publish();
     },
     destroy() {
       running = false;

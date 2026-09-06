@@ -65,6 +65,15 @@ export function SpaceGame() {
   const onAtmo = useCallback((dir: number) => {
     gameRef.current?.adjustAtmo(dir);
   }, []);
+  const onToggleOrbitShell = useCallback(() => {
+    gameRef.current?.toggleOrbitShell();
+  }, []);
+  const onToggleLagrange = useCallback(() => {
+    gameRef.current?.toggleLagrange();
+  }, []);
+  const onToggleGravityGrid = useCallback(() => {
+    gameRef.current?.toggleGravityGrid();
+  }, []);
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-bg text-fg">
@@ -82,6 +91,9 @@ export function SpaceGame() {
         onMute={onMute}
         onGravity={onGravity}
         onAtmo={onAtmo}
+        onToggleOrbitShell={onToggleOrbitShell}
+        onToggleLagrange={onToggleLagrange}
+        onToggleGravityGrid={onToggleGravityGrid}
       />
     </div>
   );
