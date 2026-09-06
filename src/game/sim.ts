@@ -221,9 +221,9 @@ export type LagrangePoint = {
   vy: number;
 };
 
-export const LAGRANGE_CAPTURE_R = 120;
-export const LAGRANGE_CAPTURE_V = 12;
-const LAGRANGE_LOCK_DWELL = 0.4;
+export const LAGRANGE_CAPTURE_R = 22;
+export const LAGRANGE_CAPTURE_V = 6;
+const LAGRANGE_LOCK_DWELL = 0.65;
 
 function railOmega(p: Planet, gravityScale: number) {
   return (p.orbitW ?? 0) * Math.sqrt(Math.max(0, gravityScale));

@@ -573,10 +573,16 @@ function drawLagrangePoints(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera
     ctx.stroke();
     ctx.setLineDash([]);
 
-    ctx.fillStyle = isLocked ? "rgba(236, 234, 228, 0.92)" : "rgba(183, 192, 204, 0.85)";
+    const arm = (isLocked ? 6.5 : 5.2) / zoom;
+    ctx.strokeStyle = isLocked ? "rgba(236, 234, 228, 0.92)" : "rgba(183, 192, 204, 0.9)";
+    ctx.lineWidth = (isLocked ? 1.55 : 1.15) / zoom;
+    ctx.lineCap = "butt";
     ctx.beginPath();
-    ctx.arc(pt.x, pt.y, 3.4 / zoom, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.moveTo(pt.x - arm, pt.y);
+    ctx.lineTo(pt.x + arm, pt.y);
+    ctx.moveTo(pt.x, pt.y - arm);
+    ctx.lineTo(pt.x, pt.y + arm);
+    ctx.stroke();
 
     if (label) {
       ctx.save();
