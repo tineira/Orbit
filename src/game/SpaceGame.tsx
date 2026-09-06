@@ -23,6 +23,10 @@ const INITIAL: HudSnapshot = {
   gravityScale: 1,
   atmoScale: 1,
   orbitShell: false,
+  lagrangePoints: false,
+  lagrangeLocked: false,
+  lagrangeLabel: null,
+  physicsMenu: false,
 };
 
 export function SpaceGame() {

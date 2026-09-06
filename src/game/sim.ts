@@ -46,6 +46,11 @@ export type Sim = {
   gravityScale: number;
   atmoScale: number;
   showOrbitShell: boolean;
+  showLagrange: boolean;
+  showPhysics: boolean;
+  lagrangeLockKey: string | null;
+  lagrangeDwellKey: string | null;
+  lagrangeDwell: number;
 };
 
 export const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
@@ -97,6 +102,11 @@ export function createSim(): Sim {
     gravityScale: 1,
     atmoScale: 1,
     showOrbitShell: false,
+    showLagrange: false,
+    showPhysics: false,
+    lagrangeLockKey: null,
+    lagrangeDwellKey: null,
+    lagrangeDwell: 0,
   };
   landOnHome(sim);
   return sim;
@@ -131,6 +141,9 @@ export function rebootSim(sim: Sim) {
   sim.orbitLockCooldown = 0;
   sim.orbitDragAlarm = false;
   sim.orbitDragHintT = 0;
+  sim.lagrangeLockKey = null;
+  sim.lagrangeDwellKey = null;
+  sim.lagrangeDwell = 0;
   landOnHome(sim);
   sim.camera.zoomAuto = 0.96;
   sim.camera.zoom = 0.96 * sim.camera.userZoom;
@@ -193,6 +206,225 @@ export function gravityPulls(sim: Sim): GravityPull[] {
     out.push({ planet: p, ax: pull.ax, ay: pull.ay, a: pull.a });
   }
   return out;
+}
+
+export type LagrangeKind = "L1" | "L2" | "L3" | "L4" | "L5";
+
+export type LagrangePoint = {
+  key: string;
+  kind: LagrangeKind;
+  planetId: string;
+  planetName: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+};
+
+export const LAGRANGE_CAPTURE_R = 120;
+export const LAGRANGE_CAPTURE_V = 12;
+const LAGRANGE_LOCK_DWELL = 0.4;
+
+function railOmega(p: Planet, gravityScale: number) {
+  return (p.orbitW ?? 0) * Math.sqrt(Math.max(0, gravityScale));
+}
+
+function railPoint(star: Planet, angle: number, r: number, w: number) {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return {
+    x: star.x + c * r,
+    y: star.y + s * r,
+    vx: star.vx - s * w * r,
+    vy: star.vy + c * w * r,
+  };
+}
+
+function rayAccel(
+  r: number,
+  angle: number,
+  star: Planet,
+  planet: Planet,
+  w: number,
+  gravityScale: number,
+) {
+  const pos = railPoint(star, angle, r, w);
+  const g = gravityAt(pos.x, pos.y, [star, planet], gravityScale);
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return (g.ax + w * w * (pos.x - star.x)) * c + (g.ay + w * w * (pos.y - star.y)) * s;
+}
+
+function findRayRoot(
+  f: (r: number) => number,
+  lo: number,
+  hi: number,
+): number | null {
+  if (!(hi > lo)) return null;
+  const n = 20;
+  let a = lo;
+  let fa = f(a);
+  for (let i = 1; i <= n; i++) {
+    const b = lo + ((hi - lo) * i) / n;
+    const fb = f(b);
+    if (!Number.isFinite(fa) || !Number.isFinite(fb)) {
+      a = b;
+      fa = fb;
+      continue;
+    }
+    if (fa === 0) return a;
+    if (fa * fb <= 0) {
+      let loR = a;
+      let hiR = b;
+      let loV = fa;
+      for (let k = 0; k < 24; k++) {
+        const m = 0.5 * (loR + hiR);
+        const mv = f(m);
+        if (!Number.isFinite(mv) || loV * mv <= 0) {
+          hiR = m;
+        } else {
+          loR = m;
+          loV = mv;
+        }
+      }
+      return 0.5 * (loR + hiR);
+    }
+    a = b;
+    fa = fb;
+  }
+  return null;
+}
+
+function makeLagrange(
+  kind: LagrangeKind,
+  planet: Planet,
+  star: Planet,
+  angle: number,
+  r: number,
+  w: number,
+): LagrangePoint | null {
+  if (!Number.isFinite(r) || r < star.radius * 2.1) return null;
+  const pos = railPoint(star, angle, r, w);
+  if (kind === "L1" || kind === "L2") {
+    const d = Math.hypot(pos.x - planet.x, pos.y - planet.y);
+    if (d < planet.radius + 40) return null;
+  }
+  return {
+    key: `${planet.id}:${kind}`,
+    kind,
+    planetId: planet.id,
+    planetName: planet.name,
+    ...pos,
+  };
+}
+
+export function listLagrangePoints(sim: Sim): LagrangePoint[] {
+  const star = sim.planets.find((p) => p.kind === "star");
+  if (!star || sim.gravityScale <= 0) return [];
+  const out: LagrangePoint[] = [];
+  for (const p of sim.planets) {
+    if (p.kind === "star" || p.kind === "moon") continue;
+    if (p.parentId !== star.id || p.orbitR == null || p.orbitA == null || p.orbitW == null) continue;
+    const R = p.orbitR;
+    const a = p.orbitA;
+    const w = railOmega(p, sim.gravityScale);
+    if (w <= 0 || R <= star.radius * 3) continue;
+    const mu = p.mass / (star.mass + p.mass);
+    const hill = R * Math.cbrt(Math.max(1e-8, mu / 3));
+    const fAlong = (r: number) => rayAccel(r, a, star, p, w, sim.gravityScale);
+    const fOpp = (r: number) => rayAccel(r, a + Math.PI, star, p, w, sim.gravityScale);
+    const pad = p.radius + 48;
+    const r1 =
+      findRayRoot(fAlong, star.radius * 2.2, R - pad) ?? Math.max(star.radius * 2.4, R - hill);
+    const r2 = findRayRoot(fAlong, R + pad, R + Math.max(hill * 2.8, R * 0.55)) ?? R + hill;
+    const r3 = findRayRoot(fOpp, star.radius * 2.2, R * 1.25) ?? R;
+    const pts = [
+      makeLagrange("L4", p, star, a + Math.PI / 3, R, w),
+      makeLagrange("L5", p, star, a - Math.PI / 3, R, w),
+      makeLagrange("L1", p, star, a, r1, w),
+      makeLagrange("L2", p, star, a, r2, w),
+      makeLagrange("L3", p, star, a + Math.PI, r3, w),
+    ];
+    for (const pt of pts) if (pt) out.push(pt);
+  }
+  return out;
+}
+
+function lagrangeHint(pt: LagrangePoint, locked: boolean) {
+  return locked ? `${pt.kind} locked · ${pt.planetName}` : `Capturing ${pt.kind} · ${pt.planetName}`;
+}
+
+function nearestLagrange(sim: Sim, points = listLagrangePoints(sim)): LagrangePoint | null {
+  let best: LagrangePoint | null = null;
+  let bestD = LAGRANGE_CAPTURE_R;
+  for (const pt of points) {
+    const d = Math.hypot(sim.ship.x - pt.x, sim.ship.y - pt.y);
+    if (d < bestD) {
+      bestD = d;
+      best = pt;
+    }
+  }
+  return best;
+}
+
+function lagrangeReady(sim: Sim, pt: LagrangePoint) {
+  if (sim.orbitLockCooldown > 0) return false;
+  if (sim.ship.thrusting || sim.ship.reverse) return false;
+  const d = Math.hypot(sim.ship.x - pt.x, sim.ship.y - pt.y);
+  if (d > LAGRANGE_CAPTURE_R) return false;
+  const rel = Math.hypot(sim.ship.vx - pt.vx, sim.ship.vy - pt.vy);
+  return rel <= LAGRANGE_CAPTURE_V;
+}
+
+function captureLagrange(sim: Sim, pt: LagrangePoint) {
+  sim.lagrangeLockKey = pt.key;
+  sim.lagrangeDwell = 0;
+  sim.lagrangeDwellKey = null;
+  sim.orbitLockId = null;
+  sim.orbitDwell = 0;
+  sim.ship.x = pt.x;
+  sim.ship.y = pt.y;
+  sim.ship.vx = pt.vx;
+  sim.ship.vy = pt.vy;
+  sim.status = "lagrange";
+  sim.orbitHint = lagrangeHint(pt, true);
+}
+
+function breakLagrangeLock(sim: Sim) {
+  sim.lagrangeLockKey = null;
+  sim.lagrangeDwell = 0;
+  sim.lagrangeDwellKey = null;
+  sim.orbitLockCooldown = ORBIT_BREAK_COOLDOWN;
+}
+
+function stepLockedLagrange(
+  sim: Sim,
+  dt: number,
+  controls: { steer: number; forward: boolean; reverse: boolean; aimYaw: number | null; aimThrust: boolean },
+) {
+  const pt = listLagrangePoints(sim).find((p) => p.key === sim.lagrangeLockKey);
+  if (!pt) {
+    sim.lagrangeLockKey = null;
+    return false;
+  }
+  const ship = sim.ship;
+  applySteer(ship, controls, dt);
+  ship.thrusting = controls.forward || controls.aimThrust;
+  ship.reverse = controls.reverse && !ship.thrusting;
+  if (ship.thrusting || ship.reverse) {
+    breakLagrangeLock(sim);
+    return false;
+  }
+  ship.x = pt.x;
+  ship.y = pt.y;
+  ship.vx = pt.vx;
+  ship.vy = pt.vy;
+  const host = sim.planets.find((p) => p.id === pt.planetId);
+  sim.nearest = host ?? sim.nearest;
+  sim.altitude = host ? Math.hypot(ship.x - host.x, ship.y - host.y) - host.radius : null;
+  sim.status = "lagrange";
+  sim.orbitHint = lagrangeHint(pt, true);
+  return true;
 }
 
 function atmoRadius(p: Planet) {
@@ -275,6 +507,9 @@ export function takeoff(sim: Sim) {
   sim.orbitLockId = null;
   sim.orbitDwell = 0;
   sim.orbitLockCooldown = 0;
+  sim.lagrangeLockKey = null;
+  sim.lagrangeDwellKey = null;
+  sim.lagrangeDwell = 0;
 }
 
 function stickToPlanet(sim: Sim, p: Planet) {
@@ -561,6 +796,7 @@ export function stepSim(
     sim.status = "crashed";
     sim.orbitHint = null;
     sim.orbitLockId = null;
+    sim.lagrangeLockKey = null;
     return;
   }
 
@@ -588,6 +824,14 @@ export function stepSim(
     decayParticles(sim, dt);
     updateCamera(sim, dt);
     return;
+  }
+
+  if (sim.lagrangeLockKey) {
+    if (stepLockedLagrange(sim, dt, controls)) {
+      decayParticles(sim, dt);
+      updateCamera(sim, dt);
+      return;
+    }
   }
 
   if (sim.orbitLockId) {
@@ -662,6 +906,8 @@ function crashInto(sim: Sim, p: Planet, nx: number, ny: number, rel: number) {
   sim.landedId = null;
   sim.orbitLockId = null;
   sim.orbitDwell = 0;
+  sim.lagrangeLockKey = null;
+  sim.lagrangeDwell = 0;
   sim.status = "crashed";
   sim.orbitHint = null;
   s.vx = p.vx;
@@ -711,6 +957,8 @@ function collidePlanets(sim: Sim) {
       sim.landedAngle = Math.atan2(nx, -ny);
       sim.status = "landed";
       sim.orbitLockId = null;
+      sim.lagrangeLockKey = null;
+      sim.lagrangeDwell = 0;
       s.vx = p.vx;
       s.vy = p.vy;
       sim.camera.trauma = Math.min(1, sim.camera.trauma + 0.18);
@@ -747,6 +995,10 @@ function classify(sim: Sim, nearest: Planet, dist: number) {
     sim.orbitHint = null;
     return;
   }
+  if (sim.lagrangeLockKey) {
+    sim.status = "lagrange";
+    return;
+  }
   if (sim.orbitLockId) {
     sim.status = "orbit";
     return;
@@ -760,6 +1012,21 @@ function classify(sim: Sim, nearest: Planet, dist: number) {
   const atmo = atmoRadius(nearest);
   const rel = Math.hypot(s.vx - nearest.vx, s.vy - nearest.vy);
   const powered = s.thrusting || s.reverse;
+
+  const lagrange = nearestLagrange(sim);
+  if (lagrange && lagrangeReady(sim, lagrange)) {
+    sim.status = "lagrange";
+    sim.orbitHint = lagrangeHint(lagrange, false);
+    if (sim.lagrangeDwellKey === lagrange.key) sim.lagrangeDwell += STEP;
+    else {
+      sim.lagrangeDwellKey = lagrange.key;
+      sim.lagrangeDwell = STEP;
+    }
+    if (sim.lagrangeDwell >= LAGRANGE_LOCK_DWELL) captureLagrange(sim, lagrange);
+    return;
+  }
+  sim.lagrangeDwell = 0;
+  sim.lagrangeDwellKey = null;
 
   if (!powered && orbitReady(sim, nearest, dist)) {
     sim.status = "orbit";
@@ -882,7 +1149,7 @@ export function adjustAtmoScale(sim: Sim, dir: number) {
 }
 
 export function relativePathTarget(sim: Sim): Planet | null {
-  if (sim.phase !== "flight" || sim.landedId || sim.orbitLockId) return null;
+  if (sim.phase !== "flight" || sim.landedId || sim.orbitLockId || sim.lagrangeLockKey) return null;
   const p = sim.nearest;
   if (!p || p.kind === "star") return null;
   const dist = Math.hypot(sim.ship.x - p.x, sim.ship.y - p.y);
@@ -920,6 +1187,28 @@ export function predictRelativePath(sim: Sim, target: Planet, seconds = 24): { x
 }
 
 export function predictPath(sim: Sim, seconds = 9): { x: number; y: number }[] {
+  if (sim.lagrangeLockKey) {
+    const star = sim.planets.find((p) => p.kind === "star");
+    const pt = listLagrangePoints(sim).find((p) => p.key === sim.lagrangeLockKey);
+    if (!star || !pt) return [];
+    const dx = pt.x - star.x;
+    const dy = pt.y - star.y;
+    const r = Math.hypot(dx, dy) || 1;
+    const w = (dx * pt.vy - dy * pt.vx) / (r * r);
+    const n = 48;
+    const pts: { x: number; y: number }[] = [];
+    for (let i = 1; i <= n; i++) {
+      const t = (Math.PI * 2 * i) / n;
+      const c = Math.cos(t);
+      const s = Math.sin(t);
+      const sign = w >= 0 ? 1 : -1;
+      pts.push({
+        x: star.x + dx * c - dy * s * sign,
+        y: star.y + dx * s * sign + dy * c,
+      });
+    }
+    return pts;
+  }
   if (sim.orbitLockId) {
     const p = sim.planets.find((b) => b.id === sim.orbitLockId);
     const k = lockedKepler(sim);

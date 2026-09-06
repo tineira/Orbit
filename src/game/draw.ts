@@ -5,6 +5,8 @@ import {
   bodyMu,
   forwardOf,
   gravityPulls,
+  LAGRANGE_CAPTURE_R,
+  listLagrangePoints,
   predictPath,
   predictPlanetPaths,
   predictRelativePath,
@@ -49,6 +51,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   drawPath(ctx, path, sim);
   for (const p of sim.planets) drawPlanet(ctx, p, cam);
   drawOrbitShell(ctx, sim);
+  drawLagrangePoints(ctx, sim, cam);
   drawRelativePath(ctx, sim);
   drawPlanetPaths(ctx, sim);
   drawParticles(ctx, sim.particles);
@@ -336,7 +339,7 @@ function hexRgbaLift(hex: string, alpha: number, lift = 0.42) {
 }
 
 function drawGravityArrows(ctx: CanvasRenderingContext2D, sim: Sim) {
-  if (sim.phase === "landed" || sim.phase === "crashed" || sim.phase === "creating" || sim.landedId) return;
+  if (sim.phase === "landed" || sim.phase === "crashed" || sim.phase === "creating" || sim.landedId || sim.lagrangeLockKey) return;
   const ship = sim.ship;
   ctx.save();
   ctx.lineCap = "round";
@@ -541,9 +544,58 @@ function drawVignette(ctx: CanvasRenderingContext2D, cssW: number, cssH: number)
   ctx.fillRect(0, 0, cssW, cssH);
 }
 
+function drawLagrangePoints(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera) {
+  if (sim.phase === "creating" || sim.phase === "crashed" || sim.phase === "title") return;
+  const points = listLagrangePoints(sim);
+  if (!points.length) return;
+  const showAll = sim.showLagrange;
+  const locked = sim.lagrangeLockKey;
+  if (!showAll && !locked) return;
+  const zoom = Math.max(0.12, cam.zoom);
+  const label = zoom >= 0.28;
+
+  ctx.save();
+  for (const pt of points) {
+    const isLocked = pt.key === locked;
+    if (!showAll && !isLocked) continue;
+    const near =
+      isLocked || Math.hypot(sim.ship.x - pt.x, sim.ship.y - pt.y) < LAGRANGE_CAPTURE_R * 1.8;
+    const ring = isLocked ? "rgba(183, 192, 204, 0.55)" : near ? "rgba(183, 192, 204, 0.34)" : "rgba(183, 192, 204, 0.16)";
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, LAGRANGE_CAPTURE_R, 0, Math.PI * 2);
+    if (isLocked) {
+      ctx.fillStyle = "rgba(183, 192, 204, 0.08)";
+      ctx.fill();
+    }
+    ctx.strokeStyle = ring;
+    ctx.lineWidth = isLocked ? 2.2 : 1.2;
+    ctx.setLineDash(isLocked ? [] : [6, 8]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = isLocked ? "rgba(236, 234, 228, 0.92)" : "rgba(183, 192, 204, 0.85)";
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 3.4 / zoom, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (label) {
+      ctx.save();
+      ctx.translate(pt.x + 10 / zoom, pt.y - 8 / zoom);
+      ctx.scale(1 / zoom, 1 / zoom);
+      ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
+      ctx.fillStyle = isLocked ? "rgba(236, 234, 228, 0.82)" : "rgba(183, 192, 204, 0.62)";
+      ctx.textBaseline = "middle";
+      ctx.fillText(pt.kind, 0, 0);
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+}
+
 function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH: number) {
-  const size = Math.min(132, Math.max(96, cssW * 0.16));
-  const pad = 16;
+  const desktop = cssW >= 1024;
+  const size = Math.min(desktop ? 184 : 132, Math.max(96, cssW * 0.16));
+  const pad = desktop ? 24 : 16;
   const x = cssW - size - pad;
   const y = cssH - size - pad - 8;
   ctx.save();
@@ -560,12 +612,27 @@ function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH
   const cy = y + size / 2;
   const scale = (size * 0.42) / worldR;
 
+  roundRect(ctx, x, y, size, size, 12);
+  ctx.clip();
+
+  const byId = new Map(sim.planets.map((p) => [p.id, p]));
+  ctx.lineWidth = 1;
+  for (const p of sim.planets) {
+    // Star-centric rails only. Moon orbits collapse to a few pixels around the giant.
+    if (p.kind === "star" || p.kind === "moon" || p.orbitR == null) continue;
+    const parent = p.parentId ? byId.get(p.parentId) : undefined;
+    ctx.beginPath();
+    ctx.arc(cx + (parent?.x ?? 0) * scale, cy + (parent?.y ?? 0) * scale, p.orbitR * scale, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(236, 234, 228, 0.18)";
+    ctx.stroke();
+  }
+
   for (const p of sim.planets) {
     const px = cx + p.x * scale;
     const py = cy + p.y * scale;
     ctx.beginPath();
     ctx.fillStyle = p.kind === "star" ? "#f0d48a" : p.colorA;
-    ctx.arc(px, py, Math.max(1.6, p.radius * scale * 0.9), 0, Math.PI * 2);
+    ctx.arc(px, py, Math.max(p.kind === "moon" ? 1.2 : 1.6, p.radius * scale * 0.9), 0, Math.PI * 2);
     ctx.fill();
   }
 

@@ -60,7 +60,14 @@ export function Overlay({ hud, onLaunch, onTakeoff, onReboot, onMute, onGravity,
   return (
     <div className="pointer-events-none absolute inset-0 text-fg">
       {hud.phase === "creating" ? <Creating /> : null}
-      {hud.phase === "title" ? <Title onLaunch={onLaunch} /> : null}
+      {hud.phase === "title" ? (
+        <Title
+          onLaunch={onLaunch}
+          physicsMenu={hud.physicsMenu}
+          orbitShell={hud.orbitShell}
+          lagrangePoints={hud.lagrangePoints}
+        />
+      ) : null}
 
       {hud.phase !== "title" && hud.phase !== "creating" ? (
         <>
@@ -86,11 +93,13 @@ export function Overlay({ hud, onLaunch, onTakeoff, onReboot, onMute, onGravity,
                   HDG {hud.headingDeg.toFixed(0).padStart(3, "0")}° · MASS {hud.mass.toFixed(1)}
                 </p>
               </div>
-              <PhysicsKnobs gravityScale={hud.gravityScale} atmoScale={hud.atmoScale} onGravity={onGravity} onAtmo={onAtmo} />
+              {hud.physicsMenu ? (
+                <PhysicsKnobs gravityScale={hud.gravityScale} atmoScale={hud.atmoScale} onGravity={onGravity} onAtmo={onAtmo} />
+              ) : null}
             </div>
           </header>
 
-          <div className="absolute bottom-16 left-0 p-4 sm:p-6 max-w-[16rem]">
+          <div className="absolute bottom-16 left-0 p-4 sm:p-6 max-w-[22rem]">
             <button
               type="button"
               data-ui
@@ -101,11 +110,17 @@ export function Overlay({ hud, onLaunch, onTakeoff, onReboot, onMute, onGravity,
               {hud.muted ? <VolumeX className="size-4" strokeWidth={1.75} /> : <Volume2 className="size-4" strokeWidth={1.75} />}
             </button>
             <p className="font-mono text-xs leading-relaxed text-muted">
-              <span className="hidden sm:inline">Left / right yaw. Up burns. Down retro. + / − or scroll to zoom. O orbit shell.</span>
+              <span className="hidden sm:inline">Left / right yaw. Up burns. Down retro. + / − or scroll to zoom.</span>
               <span className="sm:hidden">Hold to point and burn. Pinch to zoom.</span>
+            </p>
+            <p className="mt-2 hidden sm:flex font-mono text-xs">
+              <KeyTips orbitShell={hud.orbitShell} lagrangePoints={hud.lagrangePoints} physicsMenu={hud.physicsMenu} />
             </p>
             {hud.orbitShell ? (
               <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">Orbit shell · {hud.nearestName ?? "—"}</p>
+            ) : null}
+            {hud.lagrangePoints ? (
+              <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">Lagrange points</p>
             ) : null}
             {hud.orbitHint && hud.phase !== "crashed" ? (
               <p
@@ -113,7 +128,7 @@ export function Overlay({ hud, onLaunch, onTakeoff, onReboot, onMute, onGravity,
                   "mt-2 font-mono text-xs tracking-wide uppercase",
                   hud.status === "too-fast" || hud.status === "crashed" || hud.orbitHint === ORBIT_DRAG_HINT
                     ? "text-warn"
-                    : hud.status === "orbit"
+                    : hud.status === "orbit" || hud.status === "lagrange"
                       ? "text-ok"
                       : "text-accent",
                 )}
@@ -136,7 +151,9 @@ export function Overlay({ hud, onLaunch, onTakeoff, onReboot, onMute, onGravity,
           >
             {hud.muted ? <VolumeX className="size-4" strokeWidth={1.75} /> : <Volume2 className="size-4" strokeWidth={1.75} />}
           </button>
-          <PhysicsKnobs gravityScale={hud.gravityScale} atmoScale={hud.atmoScale} onGravity={onGravity} onAtmo={onAtmo} />
+          {hud.physicsMenu ? (
+            <PhysicsKnobs gravityScale={hud.gravityScale} atmoScale={hud.atmoScale} onGravity={onGravity} onAtmo={onAtmo} />
+          ) : null}
         </div>
       ) : null}
 
@@ -167,7 +184,17 @@ function Creating() {
   );
 }
 
-function Title({ onLaunch }: { onLaunch: () => void }) {
+function Title({
+  onLaunch,
+  physicsMenu,
+  orbitShell,
+  lagrangePoints,
+}: {
+  onLaunch: () => void;
+  physicsMenu: boolean;
+  orbitShell: boolean;
+  lagrangePoints: boolean;
+}) {
   const destinations = getPlanets().filter((p) => p.kind !== "star");
   return (
     <div
@@ -177,7 +204,7 @@ function Title({ onLaunch }: { onLaunch: () => void }) {
         onLaunch();
       }}
     >
-      <div className="pr-[13rem]">
+      <div className={physicsMenu ? "pr-[13rem]" : "pr-14"}>
         <p className="font-mono text-xs tracking-[0.22em] uppercase text-muted">A small system</p>
         <h1 className="mt-3 font-display text-5xl sm:text-6xl md:text-7xl leading-none tracking-tight font-semibold text-fg">
           Lumen
@@ -196,9 +223,12 @@ function Title({ onLaunch }: { onLaunch: () => void }) {
             </li>
           ))}
         </ul>
-        <div className="flex flex-col items-start gap-3">
+        <div className="flex flex-col items-start gap-3 lg:mr-[13.5rem]">
           <p className="font-mono text-xs text-subtle max-w-xs">
             Press Enter to take off. Left / right rotate. Up burns. On a phone, tap the sky.
+          </p>
+          <p className="hidden sm:flex font-mono text-xs max-w-[12.5rem]">
+            <KeyTips orbitShell={orbitShell} lagrangePoints={lagrangePoints} physicsMenu={physicsMenu} />
           </p>
           <button
             type="button"
@@ -304,6 +334,40 @@ function fmtScale(n: number) {
   return `${n.toFixed(2).replace(/\.?0+$/, "")}×`;
 }
 
+function KeyTips({
+  orbitShell,
+  lagrangePoints,
+  physicsMenu,
+}: {
+  orbitShell: boolean;
+  lagrangePoints: boolean;
+  physicsMenu: boolean;
+}) {
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+      <KeyTip code="O" label="orbit shell" on={orbitShell} />
+      <KeyTip code="L" label="Lagrange" on={lagrangePoints} />
+      <KeyTip code="P" label="physics" on={physicsMenu} />
+    </span>
+  );
+}
+
+function KeyTip({ code, label, on }: { code: string; label: string; on?: boolean }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1.5", on ? "text-ok" : "text-muted")}>
+      <kbd
+        className={cn(
+          "font-mono text-[10px] tracking-widest uppercase px-1 py-0.5 rounded border",
+          on ? "border-ok/40 text-ok" : "border-border text-fg/70",
+        )}
+      >
+        {code}
+      </kbd>
+      <span>{label}</span>
+    </span>
+  );
+}
+
 function PhysicsKnobs({
   gravityScale,
   atmoScale,
@@ -393,6 +457,8 @@ function statusLabel(hud: HudSnapshot) {
   switch (hud.status) {
     case "orbit":
       return hud.orbitLocked ? (hud.orbitEcc >= 0.08 ? "ELLIPSE" : "LOCKED") : "ORBIT";
+    case "lagrange":
+      return hud.lagrangeLabel ?? "L-POINT";
     case "too-fast":
       return "FAST";
     case "approach":

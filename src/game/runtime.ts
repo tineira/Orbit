@@ -6,6 +6,7 @@ import {
   adjustGravityScale,
   atmoDrag,
   createSim,
+  listLagrangePoints,
   predictPlanetPaths,
   launchSim,
   rebootSim,
@@ -52,6 +53,10 @@ declare global {
       getPlanetPaths?: () => { id: string; n: number; travel: number }[];
       getUserZoom?: () => number;
       getOrbitShell?: () => boolean;
+      getLagrangeLock?: () => string | null;
+      getLagrangeShown?: () => boolean;
+      getLagrangePoints?: () => { key: string; kind: string; x: number; y: number; vx: number; vy: number }[];
+      getPhysicsMenu?: () => boolean;
       adjustGravity?: (dir: number) => void;
       adjustAtmo?: (dir: number) => void;
     };
@@ -78,6 +83,10 @@ const CREATING_HUD: HudSnapshot = {
   gravityScale: 1,
   atmoScale: 1,
   orbitShell: false,
+  lagrangePoints: false,
+  lagrangeLocked: false,
+  lagrangeLabel: null,
+  physicsMenu: false,
 };
 
 export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameHandle {
@@ -108,6 +117,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let prevTrauma = 0;
   let enterWasDown = false;
   let oWasDown = false;
+  let lWasDown = false;
+  let pWasDown = false;
 
   const resize = () => {
     const rect = canvas.getBoundingClientRect();
@@ -155,6 +166,10 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       gravityScale: sim.gravityScale,
       atmoScale: sim.atmoScale,
       orbitShell: sim.showOrbitShell,
+      lagrangePoints: sim.showLagrange,
+      lagrangeLocked: !!sim.lagrangeLockKey,
+      lagrangeLabel: (sim.lagrangeLockKey ?? sim.lagrangeDwellKey)?.split(":")[1] ?? null,
+      physicsMenu: sim.showPhysics,
     };
     onUi(hud);
   };
@@ -187,6 +202,20 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     return pressed;
   };
 
+  const consumeLagrange = () => {
+    const down = held(input.state).has("KeyL");
+    const pressed = down && !lWasDown;
+    lWasDown = down;
+    return pressed;
+  };
+
+  const consumePhysics = () => {
+    const down = held(input.state).has("KeyP");
+    const pressed = down && !pWasDown;
+    pWasDown = down;
+    return pressed;
+  };
+
   const attachProbe = (s: Sim) => {
     window.__controlsTest = {
       getYaw: () => s.ship.yaw,
@@ -206,6 +235,9 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         s.orbitLockCooldown = 0;
         s.orbitLockE = 0;
         s.orbitHint = null;
+        s.lagrangeLockKey = null;
+        s.lagrangeDwell = 0;
+        s.lagrangeDwellKey = null;
         s.orbitDragAlarm = false;
         s.orbitDragHintT = 0;
         s.status = "deep";
@@ -243,6 +275,11 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getOrbitHint: () => s.orbitHint,
       getUserZoom: () => s.camera.userZoom,
       getOrbitShell: () => s.showOrbitShell,
+      getLagrangeLock: () => s.lagrangeLockKey,
+      getLagrangeShown: () => s.showLagrange,
+      getPhysicsMenu: () => s.showPhysics,
+      getLagrangePoints: () =>
+        listLagrangePoints(s).map((p) => ({ key: p.key, kind: p.kind, x: p.x, y: p.y, vx: p.vx, vy: p.vy })),
       getPlanetPaths: () =>
         predictPlanetPaths(s, 10).map(({ planet, path }) => {
           const end = path[path.length - 1];
@@ -267,6 +304,14 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
 
     if (consumeOrbitShell()) {
       sim.showOrbitShell = !sim.showOrbitShell;
+      publish();
+    }
+    if (consumeLagrange()) {
+      sim.showLagrange = !sim.showLagrange;
+      publish();
+    }
+    if (consumePhysics()) {
+      sim.showPhysics = !sim.showPhysics;
       publish();
     }
 
@@ -362,6 +407,10 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     getOrbitHint: () => null,
     getUserZoom: () => 1,
     getOrbitShell: () => false,
+    getLagrangeLock: () => null,
+    getLagrangeShown: () => false,
+    getLagrangePoints: () => [],
+    getPhysicsMenu: () => false,
     getPlanetPaths: () => [],
     adjustGravity: () => {},
     adjustAtmo: () => {},

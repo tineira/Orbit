@@ -64,7 +64,7 @@ export type Camera = {
 
 export type Phase = "creating" | "title" | "flight" | "landed" | "crashed";
 
-export type FlightStatus = "deep" | "approach" | "orbit" | "too-fast" | "landed" | "crashed";
+export type FlightStatus = "deep" | "approach" | "orbit" | "lagrange" | "too-fast" | "landed" | "crashed";
 
 export type HudSnapshot = {
   phase: Phase;
@@ -86,6 +86,10 @@ export type HudSnapshot = {
   gravityScale: number;
   atmoScale: number;
   orbitShell: boolean;
+  lagrangePoints: boolean;
+  lagrangeLocked: boolean;
+  lagrangeLabel: string | null;
+  physicsMenu: boolean;
 };
 
 export type InputState = {
