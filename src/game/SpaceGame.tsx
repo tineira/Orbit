@@ -6,6 +6,7 @@ import type { HudSnapshot } from "./types";
 const INITIAL: HudSnapshot = {
   phase: "creating",
   speed: 0,
+  drag: 0,
   headingDeg: 0,
   mass: 1,
   nearestId: null,
@@ -19,6 +20,8 @@ const INITIAL: HudSnapshot = {
   crashedId: null,
   muted: false,
   touching: false,
+  gravityScale: 1,
+  atmoScale: 1,
 };
 
 export function SpaceGame() {
@@ -50,6 +53,12 @@ export function SpaceGame() {
   const onMute = useCallback(() => {
     gameRef.current?.setMuted(!hud.muted);
   }, [hud.muted]);
+  const onGravity = useCallback((dir: number) => {
+    gameRef.current?.adjustGravity(dir);
+  }, []);
+  const onAtmo = useCallback((dir: number) => {
+    gameRef.current?.adjustAtmo(dir);
+  }, []);
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-bg text-fg">
@@ -59,7 +68,15 @@ export function SpaceGame() {
         style={{ touchAction: "none" }}
         aria-label="Space flight"
       />
-      <Overlay hud={hud} onLaunch={onLaunch} onTakeoff={onTakeoff} onReboot={onReboot} onMute={onMute} />
+      <Overlay
+        hud={hud}
+        onLaunch={onLaunch}
+        onTakeoff={onTakeoff}
+        onReboot={onReboot}
+        onMute={onMute}
+        onGravity={onGravity}
+        onAtmo={onAtmo}
+      />
     </div>
   );
 }

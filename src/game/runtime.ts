@@ -1,7 +1,19 @@
 import { createAudio } from "./audio";
 import { drawFrame } from "./draw";
 import { createInput, enterHeld, steerFrom, thrustFrom } from "./input";
-import { createSim, launchSim, rebootSim, stepSim, STEP, takeoff, wrapPi, type Sim } from "./sim";
+import {
+  adjustAtmoScale,
+  adjustGravityScale,
+  atmoDrag,
+  createSim,
+  launchSim,
+  rebootSim,
+  stepSim,
+  STEP,
+  takeoff,
+  wrapPi,
+  type Sim,
+} from "./sim";
 import type { GameUiHandler, HudSnapshot } from "./types";
 import { createSystem } from "./world";
 
@@ -10,6 +22,8 @@ export type GameHandle = {
   takeoff: () => void;
   reboot: () => void;
   setMuted: (muted: boolean) => void;
+  adjustGravity: (dir: number) => void;
+  adjustAtmo: (dir: number) => void;
   destroy: () => void;
 };
 
@@ -28,6 +42,12 @@ declare global {
       getOrbitE?: () => number;
       getNearestBody?: () => { id: string; x: number; y: number; mass: number; radius: number } | null;
       getPos?: () => { x: number; y: number; vx: number; vy: number };
+      getGravityScale?: () => number;
+      getAtmoScale?: () => number;
+      getDrag?: () => number;
+      getOrbitHint?: () => string | null;
+      adjustGravity?: (dir: number) => void;
+      adjustAtmo?: (dir: number) => void;
     };
   }
 }
@@ -35,6 +55,7 @@ declare global {
 const CREATING_HUD: HudSnapshot = {
   phase: "creating",
   speed: 0,
+  drag: 0,
   headingDeg: 0,
   mass: 1,
   nearestId: null,
@@ -48,6 +69,8 @@ const CREATING_HUD: HudSnapshot = {
   crashedId: null,
   muted: false,
   touching: false,
+  gravityScale: 1,
+  atmoScale: 1,
 };
 
 export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameHandle {
@@ -103,6 +126,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     const hud: HudSnapshot = {
       phase: sim.phase,
       speed: Math.hypot(s.vx, s.vy),
+      drag: atmoDrag(sim),
       headingDeg: ((wrapPi(s.yaw) * 180) / Math.PI + 360) % 360,
       mass: s.mass,
       nearestId: sim.nearest?.id ?? null,
@@ -116,6 +140,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       crashedId: sim.crashedId,
       muted,
       touching: !!input.state.pointer?.down,
+      gravityScale: sim.gravityScale,
+      atmoScale: sim.atmoScale,
     };
     onUi(hud);
   };
@@ -160,6 +186,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         s.orbitLockCooldown = 0;
         s.orbitLockE = 0;
         s.orbitHint = null;
+        s.orbitDragAlarm = false;
+        s.orbitDragHintT = 0;
         s.status = "deep";
         s.ship.x = x;
         s.ship.y = y;
@@ -180,6 +208,12 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
           ? { id: s.nearest.id, x: s.nearest.x, y: s.nearest.y, mass: s.nearest.mass, radius: s.nearest.radius }
           : null,
       getPos: () => ({ x: s.ship.x, y: s.ship.y, vx: s.ship.vx, vy: s.ship.vy }),
+      getGravityScale: () => s.gravityScale,
+      getAtmoScale: () => s.atmoScale,
+      getDrag: () => atmoDrag(s),
+      getOrbitHint: () => s.orbitHint,
+      adjustGravity: (dir) => adjustGravityScale(s, dir),
+      adjustAtmo: (dir) => adjustAtmoScale(s, dir),
     };
   };
 
@@ -229,6 +263,10 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     prevLanded = sim.landedId;
     if (sim.crashedId && sim.crashedId !== prevCrashed) audio.crash();
     prevCrashed = sim.crashedId;
+    if (sim.orbitDragAlarm) {
+      audio.warn();
+      sim.orbitDragAlarm = false;
+    }
     if (sim.camera.trauma > prevTrauma + 0.2 && sim.phase === "flight") audio.bump(sim.camera.trauma);
     prevTrauma = sim.camera.trauma;
 
@@ -272,6 +310,12 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     getOrbitE: () => 0,
     getNearestBody: () => null,
     getPos: () => ({ x: 0, y: 0, vx: 0, vy: 0 }),
+    getGravityScale: () => 1,
+    getAtmoScale: () => 1,
+    getDrag: () => 0,
+    getOrbitHint: () => null,
+    adjustGravity: () => {},
+    adjustAtmo: () => {},
   };
 
   const minMs = reducedMotion ? 90 : 720;
@@ -303,6 +347,14 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       muted = next;
       audio.setMuted(next);
       publish();
+    },
+    adjustGravity(dir) {
+      if (!sim) return;
+      if (adjustGravityScale(sim, dir)) publish();
+    },
+    adjustAtmo(dir) {
+      if (!sim) return;
+      if (adjustAtmoScale(sim, dir)) publish();
     },
     destroy() {
       running = false;

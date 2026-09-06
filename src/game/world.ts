@@ -1,7 +1,9 @@
 import type { Planet, PlanetKind } from "./types";
 
-/** Gravity constant in world units. a = G * M / r² */
+/** Gravity constant in world units. a = G * GRAVITY_BASE * M / r² */
 export const G = 1;
+/** Default well strength. 1× on the gravity knob is this multiple of the raw G M / r². */
+export const GRAVITY_BASE = 4;
 
 export const SHIP_MASS = 1;
 export const SHIP_HULL = 9;
@@ -12,6 +14,8 @@ export const LAND_SPEED = 20;
 export const STEP = 1 / 60;
 export const ORBIT_LOCK_DWELL = 0.55;
 export const ORBIT_BREAK_COOLDOWN = 1.35;
+/** Atmosphere stronger than this dumps a locked orbit. */
+export const ORBIT_DRAG_BREAK = 0.4;
 export const TAKEOFF_SPEED = 20;
 export const START_ALT = 220;
 
@@ -335,7 +339,7 @@ function makeSystem(seed: number): Planet[] {
       parentId: gas.id,
       orbitR,
       orbitA,
-      orbitW: Math.sqrt(gas.mass / (orbitR * orbitR * orbitR)),
+      orbitW: Math.sqrt((G * GRAVITY_BASE * gas.mass) / (orbitR * orbitR * orbitR)),
       kicker: "Moon",
       title: name,
       body: `A quiet moon of ${gas.name}. Slow down. The well will hold you if you let it.`,
@@ -375,7 +379,7 @@ export function createSystem(seed = (Math.random() * 0xffffffff) >>> 0): Charted
     start: {
       x: home.x,
       y: home.y - startR,
-      vx: Math.sqrt((G * home.mass) / startR),
+      vx: Math.sqrt((G * GRAVITY_BASE * home.mass) / startR),
       vy: 0,
       yaw: -Math.PI * 0.5,
     },

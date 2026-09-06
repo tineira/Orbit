@@ -12,6 +12,10 @@ const GAME_CODES = new Set([
   "Space",
   "Enter",
   "NumpadEnter",
+  "Equal",
+  "Minus",
+  "NumpadAdd",
+  "NumpadSubtract",
 ]);
 
 export function createInput(canvas: HTMLCanvasElement): {

@@ -1,7 +1,7 @@
 import type { Camera, FlightStatus, Particle, Planet, Ship } from "./types";
 import type { Sim } from "./sim";
-import { atmoRadius, forwardOf, predictPath } from "./sim";
-import { G, getMinimapWorldR } from "./world";
+import { atmoRadius, bodyMu, forwardOf, predictPath } from "./sim";
+import { getMinimapWorldR } from "./world";
 
 type DrawOpts = {
   w: number;
@@ -100,7 +100,8 @@ function drawLockRing(ctx: CanvasRenderingContext2D, sim: Sim) {
   const p = sim.planets.find((b) => b.id === sim.orbitLockId);
   if (!p) return;
   const e = sim.orbitLockE;
-  const mu = G * p.mass;
+  const mu = bodyMu(p, sim.gravityScale);
+  if (mu <= 0) return;
   const pParam = sim.orbitLockH === 0 ? sim.orbitLockR : (sim.orbitLockH * sim.orbitLockH) / mu;
 
   ctx.strokeStyle = "rgba(125, 155, 134, 0.22)";

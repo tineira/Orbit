@@ -4,6 +4,7 @@ type AudioApi = {
   bump: (amount: number) => void;
   land: () => void;
   crash: () => void;
+  warn: () => void;
   setMuted: (muted: boolean) => void;
   destroy: () => void;
 };
@@ -112,6 +113,29 @@ export function createAudio(): AudioApi {
       g.connect(sfx);
       osc.start(t);
       osc.stop(t + 0.36);
+    },
+    warn() {
+      if (!ctx || !sfx) return;
+      const t = ctx.currentTime;
+      const chirp = (freq: number, at: number, dur: number, gain: number) => {
+        const osc = ctx!.createOscillator();
+        const g = ctx!.createGain();
+        osc.type = "square";
+        osc.frequency.setValueAtTime(freq, t + at);
+        g.gain.setValueAtTime(0.0001, t + at);
+        g.gain.exponentialRampToValueAtTime(gain, t + at + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + at + dur);
+        osc.connect(g);
+        g.connect(sfx!);
+        osc.start(t + at);
+        osc.stop(t + at + dur + 0.02);
+        osc.onended = () => {
+          osc.disconnect();
+          g.disconnect();
+        };
+      };
+      chirp(880, 0, 0.11, 0.09);
+      chirp(520, 0.14, 0.16, 0.11);
     },
     crash() {
       if (!ctx || !sfx) return;

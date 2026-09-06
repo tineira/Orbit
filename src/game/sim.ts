@@ -1,8 +1,10 @@
 import type { Camera, FlightStatus, Particle, Planet, Ship } from "./types";
 import {
   G,
+  GRAVITY_BASE,
   LAND_SPEED,
   ORBIT_BREAK_COOLDOWN,
+  ORBIT_DRAG_BREAK,
   ORBIT_LOCK_DWELL,
   getStart,
   getSystem,
@@ -37,8 +39,17 @@ export type Sim = {
   orbitLockH: number;
   orbitDwell: number;
   orbitLockCooldown: number;
+  orbitDragAlarm: boolean;
+  orbitDragHintT: number;
   reducedMotion: boolean;
+  gravityScale: number;
+  atmoScale: number;
 };
+
+export const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
+
+export const GRAVITY_STEPS = [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 8] as const;
+export const ATMO_STEPS = [0, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6] as const;
 
 const PARTICLE_CAP = 220;
 const SOFT = 18;
@@ -78,17 +89,22 @@ export function createSim(): Sim {
     orbitLockH: 0,
     orbitDwell: 0,
     orbitLockCooldown: 0,
+    orbitDragAlarm: false,
+    orbitDragHintT: 0,
     reducedMotion: false,
+    gravityScale: 1,
+    atmoScale: 1,
   };
 }
 
-function freshShip(): Ship {
+function freshShip(gravityScale = 1): Ship {
   const start = getStart();
+  const k = Math.sqrt(Math.max(0, gravityScale));
   return {
     x: start.x,
     y: start.y,
-    vx: start.vx,
-    vy: start.vy,
+    vx: start.vx * k,
+    vy: start.vy * k,
     yaw: start.yaw,
     mass: SHIP_MASS,
     thrusting: false,
@@ -97,7 +113,7 @@ function freshShip(): Ship {
 }
 
 export function rebootSim(sim: Sim) {
-  sim.ship = freshShip();
+  sim.ship = freshShip(sim.gravityScale);
   sim.phase = "flight";
   sim.landedId = null;
   sim.crashedId = null;
@@ -112,6 +128,8 @@ export function rebootSim(sim: Sim) {
   sim.orbitLockH = 0;
   sim.orbitDwell = 0;
   sim.orbitLockCooldown = 0;
+  sim.orbitDragAlarm = false;
+  sim.orbitDragHintT = 0;
   const start = getStart();
   sim.camera.x = start.x;
   sim.camera.y = start.y;
@@ -125,7 +143,16 @@ export function forwardOf(yaw: number) {
   return { x: -Math.sin(yaw), y: -Math.cos(yaw) };
 }
 
-function gravityAt(x: number, y: number, planets: Planet[]): { ax: number; ay: number; nearest: Planet; dist: number } {
+export function bodyMu(p: Planet, gravityScale: number) {
+  return G * GRAVITY_BASE * gravityScale * p.mass;
+}
+
+function gravityAt(
+  x: number,
+  y: number,
+  planets: Planet[],
+  gravityScale: number,
+): { ax: number; ay: number; nearest: Planet; dist: number } {
   let ax = 0;
   let ay = 0;
   let nearest = planets[0]!;
@@ -140,7 +167,7 @@ function gravityAt(x: number, y: number, planets: Planet[]): { ax: number; ay: n
       nearest = p;
     }
     const soft = Math.max(d, p.radius * 0.55 + SOFT);
-    const a = (G * p.mass) / (soft * soft);
+    const a = bodyMu(p, gravityScale) / (soft * soft);
     ax += (a * dx) / (d || 1);
     ay += (a * dy) / (d || 1);
   }
@@ -151,7 +178,8 @@ function atmoRadius(p: Planet) {
   return p.radius * (p.kind === "gas" ? 1.85 : p.kind === "star" ? 2.1 : 1.72);
 }
 
-function dragNear(x: number, y: number, vx: number, vy: number, planets: Planet[]) {
+function dragNear(x: number, y: number, vx: number, vy: number, planets: Planet[], atmoScale: number) {
+  if (atmoScale <= 0) return { ax: 0, ay: 0 };
   let ax = 0;
   let ay = 0;
   for (const p of planets) {
@@ -165,11 +193,16 @@ function dragNear(x: number, y: number, vx: number, vy: number, planets: Planet[
     const rvx = vx - p.vx;
     const rvy = vy - p.vy;
     const speed = Math.hypot(rvx, rvy);
-    const mag = density * speed;
+    const mag = density * speed * atmoScale;
     ax -= rvx * mag * 0.1;
     ay -= rvy * mag * 0.1;
   }
   return { ax, ay };
+}
+
+export function atmoDrag(sim: Sim) {
+  const d = dragNear(sim.ship.x, sim.ship.y, sim.ship.vx, sim.ship.vy, sim.planets, sim.atmoScale);
+  return Math.hypot(d.ax, d.ay);
 }
 
 function spawn(sim: Sim, x: number, y: number, vx: number, vy: number, life: number, size: number, hue: number) {
@@ -235,7 +268,7 @@ function updateMoons(sim: Sim, dt: number) {
     }
     const parent = sim.planets.find((b) => b.id === p.parentId);
     if (!parent) continue;
-    p.orbitA += p.orbitW * dt;
+    p.orbitA += p.orbitW * Math.sqrt(Math.max(0, sim.gravityScale)) * dt;
     const nx = parent.x + Math.cos(p.orbitA) * p.orbitR;
     const ny = parent.y + Math.sin(p.orbitA) * p.orbitR;
     p.vx = (nx - p.x) / dt;
@@ -292,7 +325,7 @@ function applyKepler(ship: Ship, p: Planet, k: Kepler) {
   return r;
 }
 
-function readKepler(p: Planet, ship: Ship): Kepler | null {
+function readKepler(p: Planet, ship: Ship, gravityScale: number): Kepler | null {
   const dx = ship.x - p.x;
   const dy = ship.y - p.y;
   const r = Math.hypot(dx, dy);
@@ -300,7 +333,8 @@ function readKepler(p: Planet, ship: Ship): Kepler | null {
   if (r < minR) return null;
   const rvx = ship.vx - p.vx;
   const rvy = ship.vy - p.vy;
-  const mu = G * p.mass;
+  const mu = bodyMu(p, gravityScale);
+  if (mu <= 0) return null;
   const h = dx * rvy - dy * rvx;
   if (Math.abs(h) < 10) return null;
   const v2 = rvx * rvx + rvy * rvy;
@@ -310,7 +344,7 @@ function readKepler(p: Planet, ship: Ship): Kepler | null {
   if (a <= 0 || !Number.isFinite(a)) return null;
   const ex = (rvy * h) / mu - dx / r;
   const ey = (-rvx * h) / mu - dy / r;
-  let e = Math.hypot(ex, ey);
+  const e = Math.hypot(ex, ey);
   if (e >= 0.92) return null;
   const periapsis = a * (1 - e);
   if (periapsis < minR) return null;
@@ -350,7 +384,7 @@ function wellDominant(p: Planet, x: number, y: number, planets: Planet[]) {
 }
 
 function captureOrbit(sim: Sim, p: Planet) {
-  const k = readKepler(p, sim.ship);
+  const k = readKepler(p, sim.ship, sim.gravityScale);
   if (!k) return false;
   const r = applyKepler(sim.ship, p, k);
   sim.orbitLockId = p.id;
@@ -367,7 +401,7 @@ function captureOrbit(sim: Sim, p: Planet) {
 }
 
 function lockedKepler(sim: Sim): Kepler | null {
-  if (!sim.orbitLockId || sim.orbitLockH === 0) return null;
+  if (!sim.orbitLockId || sim.orbitLockH === 0 || sim.gravityScale <= 0) return null;
   const p = sim.planets.find((b) => b.id === sim.orbitLockId);
   if (!p) return null;
   return {
@@ -375,7 +409,7 @@ function lockedKepler(sim: Sim): Kepler | null {
     h: sim.orbitLockH,
     peri: sim.orbitLockPeri,
     nu: sim.orbitLockA,
-    mu: G * p.mass,
+    mu: bodyMu(p, sim.gravityScale),
   };
 }
 
@@ -400,6 +434,13 @@ function stepLockedOrbit(
   ship.thrusting = controls.forward || controls.aimThrust;
   ship.reverse = controls.reverse && !ship.thrusting;
   if (ship.thrusting || ship.reverse) {
+    breakOrbitLock(sim);
+    return false;
+  }
+  if (atmoDrag(sim) > ORBIT_DRAG_BREAK) {
+    sim.orbitDragAlarm = true;
+    sim.orbitDragHintT = 1.6;
+    sim.orbitHint = ORBIT_DRAG_HINT;
     breakOrbitLock(sim);
     return false;
   }
@@ -430,7 +471,7 @@ export function stepSim(
   if (sim.phase === "title") {
     decayParticles(sim, dt);
     updateCamera(sim, dt);
-    const g = gravityAt(ship.x, ship.y, sim.planets);
+    const g = gravityAt(ship.x, ship.y, sim.planets, sim.gravityScale);
     sim.nearest = g.nearest;
     sim.altitude = g.dist - g.nearest.radius;
     return;
@@ -487,8 +528,8 @@ export function stepSim(
   ship.thrusting = controls.forward || controls.aimThrust;
   ship.reverse = controls.reverse && !ship.thrusting;
 
-  const { ax: gx, ay: gy, nearest, dist } = gravityAt(ship.x, ship.y, sim.planets);
-  const drag = dragNear(ship.x, ship.y, ship.vx, ship.vy, sim.planets);
+  const { ax: gx, ay: gy, nearest, dist } = gravityAt(ship.x, ship.y, sim.planets, sim.gravityScale);
+  const drag = dragNear(ship.x, ship.y, ship.vx, ship.vy, sim.planets, sim.atmoScale);
 
   let tx = 0;
   let ty = 0;
@@ -612,10 +653,13 @@ function orbitReady(sim: Sim, nearest: Planet, dist: number) {
   const maxAlt = Math.min(nearest.radius * 1.28, 170);
   if (alt < 18 || alt > maxAlt) return false;
   if (!wellDominant(nearest, sim.ship.x, sim.ship.y, sim.planets)) return false;
-  return readKepler(nearest, sim.ship) != null;
+  if (atmoDrag(sim) > ORBIT_DRAG_BREAK) return false;
+  return readKepler(nearest, sim.ship, sim.gravityScale) != null;
 }
 
 function classify(sim: Sim, nearest: Planet, dist: number) {
+  if (sim.orbitDragHintT > 0) sim.orbitDragHintT = Math.max(0, sim.orbitDragHintT - STEP);
+
   if (sim.phase === "landed") {
     sim.status = "landed";
     sim.orbitHint = null;
@@ -660,10 +704,11 @@ function classify(sim: Sim, nearest: Planet, dist: number) {
         : nearest.landable
           ? "Slow to land"
           : (nearest.deny ?? "Cannot land");
-    return;
+  } else {
+    sim.status = "deep";
+    sim.orbitHint = null;
   }
-  sim.status = "deep";
-  sim.orbitHint = null;
+  if (sim.orbitDragHintT > 0) sim.orbitHint = ORBIT_DRAG_HINT;
 }
 
 function decayParticles(sim: Sim, dt: number) {
@@ -698,6 +743,53 @@ export function wrapPi(a: number) {
   return Math.atan2(Math.sin(a), Math.cos(a));
 }
 
+function nearestStepIndex(steps: readonly number[], value: number) {
+  let best = 0;
+  let dist = Infinity;
+  for (let i = 0; i < steps.length; i++) {
+    const d = Math.abs(steps[i]! - value);
+    if (d < dist) {
+      dist = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+function stepAlong(steps: readonly number[], value: number, dir: number) {
+  const i = nearestStepIndex(steps, value);
+  const next = i + (dir < 0 ? -1 : 1);
+  if (next < 0 || next >= steps.length) return value;
+  return steps[next]!;
+}
+
+function syncTitleVelocity(sim: Sim) {
+  if (sim.phase !== "title") return;
+  const start = getStart();
+  const k = Math.sqrt(Math.max(0, sim.gravityScale));
+  sim.ship.vx = start.vx * k;
+  sim.ship.vy = start.vy * k;
+}
+
+export function adjustGravityScale(sim: Sim, dir: number) {
+  const next = stepAlong(GRAVITY_STEPS, sim.gravityScale, dir);
+  if (next === sim.gravityScale) return false;
+  sim.gravityScale = next;
+  syncTitleVelocity(sim);
+  if (sim.orbitLockId) {
+    const p = sim.planets.find((b) => b.id === sim.orbitLockId);
+    if (!p || !captureOrbit(sim, p)) breakOrbitLock(sim);
+  }
+  return true;
+}
+
+export function adjustAtmoScale(sim: Sim, dir: number) {
+  const next = stepAlong(ATMO_STEPS, sim.atmoScale, dir);
+  if (next === sim.atmoScale) return false;
+  sim.atmoScale = next;
+  return true;
+}
+
 export function predictPath(sim: Sim, seconds = 9): { x: number; y: number }[] {
   if (sim.orbitLockId) {
     const p = sim.planets.find((b) => b.id === sim.orbitLockId);
@@ -721,8 +813,8 @@ export function predictPath(sim: Sim, seconds = 9): { x: number; y: number }[] {
   const dt = 1 / 36;
   const n = Math.floor(seconds / dt);
   for (let i = 0; i < n; i++) {
-    const g = gravityAt(x, y, sim.planets);
-    const drag = dragNear(x, y, vx, vy, sim.planets);
+    const g = gravityAt(x, y, sim.planets, sim.gravityScale);
+    const drag = dragNear(x, y, vx, vy, sim.planets, sim.atmoScale);
     vx += (g.ax + drag.ax) * dt;
     vy += (g.ay + drag.ay) * dt;
     x += vx * dt;

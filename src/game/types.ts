@@ -67,6 +67,7 @@ export type FlightStatus = "deep" | "approach" | "orbit" | "too-fast" | "landed"
 export type HudSnapshot = {
   phase: Phase;
   speed: number;
+  drag: number;
   headingDeg: number;
   mass: number;
   nearestId: string | null;
@@ -80,6 +81,8 @@ export type HudSnapshot = {
   crashedId: string | null;
   muted: boolean;
   touching: boolean;
+  gravityScale: number;
+  atmoScale: number;
 };
 
 export type InputState = {

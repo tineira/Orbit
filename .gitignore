@@ -18,3 +18,5 @@ screenshots/
 AGENTS.md
 startup.sh
 
+.vercel
+.env*

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
-import { Volume2, VolumeX } from "lucide-react";
+import { Minus, Plus, Volume2, VolumeX } from "lucide-react";
 import type { HudSnapshot } from "./types";
+import { ATMO_STEPS, GRAVITY_STEPS, ORBIT_DRAG_HINT } from "./sim";
 import { getPlanets, planetById } from "./world";
 import { cn } from "@/lib/utils";
 
@@ -10,13 +11,15 @@ type Props = {
   onTakeoff: () => void;
   onReboot: () => void;
   onMute: () => void;
+  onGravity: (dir: number) => void;
+  onAtmo: (dir: number) => void;
 };
 
 function isEnterKey(e: KeyboardEvent) {
   return e.code === "Enter" || e.code === "NumpadEnter" || e.key === "Enter";
 }
 
-export function Overlay({ hud, onLaunch, onTakeoff, onReboot, onMute }: Props) {
+export function Overlay({ hud, onLaunch, onTakeoff, onReboot, onMute, onGravity, onAtmo }: Props) {
   const landed = hud.landedId ? planetById(hud.landedId) : null;
   const crashed = hud.crashedId ? planetById(hud.crashedId) : null;
 
@@ -54,6 +57,20 @@ export function Overlay({ hud, onLaunch, onTakeoff, onReboot, onMute }: Props) {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [hud.phase, onTakeoff]);
 
+  useEffect(() => {
+    if (hud.phase === "creating") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const dir = physicsKeyDir(e);
+      if (!dir) return;
+      e.preventDefault();
+      if (e.shiftKey) onAtmo(dir);
+      else onGravity(dir);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hud.phase, onGravity, onAtmo]);
+
   return (
     <div className="pointer-events-none absolute inset-0 text-fg">
       {hud.phase === "creating" ? <Creating /> : null}
@@ -71,14 +88,19 @@ export function Overlay({ hud, onLaunch, onTakeoff, onReboot, onMute }: Props) {
                 {statusLabel(hud)}
               </p>
             </div>
-            <div className="text-right">
-              <p className="font-mono text-xs tracking-[0.18em] uppercase text-muted">Ship</p>
-              <p className="mt-1 font-mono text-sm tabular-nums text-fg">
-                {fmt(hud.speed)} <span className="text-muted">u/s</span>
-              </p>
-              <p className="mt-0.5 font-mono text-xs tabular-nums text-muted">
-                HDG {hud.headingDeg.toFixed(0).padStart(3, "0")}° · MASS {hud.mass.toFixed(1)}
-              </p>
+            <div className="flex flex-col items-end gap-3">
+              <div className="text-right">
+                <p className="font-mono text-xs tracking-[0.18em] uppercase text-muted">Ship</p>
+                <p className="mt-1 font-mono text-sm tabular-nums text-fg">
+                  {fmt(hud.speed)} <span className="text-muted">u/s</span>
+                  <span className="mx-2 text-subtle">·</span>
+                  {fmt(hud.drag)} <span className="text-muted">drag</span>
+                </p>
+                <p className="mt-0.5 font-mono text-xs tabular-nums text-muted">
+                  HDG {hud.headingDeg.toFixed(0).padStart(3, "0")}° · MASS {hud.mass.toFixed(1)}
+                </p>
+              </div>
+              <PhysicsKnobs gravityScale={hud.gravityScale} atmoScale={hud.atmoScale} onGravity={onGravity} onAtmo={onAtmo} />
             </div>
           </header>
 
@@ -93,14 +115,14 @@ export function Overlay({ hud, onLaunch, onTakeoff, onReboot, onMute }: Props) {
               {hud.muted ? <VolumeX className="size-4" strokeWidth={1.75} /> : <Volume2 className="size-4" strokeWidth={1.75} />}
             </button>
             <p className="font-mono text-xs leading-relaxed text-muted">
-              <span className="hidden sm:inline">Left / right yaw. Up burns. Down retro.</span>
+              <span className="hidden sm:inline">Left / right yaw. Up burns. Down retro. + / − gravity. Shift + / − atmosphere.</span>
               <span className="sm:hidden">Hold to point and burn</span>
             </p>
             {hud.orbitHint && hud.phase !== "crashed" ? (
               <p
                 className={cn(
                   "mt-2 font-mono text-xs tracking-wide uppercase",
-                  hud.status === "too-fast" || hud.status === "crashed"
+                  hud.status === "too-fast" || hud.status === "crashed" || hud.orbitHint === ORBIT_DRAG_HINT
                     ? "text-warn"
                     : hud.status === "orbit"
                       ? "text-ok"
@@ -115,15 +137,18 @@ export function Overlay({ hud, onLaunch, onTakeoff, onReboot, onMute }: Props) {
       ) : null}
 
       {hud.phase === "title" ? (
-        <button
-          type="button"
-          data-ui
-          onClick={onMute}
-          aria-label={hud.muted ? "Unmute" : "Mute"}
-          className="pointer-events-auto absolute top-[max(1rem,env(safe-area-inset-top))] right-4 size-11 grid place-items-center rounded-md text-muted hover:text-fg transition-colors duration-[var(--motion-quick)] ease-[var(--ease-out)]"
-        >
-          {hud.muted ? <VolumeX className="size-4" strokeWidth={1.75} /> : <Volume2 className="size-4" strokeWidth={1.75} />}
-        </button>
+        <div className="pointer-events-auto absolute top-[max(1rem,env(safe-area-inset-top))] right-4 sm:right-8 flex flex-col items-end gap-3">
+          <button
+            type="button"
+            data-ui
+            onClick={onMute}
+            aria-label={hud.muted ? "Unmute" : "Mute"}
+            className="size-11 grid place-items-center rounded-md text-muted hover:text-fg transition-colors duration-[var(--motion-quick)] ease-[var(--ease-out)]"
+          >
+            {hud.muted ? <VolumeX className="size-4" strokeWidth={1.75} /> : <Volume2 className="size-4" strokeWidth={1.75} />}
+          </button>
+          <PhysicsKnobs gravityScale={hud.gravityScale} atmoScale={hud.atmoScale} onGravity={onGravity} onAtmo={onAtmo} />
+        </div>
       ) : null}
 
       {hud.phase === "landed" && landed ? (
@@ -163,7 +188,7 @@ function Title({ onLaunch }: { onLaunch: () => void }) {
         onLaunch();
       }}
     >
-      <div>
+      <div className="pr-[13rem]">
         <p className="font-mono text-xs tracking-[0.22em] uppercase text-muted">A small system</p>
         <h1 className="mt-3 font-display text-5xl sm:text-6xl md:text-7xl leading-none tracking-tight font-semibold text-fg">
           Lumen
@@ -283,6 +308,110 @@ function CrashCard({
 
 function fmt(n: number) {
   return Math.abs(n) >= 100 ? n.toFixed(0) : n.toFixed(1);
+}
+
+function physicsKeyDir(e: KeyboardEvent): -1 | 1 | null {
+  const { code, key } = e;
+  if (code === "Equal" || code === "NumpadAdd" || key === "+") return 1;
+  if (code === "Minus" || code === "NumpadSubtract" || key === "-" || key === "_") return -1;
+  return null;
+}
+
+function fmtScale(n: number) {
+  if (n === 0) return "0×";
+  return `${n.toFixed(2).replace(/\.?0+$/, "")}×`;
+}
+
+function PhysicsKnobs({
+  gravityScale,
+  atmoScale,
+  onGravity,
+  onAtmo,
+}: {
+  gravityScale: number;
+  atmoScale: number;
+  onGravity: (dir: number) => void;
+  onAtmo: (dir: number) => void;
+}) {
+  return (
+    <div
+      data-ui
+      className="pointer-events-auto w-[12.25rem] rounded-lg border border-border bg-surface/80 p-2 text-left backdrop-blur-sm"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <ScaleRow
+        label="Gravity"
+        keys="+ / −"
+        value={gravityScale}
+        min={GRAVITY_STEPS[0]}
+        max={GRAVITY_STEPS[GRAVITY_STEPS.length - 1]!}
+        onDown={() => onGravity(-1)}
+        onUp={() => onGravity(1)}
+      />
+      <ScaleRow
+        className="mt-2 pt-2 border-t border-border"
+        label="Atmo"
+        keys="⇧+ / ⇧−"
+        value={atmoScale}
+        min={ATMO_STEPS[0]}
+        max={ATMO_STEPS[ATMO_STEPS.length - 1]!}
+        onDown={() => onAtmo(-1)}
+        onUp={() => onAtmo(1)}
+      />
+    </div>
+  );
+}
+
+function ScaleRow({
+  label,
+  keys,
+  value,
+  min,
+  max,
+  onDown,
+  onUp,
+  className,
+}: {
+  label: string;
+  keys: string;
+  value: number;
+  min: number;
+  max: number;
+  onDown: () => void;
+  onUp: () => void;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="font-mono text-[10px] tracking-[0.16em] uppercase text-muted">{label}</p>
+        <p className="font-mono text-[10px] text-subtle">{keys}</p>
+      </div>
+      <div className="mt-1.5 flex items-center gap-2">
+        <button
+          type="button"
+          data-ui
+          aria-label={`Decrease ${label.toLowerCase()}`}
+          disabled={value <= min}
+          onClick={onDown}
+          className="size-8 grid place-items-center rounded-md border border-border text-muted hover:text-fg hover:border-border-strong disabled:opacity-30 disabled:hover:text-muted disabled:hover:border-border transition-colors duration-[var(--motion-quick)] ease-[var(--ease-out)]"
+        >
+          <Minus className="size-3.5" strokeWidth={1.75} />
+        </button>
+        <p className="flex-1 text-center font-mono text-sm tabular-nums text-fg">{fmtScale(value)}</p>
+        <button
+          type="button"
+          data-ui
+          aria-label={`Increase ${label.toLowerCase()}`}
+          disabled={value >= max}
+          onClick={onUp}
+          className="size-8 grid place-items-center rounded-md border border-border text-muted hover:text-fg hover:border-border-strong disabled:opacity-30 disabled:hover:text-muted disabled:hover:border-border transition-colors duration-[var(--motion-quick)] ease-[var(--ease-out)]"
+        >
+          <Plus className="size-3.5" strokeWidth={1.75} />
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function statusLabel(hud: HudSnapshot) {
