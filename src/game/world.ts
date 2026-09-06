@@ -20,6 +20,16 @@ export const ORBIT_SHELL_MAX_ALT_CAP = 170;
 export const ORBIT_SHELL_MOON_MIN_ALT = 90;
 /** How far past a gas giant's atmosphere the outer lock ring extends. Inner stays at 18. */
 export const ORBIT_SHELL_GAS_CLEAR = 72;
+/** Star corona outer radius / body radius. Keep in sync with parking: min shell sits just past this. */
+export const STAR_ATMO_FACTOR = 2.1;
+/** Clearance past the corona before a star lock can hold. */
+export const ORBIT_SHELL_STAR_CLEAR = 40;
+/** Star lock outer altitude as a multiple of radius (~800–1100 for typical stars). */
+export const ORBIT_SHELL_STAR_MAX_FACTOR = 3.4;
+export const ORBIT_SHELL_STAR_MAX_PAD = 520;
+/** Kepler apoapsis altitude cap for star locks. */
+export const KEPLER_STAR_APO_FACTOR = 6;
+export const KEPLER_STAR_APO_CAP = 1600;
 /** Atmosphere stronger than this dumps a locked orbit. */
 export const ORBIT_DRAG_BREAK = 0.4;
 /** Tidal pull / host gravity. Same 0.4 feel as drag, but a ratio — raw n-body vs host would dump every moon orbit (the parent is always pulling). */
@@ -29,7 +39,7 @@ export const GRAVITY_STEPS = [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 6,
 export const ATMO_STEPS = [0, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6] as const;
 
 export function orbitShellAlts(p: Planet, planets: Planet[] = []) {
-  const minAlt = ORBIT_SHELL_MIN_ALT;
+  let minAlt = ORBIT_SHELL_MIN_ALT;
   let maxAlt = Math.min(p.radius * ORBIT_SHELL_MAX_ALT_FACTOR, ORBIT_SHELL_MAX_ALT_CAP);
   if (p.kind === "moon") {
     maxAlt = Math.max(maxAlt, ORBIT_SHELL_MOON_MIN_ALT);
@@ -44,6 +54,16 @@ export function orbitShellAlts(p: Planet, planets: Planet[] = []) {
   } else if (p.kind === "gas") {
     const atmoAlt = p.radius * 0.85;
     maxAlt = Math.max(maxAlt, atmoAlt + ORBIT_SHELL_GAS_CLEAR);
+  } else if (p.kind === "star") {
+    const atmoAlt = p.radius * (STAR_ATMO_FACTOR - 1);
+    minAlt = atmoAlt + ORBIT_SHELL_STAR_CLEAR;
+    maxAlt = Math.max(p.radius * ORBIT_SHELL_STAR_MAX_FACTOR, atmoAlt + ORBIT_SHELL_STAR_MAX_PAD);
+    let innerPeri = Infinity;
+    for (const q of planets) {
+      if (q.parentId !== p.id || q.orbitR == null) continue;
+      innerPeri = Math.min(innerPeri, q.orbitR * (1 - (q.orbitE ?? 0)));
+    }
+    if (Number.isFinite(innerPeri)) maxAlt = Math.min(maxAlt, innerPeri - p.radius - 280);
   }
   if (maxAlt < minAlt) maxAlt = minAlt;
   return { minAlt, maxAlt };

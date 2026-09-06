@@ -11,6 +11,9 @@ import {
   ORBIT_PERTURB_BREAK,
   orbitShellAlts,
   keplerRail,
+  STAR_ATMO_FACTOR,
+  KEPLER_STAR_APO_FACTOR,
+  KEPLER_STAR_APO_CAP,
   getStart,
   getSystem,
   RETRO_FORCE,
@@ -472,7 +475,7 @@ function stepLockedLagrange(
 }
 
 function atmoRadius(p: Planet) {
-  return p.radius * (p.kind === "gas" ? 1.85 : p.kind === "star" ? 2.1 : 1.72);
+  return p.radius * (p.kind === "gas" ? 1.85 : p.kind === "star" ? STAR_ATMO_FACTOR : 1.72);
 }
 
 function dragNear(x: number, y: number, vx: number, vy: number, planets: Planet[], atmoScale: number) {
@@ -722,7 +725,10 @@ function inspectKepler(p: Planet, ship: Ship, gravityScale: number): KeplerInspe
   const mu = bodyMu(p, gravityScale);
   const h = dx * rvy - dy * rvx;
   const v2 = rvx * rvx + rvy * rvy;
-  const maxApo = p.radius + Math.min(p.radius * 4.8, 720);
+  const maxApo =
+    p.kind === "star"
+      ? p.radius + Math.min(p.radius * KEPLER_STAR_APO_FACTOR, KEPLER_STAR_APO_CAP)
+      : p.radius + Math.min(p.radius * 4.8, 720);
   let energy: number | null = null;
   let a: number | null = null;
   let e: number | null = null;
