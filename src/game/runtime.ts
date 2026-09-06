@@ -265,6 +265,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         s.lagrangeDwellKey = null;
         s.orbitDragAlarm = false;
         s.orbitDragHintT = 0;
+        s.orbitBreakHint = null;
         s.status = "deep";
         s.ship.x = x;
         s.ship.y = y;

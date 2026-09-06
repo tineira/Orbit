@@ -22,6 +22,11 @@ export const ORBIT_SHELL_MOON_MIN_ALT = 90;
 export const ORBIT_SHELL_GAS_CLEAR = 72;
 /** Atmosphere stronger than this dumps a locked orbit. */
 export const ORBIT_DRAG_BREAK = 0.4;
+/** Tidal pull / host gravity. Same 0.4 feel as drag, but a ratio — raw n-body vs host would dump every moon orbit (the parent is always pulling). */
+export const ORBIT_PERTURB_BREAK = 0.4;
+
+export const GRAVITY_STEPS = [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 8] as const;
+export const ATMO_STEPS = [0, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6] as const;
 
 export function orbitShellAlts(p: Planet, planets: Planet[] = []) {
   const minAlt = ORBIT_SHELL_MIN_ALT;

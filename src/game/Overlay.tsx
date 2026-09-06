@@ -1,9 +1,15 @@
 import { useEffect } from "react";
 import { Minus, Plus, Volume2, VolumeX } from "lucide-react";
 import type { HudSnapshot } from "./types";
-import { ATMO_STEPS, GRAVITY_STEPS, ORBIT_DRAG_HINT } from "./sim";
-import { getPlanets, planetById } from "./world";
+import { ATMO_STEPS, GRAVITY_STEPS, getPlanets, planetById } from "./world";
 import { cn } from "@/lib/utils";
+
+const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
+const ORBIT_PERTURB_HINT = "Perturbed — orbit lost";
+
+function isOrbitLostHint(hint: string | null) {
+  return hint === ORBIT_DRAG_HINT || hint === ORBIT_PERTURB_HINT;
+}
 
 type Props = {
   hud: HudSnapshot;
@@ -155,7 +161,11 @@ export function Overlay({
               <p
                 className={cn(
                   "mt-2 font-mono text-xs tracking-wide uppercase",
-                  hud.status === "too-fast" || hud.status === "crashed" || hud.orbitHint === ORBIT_DRAG_HINT
+                  hud.status === "too-fast" ||
+                    hud.status === "crashed" ||
+                    hud.orbitHint === ORBIT_DRAG_HINT ||
+                    hud.orbitHint === ORBIT_PERTURB_HINT ||
+                    isOrbitLostHint(hud.orbitHint)
                     ? "text-warn"
                     : hud.status === "orbit" || hud.status === "lagrange"
                       ? "text-ok"

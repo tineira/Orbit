@@ -4,8 +4,11 @@ import {
   GRAVITY_BASE,
   LAND_SPEED,
   ORBIT_BREAK_COOLDOWN,
+  ATMO_STEPS,
+  GRAVITY_STEPS,
   ORBIT_DRAG_BREAK,
   ORBIT_LOCK_DWELL,
+  ORBIT_PERTURB_BREAK,
   orbitShellAlts,
   getStart,
   getSystem,
@@ -42,6 +45,7 @@ export type Sim = {
   orbitLockCooldown: number;
   orbitDragAlarm: boolean;
   orbitDragHintT: number;
+  orbitBreakHint: string | null;
   reducedMotion: boolean;
   gravityScale: number;
   atmoScale: number;
@@ -55,9 +59,8 @@ export type Sim = {
 };
 
 export const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
-
-export const GRAVITY_STEPS = [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 8] as const;
-export const ATMO_STEPS = [0, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6] as const;
+export const ORBIT_PERTURB_HINT = "Perturbed — orbit lost";
+export { ATMO_STEPS, GRAVITY_STEPS };
 
 const PARTICLE_CAP = 220;
 const SOFT = 18;
@@ -99,6 +102,7 @@ export function createSim(): Sim {
     orbitLockCooldown: 0,
     orbitDragAlarm: false,
     orbitDragHintT: 0,
+    orbitBreakHint: null,
     reducedMotion: false,
     gravityScale: 1,
     atmoScale: 1,
@@ -143,6 +147,7 @@ export function rebootSim(sim: Sim) {
   sim.orbitLockCooldown = 0;
   sim.orbitDragAlarm = false;
   sim.orbitDragHintT = 0;
+  sim.orbitBreakHint = null;
   sim.lagrangeLockKey = null;
   sim.lagrangeDwellKey = null;
   sim.lagrangeDwell = 0;
@@ -727,6 +732,30 @@ function breakOrbitLock(sim: Sim) {
   sim.orbitLockCooldown = ORBIT_BREAK_COOLDOWN;
 }
 
+function dumpLockedOrbit(sim: Sim, hint: string) {
+  sim.orbitDragAlarm = true;
+  sim.orbitDragHintT = 1.6;
+  sim.orbitBreakHint = hint;
+  sim.orbitHint = hint;
+  breakOrbitLock(sim);
+}
+
+/** Other bodies' gravity at the ship, minus the same pull at the host. Kepler already rides the host's frame. */
+function orbitPerturbRatio(host: Planet, x: number, y: number, planets: Planet[], gravityScale: number) {
+  const hostPull = bodyAccel(host, x, y, gravityScale).a;
+  if (hostPull < 1e-8) return Infinity;
+  let ax = 0;
+  let ay = 0;
+  for (const q of planets) {
+    if (q.id === host.id) continue;
+    const atShip = bodyAccel(q, x, y, gravityScale);
+    const atHost = bodyAccel(q, host.x, host.y, gravityScale);
+    ax += atShip.ax - atHost.ax;
+    ay += atShip.ay - atHost.ay;
+  }
+  return Math.hypot(ax, ay) / hostPull;
+}
+
 function stepLockedOrbit(
   sim: Sim,
   dt: number,
@@ -746,10 +775,11 @@ function stepLockedOrbit(
     return false;
   }
   if (atmoDrag(sim) > ORBIT_DRAG_BREAK) {
-    sim.orbitDragAlarm = true;
-    sim.orbitDragHintT = 1.6;
-    sim.orbitHint = ORBIT_DRAG_HINT;
-    breakOrbitLock(sim);
+    dumpLockedOrbit(sim, ORBIT_DRAG_HINT);
+    return false;
+  }
+  if (orbitPerturbRatio(p, ship.x, ship.y, sim.planets, sim.gravityScale) > ORBIT_PERTURB_BREAK) {
+    dumpLockedOrbit(sim, ORBIT_PERTURB_HINT);
     return false;
   }
   const k = lockedKepler(sim);
@@ -796,6 +826,15 @@ export function stepSim(
   }
 
   if (sim.phase === "crashed") {
+    if (sim.crashedId) {
+      const p = sim.planets.find((b) => b.id === sim.crashedId);
+      if (p) {
+        sim.landedAngle += p.spin * dt * 0.35;
+        stickToPlanet(sim, p);
+        sim.nearest = p;
+        sim.altitude = SHIP_HULL * 0.85;
+      }
+    }
     decayParticles(sim, dt);
     updateCamera(sim, dt);
     ship.thrusting = false;
@@ -911,14 +950,14 @@ function crashInto(sim: Sim, p: Planet, nx: number, ny: number, rel: number) {
   sim.phase = "crashed";
   sim.crashedId = p.id;
   sim.landedId = null;
+  sim.landedAngle = Math.atan2(nx, -ny);
   sim.orbitLockId = null;
   sim.orbitDwell = 0;
   sim.lagrangeLockKey = null;
   sim.lagrangeDwell = 0;
   sim.status = "crashed";
   sim.orbitHint = null;
-  s.vx = p.vx;
-  s.vy = p.vy;
+  stickToPlanet(sim, p);
   s.thrusting = false;
   s.reverse = false;
   sim.camera.trauma = 1;
@@ -985,6 +1024,7 @@ function orbitReady(sim: Sim, nearest: Planet, dist: number) {
   if (alt < minAlt || alt > maxAlt) return false;
   if (!wellDominant(nearest, sim.ship.x, sim.ship.y, sim.planets)) return false;
   if (atmoDrag(sim) > ORBIT_DRAG_BREAK) return false;
+  if (orbitPerturbRatio(nearest, sim.ship.x, sim.ship.y, sim.planets, sim.gravityScale) > ORBIT_PERTURB_BREAK) return false;
   return readKepler(nearest, sim.ship, sim.gravityScale) != null;
 }
 
@@ -1058,7 +1098,7 @@ function classify(sim: Sim, nearest: Planet, dist: number) {
     sim.status = "deep";
     sim.orbitHint = null;
   }
-  if (sim.orbitDragHintT > 0) sim.orbitHint = ORBIT_DRAG_HINT;
+  if (sim.orbitDragHintT > 0) sim.orbitHint = sim.orbitBreakHint ?? ORBIT_DRAG_HINT;
 }
 
 function decayParticles(sim: Sim, dt: number) {

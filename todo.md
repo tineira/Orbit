@@ -1,23 +1,34 @@
 # Todo
 
-## Fix projected path vs locked-orbit divergence
+## Kepler lock vs n-body: dump when they diverge
 
-The dashed coasting line and the orbit you actually catch often disagree. The line is a short n-body forecast; lock is a 2-body Kepler snap around one planet. Make them agree so the path you see is the orbit you enter.
+Keep the Kepler snap. Same warning + lock exit as atmosphere drag (`ORBIT_DRAG_BREAK = 0.4`), but when tidal pull from other bodies makes the ellipse a lie — e.g. a heavy moon rakes a giant's orbit.
 
-**Why they diverge today**
+**Done**
 
-- `predictPath` in `src/game/sim.ts` (drawn from `src/game/draw.ts`) only coasts ~10s under **all** gravity plus atmosphere drag. Planets are frozen. It never applies capture.
-- Capture (`captureOrbit` / `readKepler` / `applyKepler`) switches to a **2-body Kepler ellipse** around the nearest body, then **puts the ship on that orbit**. Near-circular cases (`e < 0.04`) rewrite speed to circular at the current radius.
-- Lock only accepts a compact bound ellipse (energy, `e < 0.92`, periapsis clear of the surface, apoapsis inside `radius + min(radius * 4.8, 720)`), and only after a 0.55s dwell in a low altitude shell. The approach line is often a solar flyby; the lock ring is a tight oval.
-- After lock, `predictPath` traces the Kepler ellipse instead of n-body, so the dashed line itself jumps.
+- Ratio is |a_other(ship) − a_other(host)| / |a_host|. Kepler already rides the host's frame; raw n-body vs host would dump every moon orbit because the parent is always pulling.
+- Break at `ORBIT_PERTURB_BREAK = 0.4` with `Perturbed — orbit lost` (warn color + the drag alarm sound). Also refuse capture at that ratio.
+- Do not rewrite `predictPath` to agree with lock.
 
-**Fix**
+## Chrome Android: white hairline flashes on stars / gravity grid
 
-- Predict the path with the same rules as flight: if this coast would capture, show the Kepler orbit that would lock — not a 10s n-body stub.
-- Stop snapping the ship onto a different orbit than the one the line just showed (drop the circular rewrite, or apply it in the predictor too).
-- Keep the dashed line continuous across the lock moment.
+On Chrome for Android, the starfield and gravity grid sparkle with brief white line artifacts. Not tracked in-repo; it is a known Chrome GPU 2D-canvas issue (thin ~1px strokes and subpixel `fillRect`s, noisy coverage/AA, worse with MSAA). Later, not now.
+
+**Why Orbit triggers it**
+
+- Stars: thousands of subpixel `fillRect`s (0.4–1.25 CSS px) with `globalCompositeOperation = "lighter"`, so coverage errors blow toward white.
+- Gravity grid: `lineWidth = 1.05 / zoom`, which lands at ~1 CSS pixel after camera scale — the weight Chrome antialiases worst.
+- Camera motion (and shake) keeps those features sliding across pixel centers every frame.
+- Context is `{ alpha: false, desynchronized: true }`; desynchronized on Android can present a buffer mid-frame.
+- DPR is capped at 2 while many Androids are 2.625–3.5, so the bitmap is CSS-upscaled and thin geometry shimmers more.
+
+**Likely later work**
+
+- Snap stars/grid to device pixels; skip `lighter` on the starfield.
+- Drop `desynchronized` on Android.
+- Draw at true device DPR, or integer-pixel star dots.
 
 **Where**
 
-- `src/game/sim.ts` — `predictPath`, `readKepler`, `captureOrbit`, `applyKepler`, `orbitReady`
-- `src/game/draw.ts` — `drawPath`, `drawLockRing`
+- `src/game/runtime.ts` — `getContext`, DPR cap
+- `src/game/draw.ts` — `drawStars`, `drawStarDot`, `drawGravityGrid`
