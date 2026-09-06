@@ -480,6 +480,26 @@ test("renders the manifest with the per-app name", () => {
   assert.equal(manifest.icons[0].src, "/__grok/icon-180.png");
 });
 
+test("manifest prefers site title over host slug, including localhost", () => {
+  const local = JSON.parse(renderWebManifest("localhost:8080", { title: "Lumen" }));
+  assert.equal(local.name, "Lumen");
+  assert.equal(local.short_name, "Lumen");
+
+  const published = JSON.parse(
+    renderWebManifest("wild-race.grok.me", { title: "Pixel Nova" }),
+  );
+  assert.equal(published.name, "Pixel Nova");
+  assert.equal(published.short_name, "Pixel Nova");
+});
+
+test("install page prefers site title over host slug", () => {
+  const html = renderInstallPage("localhost:8080", "/?install=1&platform=ios", {
+    title: "Lumen",
+  });
+  assert.match(html, /Add Lumen to your/);
+  assert.doesNotMatch(html, /Grok App/);
+});
+
 // Tripwires: the deployed-app path only works if Nitro scans server/ — an
 // accidental edit that drops serverDir or the middleware file would otherwise
 // fail silently (published apps would just render the app for ?install=1).
