@@ -1,0 +1,65 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Overlay } from "./Overlay";
+import { startGame, type GameHandle } from "./runtime";
+import type { HudSnapshot } from "./types";
+
+const INITIAL: HudSnapshot = {
+  phase: "creating",
+  speed: 0,
+  headingDeg: 0,
+  mass: 1,
+  nearestId: null,
+  nearestName: null,
+  altitude: null,
+  status: "deep",
+  orbitHint: null,
+  orbitLocked: false,
+  orbitEcc: 0,
+  landedId: null,
+  crashedId: null,
+  muted: false,
+  touching: false,
+};
+
+export function SpaceGame() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const gameRef = useRef<GameHandle | null>(null);
+  const [hud, setHud] = useState<HudSnapshot>(INITIAL);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const game = startGame(canvas, setHud);
+    gameRef.current = game;
+    return () => {
+      game.destroy();
+      gameRef.current = null;
+    };
+  }, []);
+
+  const onLaunch = useCallback(() => {
+    if (hud.phase !== "title") return;
+    gameRef.current?.launch();
+  }, [hud.phase]);
+  const onTakeoff = useCallback(() => {
+    gameRef.current?.takeoff();
+  }, []);
+  const onReboot = useCallback(() => {
+    gameRef.current?.reboot();
+  }, []);
+  const onMute = useCallback(() => {
+    gameRef.current?.setMuted(!hud.muted);
+  }, [hud.muted]);
+
+  return (
+    <div className="relative h-dvh w-full overflow-hidden bg-bg text-fg">
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 size-full touch-none select-none"
+        style={{ touchAction: "none" }}
+        aria-label="Space flight"
+      />
+      <Overlay hud={hud} onLaunch={onLaunch} onTakeoff={onTakeoff} onReboot={onReboot} onMute={onMute} />
+    </div>
+  );
+}
