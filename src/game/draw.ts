@@ -92,9 +92,17 @@ function starRgb(i: number): [number, number, number] {
 /** World units of mesh slide per unit of acceleration. Linear so the star's gradient reads at planet distance. */
 const GRID_WARP_K = 280;
 
-function gridSpacing(zoom: number) {
-  const target = 40 / Math.max(0.04, zoom);
-  return 2 ** Math.round(Math.log2(Math.max(16, target)));
+function gridLod(zoom: number) {
+  const target = Math.max(16, 40 / Math.max(0.04, zoom));
+  const log = Math.log2(target);
+  const fineExp = Math.floor(log);
+  const fine = 2 ** fineExp;
+  return { fine, coarse: fine * 2, fade: log - fineExp, target };
+}
+
+function onLattice(v: number, step: number) {
+  const q = Math.round(v / step) * step;
+  return Math.abs(v - q) <= step * 1e-6;
 }
 
 function gridBuried(x: number, y: number, planets: Planet[]) {
@@ -104,21 +112,49 @@ function gridBuried(x: number, y: number, planets: Planet[]) {
   return false;
 }
 
-function warpGridPoint(x: number, y: number, sim: Sim, step: number) {
+function warpGridPoint(x: number, y: number, sim: Sim, cellCap: number) {
   const g = gravityAt(x, y, sim.planets, sim.gravityScale);
   const mag = Math.hypot(g.ax, g.ay);
   if (mag < 1e-8) return { x, y };
   let dist = GRID_WARP_K * mag;
   const room = Math.max(0, g.dist - g.nearest.radius * 0.9);
   dist = Math.min(dist, room * 0.84);
-  const cellCap = step * 8;
   dist = dist / (1 + dist / cellCap);
   return { x: x + (g.ax / mag) * dist, y: y + (g.ay / mag) * dist };
 }
 
+function strokeGridRun(
+  ctx: CanvasRenderingContext2D,
+  cols: number,
+  rows: number,
+  xs: Float64Array,
+  ys: Float64Array,
+  hide: Uint8Array,
+  alongRows: boolean,
+  index: number,
+) {
+  ctx.beginPath();
+  let pen = false;
+  const n = alongRows ? cols : rows;
+  for (let k = 0; k < n; k++) {
+    const i = alongRows ? k : index;
+    const j = alongRows ? index : k;
+    const p = j * cols + i;
+    if (hide[p]) {
+      pen = false;
+      continue;
+    }
+    if (!pen) {
+      ctx.moveTo(xs[p]!, ys[p]!);
+      pen = true;
+    } else ctx.lineTo(xs[p]!, ys[p]!);
+  }
+  ctx.stroke();
+}
+
 function drawGravityGrid(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera, cssW: number, cssH: number) {
   const zoom = Math.max(0.04, cam.zoom);
-  const step = gridSpacing(zoom);
+  const { fine: step, coarse, fade, target } = gridLod(zoom);
   const pad = step * 9;
   const halfW = cssW / (2 * zoom) + pad;
   const halfH = cssH / (2 * zoom) + pad;
@@ -130,6 +166,7 @@ function drawGravityGrid(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera, c
   const xs = new Float64Array(n);
   const ys = new Float64Array(n);
   const hide = new Uint8Array(n);
+  const cellCap = target * 8;
 
   for (let j = 0; j < rows; j++) {
     const gy = y0 + j * step;
@@ -137,48 +174,29 @@ function drawGravityGrid(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera, c
       const gx = x0 + i * step;
       const k = j * cols + i;
       hide[k] = gridBuried(gx, gy, sim.planets) ? 1 : 0;
-      const w = warpGridPoint(gx, gy, sim, step);
+      const w = warpGridPoint(gx, gy, sim, cellCap);
       xs[k] = w.x;
       ys[k] = w.y;
     }
   }
 
+  const baseA = 0.16;
+  const fineA = baseA * (1 - fade);
   ctx.save();
   ctx.lineWidth = 1.05 / zoom;
-  ctx.strokeStyle = "rgba(183, 192, 204, 0.16)";
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
   for (let j = 0; j < rows; j++) {
-    ctx.beginPath();
-    let pen = false;
-    for (let i = 0; i < cols; i++) {
-      const k = j * cols + i;
-      if (hide[k]) {
-        pen = false;
-        continue;
-      }
-      if (!pen) {
-        ctx.moveTo(xs[k]!, ys[k]!);
-        pen = true;
-      } else ctx.lineTo(xs[k]!, ys[k]!);
-    }
-    ctx.stroke();
+    const a = onLattice(y0 + j * step, coarse) ? baseA : fineA;
+    if (a < 0.005) continue;
+    ctx.strokeStyle = `rgba(183, 192, 204, ${a})`;
+    strokeGridRun(ctx, cols, rows, xs, ys, hide, true, j);
   }
   for (let i = 0; i < cols; i++) {
-    ctx.beginPath();
-    let pen = false;
-    for (let j = 0; j < rows; j++) {
-      const k = j * cols + i;
-      if (hide[k]) {
-        pen = false;
-        continue;
-      }
-      if (!pen) {
-        ctx.moveTo(xs[k]!, ys[k]!);
-        pen = true;
-      } else ctx.lineTo(xs[k]!, ys[k]!);
-    }
-    ctx.stroke();
+    const a = onLattice(x0 + i * step, coarse) ? baseA : fineA;
+    if (a < 0.005) continue;
+    ctx.strokeStyle = `rgba(183, 192, 204, ${a})`;
+    strokeGridRun(ctx, cols, rows, xs, ys, hide, false, i);
   }
   ctx.restore();
 }
