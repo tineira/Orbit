@@ -1,4 +1,4 @@
-import type { Camera, FlightStatus, Particle, Planet, Ship, SolarFlare } from "./types";
+import type { Camera, FlightStatus, Particle, Planet, SolarFlare } from "./types";
 import type { Sim } from "./sim";
 import {
   atmoDrag,
@@ -16,6 +16,7 @@ import {
   relativePathTarget,
   flareArcPoints,
   flareApexNow,
+  sinkAlpha,
 } from "./sim";
 import {
   getMinimapWorldR,
@@ -70,18 +71,12 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   drawLagrangePoints(ctx, sim, cam);
   drawRelativePath(ctx, sim);
   drawPlanetPaths(ctx, sim);
-  if (!sim.burned) drawParticles(ctx, sim.particles);
+  const particlesOver = sim.burned || sim.crashKind === "sink";
+  if (!particlesOver) drawParticles(ctx, sim.particles);
   drawGravityArrows(ctx, sim);
   const shipUmbra = star ? pointUmbraMax(sim.ship.x, sim.ship.y, sim.planets, star, null) : 0;
-  drawShip(
-    ctx,
-    sim.ship,
-    sim.phase !== "title" && sim.ship.thrusting,
-    shipUmbra,
-    sim.burned,
-    sim.reducedMotion,
-  );
-  if (sim.burned) drawParticles(ctx, sim.particles);
+  drawShip(ctx, sim, shipUmbra);
+  if (particlesOver) drawParticles(ctx, sim.particles);
   drawOrbitLockBars(ctx, sim, cam);
 
   ctx.restore();
@@ -964,21 +959,103 @@ function drawHullFire(
   ctx.restore();
 }
 
-function drawShip(
-  ctx: CanvasRenderingContext2D,
-  ship: Ship,
-  thrusting: boolean,
-  umbra = 0,
-  burned = false,
-  reducedMotion = false,
-) {
+function pathPoly(ctx: CanvasRenderingContext2D, pts: readonly (readonly [number, number])[]) {
+  const first = pts[0];
+  if (!first) return;
+  ctx.beginPath();
+  ctx.moveTo(first[0], first[1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]![0], pts[i]![1]);
+  ctx.closePath();
+}
+
+function drawWreck(ctx: CanvasRenderingContext2D, seed: number, umbra: number) {
+  const dim = 1 - 0.72 * Math.max(0, Math.min(1, umbra));
+  const fill = `rgb(${Math.round(198 * dim)}, ${Math.round(192 * dim)}, ${Math.round(184 * dim)})`;
+  ctx.fillStyle = "rgba(7,8,12,0.32)";
+  ctx.beginPath();
+  ctx.ellipse(0.5, 5, 12, 5.2, 0.15, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "#07080c";
+  ctx.lineWidth = 1.3;
+  const pieces: {
+    pts: readonly (readonly [number, number])[];
+    ox: number;
+    oy: number;
+    rot: number;
+    canopy?: boolean;
+  }[] = [
+    { pts: [[0, -13], [4.4, 1.2], [-4.4, 1.2]], ox: -2.4, oy: -3.6, rot: -0.4 },
+    {
+      pts: [
+        [-8.5, 10],
+        [0, 6],
+        [-1.4, 3.2],
+        [-6.2, 9.2],
+      ],
+      ox: -5.8,
+      oy: 3.4,
+      rot: -0.7,
+    },
+    {
+      pts: [
+        [8.5, 10],
+        [0, 6],
+        [1.4, 3.2],
+        [6.2, 9.2],
+      ],
+      ox: 6.4,
+      oy: 2.6,
+      rot: 0.58,
+    },
+    { pts: [[0, -6], [3.2, 2], [-3.2, 2]], ox: 1.8, oy: 5.8, rot: 0.92, canopy: true },
+  ];
+  for (let i = 0; i < pieces.length; i++) {
+    const piece = pieces[i]!;
+    const jx = (hash(seed + i * 3.1) - 0.5) * 3.2;
+    const jy = (hash(seed + i * 7.7) - 0.5) * 3.2;
+    const jr = (hash(seed + i * 11.3) - 0.5) * 0.28;
+    ctx.save();
+    ctx.translate(piece.ox + jx, piece.oy + jy);
+    ctx.rotate(piece.rot + jr);
+    pathPoly(ctx, piece.pts);
+    ctx.fillStyle = piece.canopy ? "#12141a" : fill;
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawShip(ctx: CanvasRenderingContext2D, sim: Sim, umbra = 0) {
+  const ship = sim.ship;
+  const crash = sim.phase === "crashed" ? sim.crashKind : null;
+  const alpha = sinkAlpha(sim);
+  if (alpha <= 0.02) return;
+  const burned = crash === "burn";
+  const reducedMotion = sim.reducedMotion;
+  const thrusting = sim.phase !== "title" && ship.thrusting && !crash;
+
   ctx.save();
   ctx.translate(ship.x, ship.y);
   ctx.rotate(-ship.yaw);
+  if (alpha < 1) {
+    ctx.globalAlpha *= alpha;
+    const t = 1 - alpha;
+    const s = 1 - 0.38 * t;
+    ctx.scale(s, s);
+  }
+
+  if (crash === "wreck") {
+    drawWreck(ctx, sim.wreckSeed, umbra);
+    ctx.restore();
+    return;
+  }
 
   if (burned) drawHullFire(ctx, reducedMotion, "back");
 
-  if (thrusting && !burned) {
+  if (thrusting) {
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
     const flicker = 0.75 + Math.random() * 0.35;
@@ -1274,16 +1351,20 @@ function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH
     ctx.fill();
   }
 
-  const sx = cx + sim.ship.x * scale;
-  const sy = cy + sim.ship.y * scale;
-  const f = forwardOf(sim.ship.yaw);
-  ctx.fillStyle = "#eceae4";
-  ctx.beginPath();
-  ctx.moveTo(sx + f.x * 6, sy + f.y * 6);
-  ctx.lineTo(sx - f.x * 4 + f.y * 3, sy - f.y * 4 - f.x * 3);
-  ctx.lineTo(sx - f.x * 4 - f.y * 3, sy - f.y * 4 + f.x * 3);
-  ctx.closePath();
-  ctx.fill();
+  const pip = sinkAlpha(sim);
+  if (pip > 0.05) {
+    const sx = cx + sim.ship.x * scale;
+    const sy = cy + sim.ship.y * scale;
+    const f = forwardOf(sim.ship.yaw);
+    ctx.globalAlpha *= pip;
+    ctx.fillStyle = "#eceae4";
+    ctx.beginPath();
+    ctx.moveTo(sx + f.x * 6, sy + f.y * 6);
+    ctx.lineTo(sx - f.x * 4 + f.y * 3, sy - f.y * 4 - f.x * 3);
+    ctx.lineTo(sx - f.x * 4 - f.y * 3, sy - f.y * 4 + f.x * 3);
+    ctx.closePath();
+    ctx.fill();
+  }
   ctx.restore();
 }
 

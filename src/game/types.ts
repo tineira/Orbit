@@ -80,6 +80,8 @@ export type Phase = "creating" | "title" | "flight" | "landed" | "crashed";
 
 export type BurnCause = "flare" | "star";
 
+export type CrashKind = "burn" | "wreck" | "sink";
+
 export type FlightStatus = "deep" | "approach" | "orbit" | "lagrange" | "too-fast" | "landed" | "crashed";
 
 export type VerboseDiag = {
@@ -124,6 +126,7 @@ export type HudSnapshot = {
   crashedId: string | null;
   burned: boolean;
   burnCause: BurnCause | null;
+  crashKind: CrashKind | null;
   muted: boolean;
   touching: boolean;
   gravityScale: number;

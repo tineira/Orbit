@@ -1,6 +1,7 @@
 import type {
   BurnCause,
   Camera,
+  CrashKind,
   FlightStatus,
   Particle,
   Planet,
@@ -76,6 +77,9 @@ export type Sim = {
   flareWait: number;
   burned: boolean;
   burnCause: BurnCause | null;
+  crashKind: CrashKind | null;
+  crashAge: number;
+  wreckSeed: number;
 };
 
 export const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
@@ -146,6 +150,9 @@ export function createSim(): Sim {
     flareWait: 6,
     burned: false,
     burnCause: null,
+    crashKind: null,
+    crashAge: 0,
+    wreckSeed: 0,
   };
   landOnHome(sim);
   return sim;
@@ -224,6 +231,9 @@ export function rebootSim(sim: Sim) {
   sim.flareWait = 5 + Math.random() * 6;
   sim.burned = false;
   sim.burnCause = null;
+  sim.crashKind = null;
+  sim.crashAge = 0;
+  sim.wreckSeed = 0;
   landOnHome(sim);
   sim.camera.zoomAuto = 0.96;
   sim.camera.zoom = 0.96 * sim.camera.userZoom;
@@ -749,6 +759,51 @@ function stepBurnedFall(sim: Sim, dt: number) {
   emitBurnEmbers(sim);
 }
 
+function stepSink(sim: Sim, dt: number) {
+  const p = crashedHost(sim);
+  const ship = sim.ship;
+  if (!p) return;
+  const dur = sim.reducedMotion ? 0.18 : SINK_DURATION;
+  const t = Math.min(1, sim.crashAge / dur);
+  const ease = t * t;
+  const pad = (p.radius + SHIP_HULL * 0.85) * (1 - ease) + p.radius * 0.46 * ease;
+  const ang = sim.landedAngle;
+  ship.x = p.x + Math.sin(ang) * pad;
+  ship.y = p.y - Math.cos(ang) * pad;
+  ship.vx = p.vx;
+  ship.vy = p.vy;
+  if (!sim.reducedMotion) ship.yaw += dt * 1.35;
+  sim.nearest = p;
+  sim.altitude = pad - p.radius;
+  emitSinkMist(sim, t);
+}
+
+function emitSinkMist(sim: Sim, t: number) {
+  if (sim.reducedMotion || t > 0.92) return;
+  if (Math.random() > 0.62) return;
+  const s = sim.ship;
+  const p = crashedHost(sim);
+  let tx = 0;
+  let ty = -1;
+  if (p) {
+    const dx = s.x - p.x;
+    const dy = s.y - p.y;
+    const d = Math.hypot(dx, dy) || 1;
+    tx = -dy / d;
+    ty = dx / d;
+  }
+  spawn(
+    sim,
+    s.x + (Math.random() - 0.5) * 14,
+    s.y + (Math.random() - 0.5) * 14,
+    s.vx + tx * (6 + Math.random() * 14) * (Math.random() < 0.5 ? -1 : 1) + (Math.random() - 0.5) * 6,
+    s.vy + ty * (6 + Math.random() * 14) * (Math.random() < 0.5 ? -1 : 1) + (Math.random() - 0.5) * 6,
+    0.4 + Math.random() * 0.5,
+    1.6 + Math.random() * 2.8,
+    40 + Math.random() * 30,
+  );
+}
+
 function landOnHome(sim: Sim) {
   const home =
     sim.planets.find((p) => p.kicker === "Home") ?? sim.planets.find((p) => p.kind === "rocky");
@@ -1180,8 +1235,11 @@ export function stepSim(
   }
 
   if (sim.phase === "crashed") {
+    sim.crashAge += dt;
     if (sim.burned) {
       stepBurnedFall(sim, dt);
+    } else if (sim.crashKind === "sink") {
+      stepSink(sim, dt);
     } else if (sim.crashedId) {
       const p = sim.planets.find((b) => b.id === sim.crashedId);
       if (p) {
@@ -1304,13 +1362,30 @@ function emitExhaust(sim: Sim, f: { x: number; y: number }, power: number) {
   }
 }
 
+export function crashKindFor(p: Planet): CrashKind {
+  if (p.kind === "star") return "burn";
+  if (p.kind === "gas") return "sink";
+  return "wreck";
+}
+
+export const SINK_DURATION = 1.55;
+
+export function sinkAlpha(sim: Sim) {
+  if (sim.crashKind !== "sink") return 1;
+  const t = Math.min(1, sim.crashAge / (sim.reducedMotion ? 0.18 : SINK_DURATION));
+  return Math.max(0, 1 - t * t);
+}
+
 function crashInto(sim: Sim, p: Planet, nx: number, ny: number, rel: number) {
   const s = sim.ship;
-  const hot = p.kind === "star";
+  const kind = crashKindFor(p);
   sim.phase = "crashed";
   sim.crashedId = p.id;
-  sim.burned = hot;
-  sim.burnCause = hot ? "star" : null;
+  sim.crashKind = kind;
+  sim.crashAge = 0;
+  sim.wreckSeed = Math.random() * 1000;
+  sim.burned = kind === "burn";
+  sim.burnCause = kind === "burn" ? "star" : null;
   sim.landedId = null;
   sim.landedAngle = Math.atan2(nx, -ny);
   sim.orbitLockId = null;
@@ -1323,7 +1398,7 @@ function crashInto(sim: Sim, p: Planet, nx: number, ny: number, rel: number) {
   s.thrusting = false;
   s.reverse = false;
   sim.camera.trauma = 1;
-  burstWreck(sim, nx, ny, hot);
+  burstWreck(sim, nx, ny, kind);
   void rel;
 }
 
@@ -1438,6 +1513,9 @@ function burnInFlare(sim: Sim) {
   sim.phase = "crashed";
   sim.burned = true;
   sim.burnCause = "flare";
+  sim.crashKind = "burn";
+  sim.crashAge = 0;
+  sim.wreckSeed = Math.random() * 1000;
   sim.crashedId = star.id;
   sim.landedId = null;
   sim.orbitLockId = null;
@@ -1451,23 +1529,26 @@ function burnInFlare(sim: Sim) {
   s.vx *= 0.35;
   s.vy *= 0.35;
   sim.camera.trauma = 1;
-  burstWreck(sim, 0, 0, true);
+  burstWreck(sim, 0, 0, "burn");
 }
 
-function burstWreck(sim: Sim, nx: number, ny: number, hot: boolean) {
+function burstWreck(sim: Sim, nx: number, ny: number, kind: CrashKind) {
   const s = sim.ship;
-  const n = sim.reducedMotion ? (hot ? 10 : 6) : hot ? 26 : 18;
-  const spread = hot ? 120 : 70;
+  const hot = kind === "burn";
+  const sink = kind === "sink";
+  const n = sim.reducedMotion ? (hot ? 10 : sink ? 8 : 8) : hot ? 26 : sink ? 16 : 22;
+  const spread = hot ? 120 : sink ? 36 : 78;
+  const along = sink ? -22 : 20;
   for (let i = 0; i < n; i++) {
     spawn(
       sim,
-      s.x + (hot ? (Math.random() - 0.5) * 8 : 0),
-      s.y + (hot ? (Math.random() - 0.5) * 8 : 0),
-      s.vx + nx * (20 + Math.random() * 90) + (Math.random() - 0.5) * spread,
-      s.vy + ny * (20 + Math.random() * 90) + (Math.random() - 0.5) * spread,
-      (hot ? 0.5 : 0.45) + Math.random() * (hot ? 0.55 : 0.4),
-      (hot ? 1.6 : 1.4) + Math.random() * (hot ? 3.2 : 2.4),
-      hot ? 8 + Math.random() * 40 : 18 + Math.random() * 22,
+      s.x + (hot || sink ? (Math.random() - 0.5) * 8 : (Math.random() - 0.5) * 6),
+      s.y + (hot || sink ? (Math.random() - 0.5) * 8 : (Math.random() - 0.5) * 6),
+      s.vx + nx * (along + Math.random() * (sink ? 28 : 90)) + (Math.random() - 0.5) * spread,
+      s.vy + ny * (along + Math.random() * (sink ? 28 : 90)) + (Math.random() - 0.5) * spread,
+      (hot ? 0.5 : sink ? 0.55 : 0.5) + Math.random() * (hot ? 0.55 : 0.45),
+      (hot ? 1.6 : sink ? 1.8 : 1.5) + Math.random() * (hot ? 3.2 : sink ? 2.6 : 2.8),
+      hot ? 8 + Math.random() * 40 : sink ? 38 + Math.random() * 28 : 22 + Math.random() * 24,
     );
   }
 }

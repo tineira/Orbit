@@ -123,6 +123,7 @@ const CREATING_HUD: HudSnapshot = {
   crashedId: null,
   burned: false,
   burnCause: null,
+  crashKind: null,
   muted: false,
   touching: false,
   gravityScale: 1,
@@ -226,6 +227,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       crashedId: sim.crashedId,
       burned: sim.burned,
       burnCause: sim.burnCause,
+      crashKind: sim.crashKind,
       muted,
       touching: !!input.state.pointer?.down,
       gravityScale: sim.gravityScale,
@@ -328,6 +330,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         s.crashedId = null;
         s.burned = false;
         s.burnCause = null;
+        s.crashKind = null;
+        s.crashAge = 0;
         s.orbitLockId = null;
         s.orbitDwell = 0;
         s.orbitLockCooldown = 0;

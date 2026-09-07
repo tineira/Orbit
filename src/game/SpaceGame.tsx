@@ -20,6 +20,7 @@ const INITIAL: HudSnapshot = {
   crashedId: null,
   burned: false,
   burnCause: null,
+  crashKind: null,
   muted: false,
   touching: false,
   gravityScale: 1,

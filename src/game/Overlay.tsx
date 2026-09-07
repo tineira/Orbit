@@ -262,7 +262,8 @@ export function Overlay({
       {hud.phase === "crashed" && crashed ? (
         <CrashCard
           burned={hud.burned}
-          detail={crashDetail(crashed.name, hud.burned, hud.burnCause)}
+          crashKind={hud.crashKind}
+          detail={crashDetail(crashed.name, hud.burned, hud.burnCause, hud.crashKind)}
           onReboot={onReboot}
           onNewWorld={onNewWorld}
         />
@@ -456,7 +457,13 @@ function LandingCard({
   );
 }
 
-function crashDetail(name: string, burned: boolean, cause: HudSnapshot["burnCause"]) {
+function crashDetail(
+  name: string,
+  burned: boolean,
+  cause: HudSnapshot["burnCause"],
+  kind: HudSnapshot["crashKind"],
+) {
+  if (kind === "sink") return `The craft fell into ${name}. The clouds closed.`;
   if (!burned) {
     return `The approach into ${name} was too fast. The well won. Bring the craft back and try a slower pass — or catch an orbit first.`;
   }
@@ -466,11 +473,13 @@ function crashDetail(name: string, burned: boolean, cause: HudSnapshot["burnCaus
 
 function CrashCard({
   burned,
+  crashKind,
   detail,
   onReboot,
   onNewWorld,
 }: {
   burned: boolean;
+  crashKind: HudSnapshot["crashKind"];
   detail: string;
   onReboot: () => void;
   onNewWorld: () => void;
@@ -483,7 +492,7 @@ function CrashCard({
       >
         <p className="font-mono text-xs tracking-[0.2em] uppercase text-warn">Hull loss</p>
         <h2 className="mt-2 font-display text-3xl leading-tight text-fg">
-          {burned ? "You burned" : "You crashed"}
+          {burned ? "You burned" : crashKind === "sink" ? "You vanished" : "You crashed"}
         </h2>
         <p className="mt-3 text-sm leading-relaxed text-muted">{detail}</p>
         <div className="mt-5 flex flex-wrap items-center gap-3">
