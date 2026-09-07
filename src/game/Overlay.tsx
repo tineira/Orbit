@@ -62,7 +62,7 @@ export function Overlay({
     if (hud.phase !== "crashed") return;
     const onKey = (e: KeyboardEvent) => {
       if (e.repeat) return;
-      if (isEnterKey(e) || e.code === "KeyR" || e.code === "Space") {
+      if (e.code === "KeyR" || e.code === "Space") {
         e.preventDefault();
         onReboot();
       }

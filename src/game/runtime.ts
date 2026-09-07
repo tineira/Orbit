@@ -165,6 +165,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let prevCrashed: string | null = null;
   let prevTrauma = 0;
   let enterWasDown = false;
+  let enterNeedsUp = false;
   let oWasDown = false;
   let lWasDown = false;
   let pWasDown = false;
@@ -266,9 +267,17 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
 
   const consumeEnter = () => {
     const down = enterHeld(input.state);
+    if (!down) enterNeedsUp = false;
     const pressed = down && !enterWasDown;
     enterWasDown = down;
-    return pressed;
+    return pressed && !enterNeedsUp;
+  };
+
+  const rebootToPad = () => {
+    if (!sim) return;
+    rebootSim(sim);
+    enterNeedsUp = true;
+    enterWasDown = true;
   };
 
   const consumeOrbitShell = () => {
@@ -467,7 +476,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         publish();
       } else if (sim.phase === "crashed") {
         audio.unlock();
-        rebootSim(sim);
+        rebootToPad();
         publish();
       } else if (sim.phase === "landed") {
         audio.unlock();
@@ -627,7 +636,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     reboot() {
       if (!sim) return;
       audio.unlock();
-      rebootSim(sim);
+      rebootToPad();
       input.state.qaKeys = null;
       input.state.qaSteer = null;
       publish();
