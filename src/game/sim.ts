@@ -1415,15 +1415,6 @@ export function stepSim(
     const p = sim.planets.find((b) => b.id === sim.landedId);
     if (p) {
       carryOnSurface(sim, p, dt);
-      if (controls.steer) sim.landedAngle -= controls.steer * TURN_RATE * dt;
-      if (controls.aimYaw != null) {
-        const want = wrapPi(-controls.aimYaw);
-        let d = wrapPi(want - sim.landedAngle);
-        const max = TURN_RATE * dt;
-        if (d > max) d = max;
-        if (d < -max) d = -max;
-        sim.landedAngle += d;
-      }
       stickToPlanet(sim, p);
       faceRadial(sim);
       ship.thrusting = false;

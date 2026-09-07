@@ -482,11 +482,10 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     }
 
     while (acc >= STEP) {
-      const steer = playing() || sim.phase === "landed" ? steerFrom(input.state) : 0;
-      const thr =
-        playing() || sim.phase === "landed"
-          ? thrustFrom(input.state)
-          : { forward: false, reverse: false };
+      const steer = playing() ? steerFrom(input.state) : 0;
+      const thr = playing()
+        ? thrustFrom(input.state)
+        : { forward: false, reverse: false };
       const aim = aimYaw();
       const aimThrust = !!input.state.pointer?.down && playing();
       stepSim(sim, STEP, {
