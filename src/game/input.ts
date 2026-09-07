@@ -81,6 +81,7 @@ export function createInput(
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
+    if (isUi(e)) return;
     const zoomDir = isZoomKey(e);
     if (zoomDir) {
       e.preventDefault();
@@ -114,6 +115,7 @@ export function createInput(
 
   const onPointerDown = (e: PointerEvent) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
+    if (isUi(e) && pointers.size < 2) return;
     const p = screenToCanvas(e.clientX, e.clientY);
     pointers.set(e.pointerId, p);
 
@@ -126,7 +128,7 @@ export function createInput(
       return;
     }
 
-    if (isUi(e) || pinching) return;
+    if (pinching) return;
     canvas.focus({ preventScroll: true });
     if (e.target === canvas || canvas.contains(e.target as Node)) {
       try {
@@ -174,6 +176,13 @@ export function createInput(
     suppressClick = false;
   };
 
+  const onVisibility = () => {
+    if (document.hidden) clearKeys();
+  };
+  const onContextMenu = (e: Event) => {
+    e.preventDefault();
+  };
+
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("blur", clearKeys);
@@ -183,10 +192,9 @@ export function createInput(
   window.addEventListener("pointerup", onPointerUp);
   window.addEventListener("pointercancel", onPointerUp);
   window.addEventListener("click", onClickCapture, true);
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) clearKeys();
-  });
-  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  document.addEventListener("visibilitychange", onVisibility);
+  canvas.addEventListener("lostpointercapture", onPointerUp);
+  canvas.addEventListener("contextmenu", onContextMenu);
 
   return {
     state,
@@ -201,6 +209,9 @@ export function createInput(
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerUp);
       window.removeEventListener("click", onClickCapture, true);
+      document.removeEventListener("visibilitychange", onVisibility);
+      canvas.removeEventListener("lostpointercapture", onPointerUp);
+      canvas.removeEventListener("contextmenu", onContextMenu);
     },
   };
 }

@@ -1,4 +1,12 @@
-import type { Camera, FlightStatus, Particle, Planet, Ship, SolarFlare, VerboseDiag } from "./types";
+import type {
+  Camera,
+  FlightStatus,
+  Particle,
+  Planet,
+  Ship,
+  SolarFlare,
+  VerboseDiag,
+} from "./types";
 import {
   G,
   GRAVITY_BASE,
@@ -92,7 +100,15 @@ export function createSim(): Sim {
       hue: 0,
       alive: false,
     })),
-    camera: { x: start.x, y: start.y, zoom: 0.96, zoomAuto: 0.96, userZoom: 1, shake: 0, trauma: 0 },
+    camera: {
+      x: start.x,
+      y: start.y,
+      zoom: 0.96,
+      zoomAuto: 0.96,
+      userZoom: 1,
+      shake: 0,
+      trauma: 0,
+    },
     phase: "title",
     landedId: null,
     crashedId: null,
@@ -297,11 +313,7 @@ function rayAccel(
   return (g.ax + w * w * (pos.x - parent.x)) * c + (g.ay + w * w * (pos.y - parent.y)) * s;
 }
 
-function findRayRoot(
-  f: (r: number) => number,
-  lo: number,
-  hi: number,
-): number | null {
+function findRayRoot(f: (r: number) => number, lo: number, hi: number): number | null {
   if (!(hi > lo)) return null;
   const n = 20;
   let a = lo;
@@ -371,7 +383,8 @@ function pointsForPair(body: Planet, parent: Planet, gravityScale: number): Lagr
   const fAlong = (r: number) => rayAccel(r, a, parent, body, w, gravityScale);
   const fOpp = (r: number) => rayAccel(r, a + Math.PI, parent, body, w, gravityScale);
   const pad = body.radius + 28;
-  const r1 = findRayRoot(fAlong, parent.radius * 1.2, R - pad) ?? Math.max(parent.radius * 1.25, R - hill);
+  const r1 =
+    findRayRoot(fAlong, parent.radius * 1.2, R - pad) ?? Math.max(parent.radius * 1.25, R - hill);
   const r2 = findRayRoot(fAlong, R + pad, R + Math.max(hill * 2.8, R * 0.55)) ?? R + hill;
   const r3 = findRayRoot(fOpp, parent.radius * 1.2, R * 1.25) ?? R;
   return [
@@ -383,22 +396,53 @@ function pointsForPair(body: Planet, parent: Planet, gravityScale: number): Lagr
   ].filter((pt): pt is LagrangePoint => pt != null);
 }
 
-export function listLagrangePoints(sim: Sim): LagrangePoint[] {
-  if (sim.gravityScale <= 0) return [];
-  const byId = new Map(sim.planets.map((p) => [p.id, p]));
+const lagrangeCache = new WeakMap<Sim, LagrangePoint[]>();
+
+function invalidateLagrange(sim: Sim) {
+  lagrangeCache.delete(sim);
+}
+
+function computeLagrangePoints(planets: Planet[], gravityScale: number): LagrangePoint[] {
+  if (gravityScale <= 0) return [];
+  const byId = new Map(planets.map((p) => [p.id, p]));
   const out: LagrangePoint[] = [];
-  for (const p of sim.planets) {
+  for (const p of planets) {
     if (p.kind === "star") continue;
     if (p.parentId == null || p.orbitR == null || p.orbitA == null || p.orbitW == null) continue;
     const parent = byId.get(p.parentId);
     if (!parent) continue;
-    out.push(...pointsForPair(p, parent, sim.gravityScale));
+    out.push(...pointsForPair(p, parent, gravityScale));
   }
   return out;
 }
 
+function lagrangePointByKey(
+  planets: Planet[],
+  gravityScale: number,
+  key: string,
+): LagrangePoint | null {
+  const split = key.lastIndexOf(":");
+  if (split <= 0) return null;
+  const bodyId = key.slice(0, split);
+  const body = planets.find((p) => p.id === bodyId);
+  if (!body || body.parentId == null) return null;
+  const parent = planets.find((p) => p.id === body.parentId);
+  if (!parent) return null;
+  return pointsForPair(body, parent, gravityScale).find((pt) => pt.key === key) ?? null;
+}
+
+export function listLagrangePoints(sim: Sim): LagrangePoint[] {
+  const hit = lagrangeCache.get(sim);
+  if (hit) return hit;
+  const computed = computeLagrangePoints(sim.planets, sim.gravityScale);
+  lagrangeCache.set(sim, computed);
+  return computed;
+}
+
 function lagrangeHint(pt: LagrangePoint, locked: boolean) {
-  return locked ? `${pt.kind} locked · ${pt.planetName}` : `Capturing ${pt.kind} · ${pt.planetName}`;
+  return locked
+    ? `${pt.kind} locked · ${pt.planetName}`
+    : `Capturing ${pt.kind} · ${pt.planetName}`;
 }
 
 function nearestLagrange(sim: Sim, points = listLagrangePoints(sim)): LagrangePoint | null {
@@ -450,7 +494,13 @@ function breakLagrangeLock(sim: Sim) {
 function stepLockedLagrange(
   sim: Sim,
   dt: number,
-  controls: { steer: number; forward: boolean; reverse: boolean; aimYaw: number | null; aimThrust: boolean },
+  controls: {
+    steer: number;
+    forward: boolean;
+    reverse: boolean;
+    aimYaw: number | null;
+    aimThrust: boolean;
+  },
 ) {
   const pt = listLagrangePoints(sim).find((p) => p.key === sim.lagrangeLockKey);
   if (!pt) {
@@ -458,7 +508,6 @@ function stepLockedLagrange(
     return false;
   }
   const ship = sim.ship;
-  applySteer(ship, controls, dt);
   ship.thrusting = controls.forward || controls.aimThrust;
   ship.reverse = controls.reverse && !ship.thrusting;
   if (ship.thrusting || ship.reverse) {
@@ -489,7 +538,14 @@ function atmoRadius(p: Planet) {
   return p.radius * (p.kind === "gas" ? 1.85 : p.kind === "star" ? STAR_ATMO_FACTOR : 1.72);
 }
 
-function dragNear(x: number, y: number, vx: number, vy: number, planets: Planet[], atmoScale: number) {
+function dragNear(
+  x: number,
+  y: number,
+  vx: number,
+  vy: number,
+  planets: Planet[],
+  atmoScale: number,
+) {
   if (atmoScale <= 0) return { ax: 0, ay: 0 };
   let ax = 0;
   let ay = 0;
@@ -516,7 +572,16 @@ export function atmoDrag(sim: Sim) {
   return Math.hypot(d.ax, d.ay);
 }
 
-function spawn(sim: Sim, x: number, y: number, vx: number, vy: number, life: number, size: number, hue: number) {
+function spawn(
+  sim: Sim,
+  x: number,
+  y: number,
+  vx: number,
+  vy: number,
+  life: number,
+  size: number,
+  hue: number,
+) {
   const slot = sim.particles.find((p) => !p.alive);
   if (!slot) return;
   slot.alive = true;
@@ -590,6 +655,57 @@ function carryOnSurface(sim: Sim, p: Planet, dt: number) {
   stickToPlanet(sim, p);
 }
 
+function crashedHost(sim: Sim): Planet | undefined {
+  if (sim.crashedId) {
+    const p = sim.planets.find((b) => b.id === sim.crashedId);
+    if (p) return p;
+  }
+  return sim.planets.find((b) => b.kind === "star");
+}
+
+function pinToSurface(sim: Sim, p: Planet) {
+  const s = sim.ship;
+  const dx = s.x - p.x;
+  const dy = s.y - p.y;
+  const d = Math.hypot(dx, dy) || 0.0001;
+  sim.landedAngle = Math.atan2(dx / d, -dy / d);
+  stickToPlanet(sim, p);
+}
+
+function shipTouchesHull(sim: Sim, p: Planet) {
+  return Math.hypot(sim.ship.x - p.x, sim.ship.y - p.y) <= p.radius + SHIP_HULL;
+}
+
+/** After a flare, keep falling under gravity until the star's surface, then ride it like a crash. */
+function stepBurnedFall(sim: Sim, dt: number) {
+  const ship = sim.ship;
+  const p = crashedHost(sim);
+  if (p && shipTouchesHull(sim, p)) {
+    carryOnSurface(sim, p, dt);
+    sim.nearest = p;
+    sim.altitude = SHIP_HULL * 0.85;
+    return;
+  }
+
+  ship.vx *= Math.max(0, 1 - dt * 1.8);
+  ship.vy *= Math.max(0, 1 - dt * 1.8);
+  const g = gravityAt(ship.x, ship.y, sim.planets, sim.gravityScale);
+  ship.vx += g.ax * dt;
+  ship.vy += g.ay * dt;
+  ship.x += ship.vx * dt;
+  ship.y += ship.vy * dt;
+
+  if (p && shipTouchesHull(sim, p)) {
+    pinToSurface(sim, p);
+    sim.nearest = p;
+    sim.altitude = SHIP_HULL * 0.85;
+    return;
+  }
+
+  sim.nearest = g.nearest;
+  sim.altitude = g.dist - g.nearest.radius;
+}
+
 function landOnHome(sim: Sim) {
   const home =
     sim.planets.find((p) => p.kicker === "Home") ?? sim.planets.find((p) => p.kind === "rocky");
@@ -644,11 +760,7 @@ function updateMoons(sim: Sim, dt: number) {
   stepOrbitingBodies(sim.planets, dt, sim.gravityScale);
 }
 
-function applySteer(
-  ship: Ship,
-  controls: { steer: number; aimYaw: number | null },
-  dt: number,
-) {
+function applySteer(ship: Ship, controls: { steer: number; aimYaw: number | null }, dt: number) {
   if (controls.aimYaw != null) {
     let d = wrapPi(controls.aimYaw - ship.yaw);
     const max = TURN_RATE * 1.15 * dt;
@@ -677,6 +789,11 @@ function keplerRadius(k: Kepler) {
   return pParam / (1 + k.e * Math.cos(k.nu));
 }
 
+function advanceKeplerNu(k: Kepler, dt: number) {
+  const r = keplerRadius(k);
+  return wrapPi(k.nu + (k.h / (r * r)) * dt);
+}
+
 function applyKepler(ship: Ship, p: Planet, k: Kepler) {
   const r = keplerRadius(k);
   const theta = k.peri + k.nu;
@@ -698,14 +815,7 @@ const KEPLER_E_CIRC = 0.04;
 const WELL_DOMINANT_FACTOR = 2.2;
 
 type KeplerReject =
-  | "close"
-  | "gravity"
-  | "radial"
-  | "unbound"
-  | "semimajor"
-  | "eccentric"
-  | "periapsis"
-  | "apoapsis";
+  "close" | "gravity" | "radial" | "unbound" | "semimajor" | "eccentric" | "periapsis" | "apoapsis";
 
 type KeplerInspect = {
   r: number;
@@ -854,6 +964,22 @@ function lockedKepler(sim: Sim): Kepler | null {
   };
 }
 
+/** Closed relative ellipse the lock snaps to (host at its current position). */
+export function lockedOrbitPolyline(sim: Sim, samples = 64): { x: number; y: number }[] {
+  const p = sim.orbitLockId ? sim.planets.find((b) => b.id === sim.orbitLockId) : undefined;
+  const k = lockedKepler(sim);
+  if (!p || !k) return [];
+  const n = k.e < 0.05 ? 48 : Math.max(48, samples);
+  const sign = Math.sign(k.h || 1);
+  const ghost: Ship = { ...sim.ship };
+  const pts: { x: number; y: number }[] = [];
+  for (let i = 0; i <= n; i++) {
+    applyKepler(ghost, p, { ...k, nu: wrapPi(k.nu + (Math.PI * 2 * i * sign) / n) });
+    pts.push({ x: ghost.x, y: ghost.y });
+  }
+  return pts;
+}
+
 function breakOrbitLock(sim: Sim) {
   sim.orbitLockId = null;
   sim.orbitDwell = 0;
@@ -870,7 +996,13 @@ function dumpCurrentLock(sim: Sim, hint: string) {
 }
 
 /** Other bodies' gravity at the ship, minus the same pull at the host. Kepler already rides the host's frame. */
-function orbitPerturbRatio(host: Planet, x: number, y: number, planets: Planet[], gravityScale: number) {
+function orbitPerturbRatio(
+  host: Planet,
+  x: number,
+  y: number,
+  planets: Planet[],
+  gravityScale: number,
+) {
   const hostPull = bodyAccel(host, x, y, gravityScale).a;
   if (hostPull < 1e-8) return Infinity;
   let ax = 0;
@@ -926,7 +1058,13 @@ export function orbitPerturb(sim: Sim) {
 function stepLockedOrbit(
   sim: Sim,
   dt: number,
-  controls: { steer: number; forward: boolean; reverse: boolean; aimYaw: number | null; aimThrust: boolean },
+  controls: {
+    steer: number;
+    forward: boolean;
+    reverse: boolean;
+    aimYaw: number | null;
+    aimThrust: boolean;
+  },
 ) {
   const p = sim.planets.find((b) => b.id === sim.orbitLockId);
   if (!p) {
@@ -934,7 +1072,6 @@ function stepLockedOrbit(
     return false;
   }
   const ship = sim.ship;
-  applySteer(ship, controls, dt);
   ship.thrusting = controls.forward || controls.aimThrust;
   ship.reverse = controls.reverse && !ship.thrusting;
   if (ship.thrusting || ship.reverse) {
@@ -954,8 +1091,7 @@ function stepLockedOrbit(
     sim.orbitLockId = null;
     return false;
   }
-  const r = keplerRadius(k);
-  k.nu = wrapPi(k.nu + (k.h / (r * r)) * dt);
+  k.nu = advanceKeplerNu(k, dt);
   sim.orbitLockA = k.nu;
   sim.orbitLockR = applyKepler(ship, p, k);
   sim.nearest = p;
@@ -968,9 +1104,16 @@ function stepLockedOrbit(
 export function stepSim(
   sim: Sim,
   dt: number,
-  controls: { steer: number; forward: boolean; reverse: boolean; aimYaw: number | null; aimThrust: boolean },
+  controls: {
+    steer: number;
+    forward: boolean;
+    reverse: boolean;
+    aimYaw: number | null;
+    aimThrust: boolean;
+  },
 ) {
   updateMoons(sim, dt);
+  invalidateLagrange(sim);
   stepFlares(sim, dt);
 
   const ship = sim.ship;
@@ -995,11 +1138,7 @@ export function stepSim(
 
   if (sim.phase === "crashed") {
     if (sim.burned) {
-      ship.vx *= Math.max(0, 1 - dt * 1.8);
-      ship.vy *= Math.max(0, 1 - dt * 1.8);
-      const g = gravityAt(ship.x, ship.y, sim.planets, sim.gravityScale);
-      sim.nearest = g.nearest;
-      sim.altitude = g.dist - g.nearest.radius;
+      stepBurnedFall(sim, dt);
     } else if (sim.crashedId) {
       const p = sim.planets.find((b) => b.id === sim.crashedId);
       if (p) {
@@ -1041,6 +1180,8 @@ export function stepSim(
     return;
   }
 
+  applySteer(ship, controls, dt);
+
   if (sim.lagrangeLockKey) {
     if (stepLockedLagrange(sim, dt, controls)) {
       if (shipHitsFlare(sim)) burnInFlare(sim);
@@ -1059,13 +1200,16 @@ export function stepSim(
     }
   }
 
-  applySteer(ship, controls, dt);
-
   const f = forwardOf(ship.yaw);
   ship.thrusting = controls.forward || controls.aimThrust;
   ship.reverse = controls.reverse && !ship.thrusting;
 
-  const { ax: gx, ay: gy, nearest, dist } = gravityAt(ship.x, ship.y, sim.planets, sim.gravityScale);
+  const {
+    ax: gx,
+    ay: gy,
+    nearest,
+    dist,
+  } = gravityAt(ship.x, ship.y, sim.planets, sim.gravityScale);
   const drag = dragNear(ship.x, ship.y, ship.vx, ship.vy, sim.planets, sim.atmoScale);
 
   let tx = 0;
@@ -1336,7 +1480,11 @@ function orbitReady(sim: Sim, nearest: Planet, dist: number) {
   if (alt < minAlt || alt > maxAlt) return false;
   if (!wellDominant(nearest, sim.ship.x, sim.ship.y, sim.planets)) return false;
   if (atmoDrag(sim) > ORBIT_DRAG_BREAK) return false;
-  if (orbitPerturbRatio(nearest, sim.ship.x, sim.ship.y, sim.planets, sim.gravityScale) > ORBIT_PERTURB_BREAK) return false;
+  if (
+    orbitPerturbRatio(nearest, sim.ship.x, sim.ship.y, sim.planets, sim.gravityScale) >
+    ORBIT_PERTURB_BREAK
+  )
+    return false;
   return readKepler(nearest, sim.ship, sim.gravityScale) != null;
 }
 
@@ -1379,13 +1527,19 @@ export function verboseDiag(sim: Sim): VerboseDiag {
   const drag = Math.hypot(dragVec.ax, dragVec.ay);
   const accelG = Math.hypot(g.ax, g.ay);
   const accelDrag = Math.hypot(dragVec.ax, dragVec.ay);
-  const accelThrust = ship.thrusting ? THRUST_FORCE / ship.mass : ship.reverse ? RETRO_FORCE / ship.mass : 0;
+  const accelThrust = ship.thrusting
+    ? THRUST_FORCE / ship.mass
+    : ship.reverse
+      ? RETRO_FORCE / ship.mass
+      : 0;
 
   const info = host ? inspectKepler(host, ship, sim.gravityScale) : null;
   const well = host ? wellInspect(host, ship.x, ship.y, sim.planets) : null;
   const shell = host ? orbitShellAlts(host, sim.planets) : null;
   const alt = host ? Math.hypot(ship.x - host.x, ship.y - host.y) - host.radius : sim.altitude;
-  const relSpeed = host ? Math.hypot(ship.vx - host.vx, ship.vy - host.vy) : Math.hypot(ship.vx, ship.vy);
+  const relSpeed = host
+    ? Math.hypot(ship.vx - host.vx, ship.vy - host.vy)
+    : Math.hypot(ship.vx, ship.vy);
   const vCirc = info && info.mu > 0 && info.r > 0 ? Math.sqrt(info.mu / info.r) : null;
 
   let perturb = 0;
@@ -1432,10 +1586,10 @@ export function verboseDiag(sim: Sim): VerboseDiag {
     const hostAlt = Math.hypot(ship.x - host.x, ship.y - host.y) - host.radius;
     if (hostAlt < shell.minAlt || hostAlt > shell.maxAlt) {
       gate = `SHELL ${fmtDiag(hostAlt, 1)} [${fmtDiag(shell.minAlt, 0)}–${fmtDiag(shell.maxAlt, 0)}]`;
-    }
-    else if (well && !well.ok) gate = `WELL ${fmtDiag(well.ratio)} / ${fmtDiag(well.limit)}`;
+    } else if (well && !well.ok) gate = `WELL ${fmtDiag(well.ratio)} / ${fmtDiag(well.limit)}`;
     else if (drag > ORBIT_DRAG_BREAK) gate = `DRAG ${fmtDiag(drag)} / ${fmtDiag(ORBIT_DRAG_BREAK)}`;
-    else if (perturb > ORBIT_PERTURB_BREAK) gate = `PERTURB ${fmtDiag(perturb)} / ${fmtDiag(ORBIT_PERTURB_BREAK)}`;
+    else if (perturb > ORBIT_PERTURB_BREAK)
+      gate = `PERTURB ${fmtDiag(perturb)} / ${fmtDiag(ORBIT_PERTURB_BREAK)}`;
     else if (info?.reject) gate = keplerGate(info, host) ?? "KEPLER";
     else {
       gate = `CAPTURING ${fmtDiag(sim.orbitDwell)} / ${fmtDiag(ORBIT_LOCK_DWELL)}`;
@@ -1621,6 +1775,7 @@ export function adjustGravityScale(sim: Sim, dir: number) {
   const next = stepAlong(GRAVITY_STEPS, sim.gravityScale, dir);
   if (next === sim.gravityScale) return false;
   sim.gravityScale = next;
+  invalidateLagrange(sim);
   syncTitleVelocity(sim);
   if (sim.orbitLockId) {
     const p = sim.planets.find((b) => b.id === sim.orbitLockId);
@@ -1648,7 +1803,11 @@ export function relativePathTarget(sim: Sim): Planet | null {
   return p;
 }
 
-export function predictRelativePath(sim: Sim, target: Planet, seconds = 24): { x: number; y: number }[] {
+export function predictRelativePath(
+  sim: Sim,
+  target: Planet,
+  seconds = 24,
+): { x: number; y: number }[] {
   const pts: { x: number; y: number }[] = [];
   let x = sim.ship.x;
   let y = sim.ship.y;
@@ -1676,37 +1835,35 @@ export function predictRelativePath(sim: Sim, target: Planet, seconds = 24): { x
 
 export function predictPath(sim: Sim, seconds = 9): { x: number; y: number }[] {
   if (sim.lagrangeLockKey) {
-    const star = sim.planets.find((p) => p.kind === "star");
-    const pt = listLagrangePoints(sim).find((p) => p.key === sim.lagrangeLockKey);
-    if (!star || !pt) return [];
-    const dx = pt.x - star.x;
-    const dy = pt.y - star.y;
-    const r = Math.hypot(dx, dy) || 1;
-    const w = (dx * pt.vy - dy * pt.vx) / (r * r);
-    const n = 48;
+    const key = sim.lagrangeLockKey;
+    const bodies = copyPlanets(sim.planets);
+    const dt = seconds / 48;
     const pts: { x: number; y: number }[] = [];
-    for (let i = 1; i <= n; i++) {
-      const t = (Math.PI * 2 * i) / n;
-      const c = Math.cos(t);
-      const s = Math.sin(t);
-      const sign = w >= 0 ? 1 : -1;
-      pts.push({
-        x: star.x + dx * c - dy * s * sign,
-        y: star.y + dx * s * sign + dy * c,
-      });
+    for (let i = 0; i < 48; i++) {
+      stepOrbitingBodies(bodies, dt, sim.gravityScale);
+      const pt = lagrangePointByKey(bodies, sim.gravityScale, key);
+      if (!pt) break;
+      pts.push({ x: pt.x, y: pt.y });
     }
     return pts;
   }
   if (sim.orbitLockId) {
-    const p = sim.planets.find((b) => b.id === sim.orbitLockId);
-    const k = lockedKepler(sim);
-    if (!p || !k) return [];
-    const pts: { x: number; y: number }[] = [];
-    const n = k.e < 0.05 ? 48 : 64;
+    const hostId = sim.orbitLockId;
+    const k0 = lockedKepler(sim);
+    if (!k0) return [];
+    const bodies = copyPlanets(sim.planets);
     const ghost: Ship = { ...sim.ship };
-    for (let i = 1; i <= n; i++) {
-      const kk = { ...k, nu: wrapPi(k.nu + (Math.PI * 2 * i * Math.sign(k.h || 1)) / n) };
-      applyKepler(ghost, p, kk);
+    const k: Kepler = { ...k0 };
+    const dt = STEP;
+    const n = Math.max(2, Math.floor(seconds / dt));
+    const pts: { x: number; y: number }[] = [];
+    for (let i = 0; i < n; i++) {
+      stepOrbitingBodies(bodies, dt, sim.gravityScale);
+      const p = bodies.find((b) => b.id === hostId);
+      if (!p) break;
+      k.mu = bodyMu(p, sim.gravityScale);
+      k.nu = advanceKeplerNu(k, dt);
+      applyKepler(ghost, p, k);
       pts.push({ x: ghost.x, y: ghost.y });
     }
     return pts;
@@ -1734,7 +1891,10 @@ export function predictPath(sim: Sim, seconds = 9): { x: number; y: number }[] {
   return pts;
 }
 
-export function predictPlanetPaths(sim: Sim, seconds = 10): { planet: Planet; path: { x: number; y: number }[] }[] {
+export function predictPlanetPaths(
+  sim: Sim,
+  seconds = 10,
+): { planet: Planet; path: { x: number; y: number }[] }[] {
   const movers = sim.planets.filter(isOrbiting);
   if (!movers.length) return [];
   const ghosts = copyPlanets(sim.planets);

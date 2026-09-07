@@ -50,7 +50,13 @@ declare global {
       getFlares?: () => { angle: number; span: number; reach: number; life: number; max: number }[];
       getOrbitLock?: () => string | null;
       getOrbitE?: () => number;
-      getNearestBody?: () => { id: string; x: number; y: number; mass: number; radius: number } | null;
+      getNearestBody?: () => {
+        id: string;
+        x: number;
+        y: number;
+        mass: number;
+        radius: number;
+      } | null;
       getBodies?: () => {
         id: string;
         x: number;
@@ -75,7 +81,14 @@ declare global {
       getOrbitShell?: () => boolean;
       getLagrangeLock?: () => string | null;
       getLagrangeShown?: () => boolean;
-      getLagrangePoints?: () => { key: string; kind: string; x: number; y: number; vx: number; vy: number }[];
+      getLagrangePoints?: () => {
+        key: string;
+        kind: string;
+        x: number;
+        y: number;
+        vx: number;
+        vy: number;
+      }[];
       getPhysicsMenu?: () => boolean;
       getGravityGrid?: () => boolean;
       getVerbose?: () => boolean;
@@ -156,6 +169,17 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     canvas.width = Math.floor(cssW * dpr);
     canvas.height = Math.floor(cssH * dpr);
     if (!sim) paintBoot();
+    else {
+      drawFrame(ctx, sim, {
+        w: canvas.width,
+        h: canvas.height,
+        dpr,
+        cssW,
+        cssH,
+        status: sim.status,
+        phase: sim.phase,
+      });
+    }
   };
   const paintBoot = () => {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -210,7 +234,13 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     if (!sim) return null;
     const p = input.state.pointer;
     if (!p?.down) return null;
-    if (sim.phase === "title" || sim.phase === "crashed" || sim.phase === "landed" || sim.phase === "creating") return null;
+    if (
+      sim.phase === "title" ||
+      sim.phase === "crashed" ||
+      sim.phase === "landed" ||
+      sim.phase === "creating"
+    )
+      return null;
     const world = screenToWorld(sim, p.x, p.y, cssW, cssH);
     const dx = world.x - sim.ship.x;
     const dy = world.y - sim.ship.y;
@@ -263,6 +293,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   };
 
   const attachProbe = (s: Sim) => {
+    if (!import.meta.env.DEV) return;
     window.__controlsTest = {
       getYaw: () => s.ship.yaw,
       getSpeed: () => Math.hypot(s.ship.vx, s.ship.vy),
@@ -303,12 +334,24 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getCrashed: () => s.crashedId,
       getBurned: () => s.burned,
       getFlares: () =>
-        s.flares.map((f) => ({ angle: f.angle, span: f.span, reach: f.reach, life: f.life, max: f.max })),
+        s.flares.map((f) => ({
+          angle: f.angle,
+          span: f.span,
+          reach: f.reach,
+          life: f.life,
+          max: f.max,
+        })),
       getOrbitLock: () => s.orbitLockId,
       getOrbitE: () => (s.orbitLockId ? s.orbitLockE : 0),
       getNearestBody: () =>
         s.nearest
-          ? { id: s.nearest.id, x: s.nearest.x, y: s.nearest.y, mass: s.nearest.mass, radius: s.nearest.radius }
+          ? {
+              id: s.nearest.id,
+              x: s.nearest.x,
+              y: s.nearest.y,
+              mass: s.nearest.mass,
+              radius: s.nearest.radius,
+            }
           : null,
       getBodies: () =>
         s.planets.map((p) => ({
@@ -338,7 +381,14 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getGravityGrid: () => s.showGravityGrid,
       getVerbose: () => s.showVerbose,
       getLagrangePoints: () =>
-        listLagrangePoints(s).map((p) => ({ key: p.key, kind: p.kind, x: p.x, y: p.y, vx: p.vx, vy: p.vy })),
+        listLagrangePoints(s).map((p) => ({
+          key: p.key,
+          kind: p.kind,
+          x: p.x,
+          y: p.y,
+          vx: p.vx,
+          vy: p.vy,
+        })),
       getPlanetPaths: () =>
         predictPlanetPaths(s, 10).map(({ planet, path }) => {
           const end = path[path.length - 1];
@@ -401,7 +451,10 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
 
     while (acc >= STEP) {
       const steer = playing() || sim.phase === "landed" ? steerFrom(input.state) : 0;
-      const thr = playing() || sim.phase === "landed" ? thrustFrom(input.state) : { forward: false, reverse: false };
+      const thr =
+        playing() || sim.phase === "landed"
+          ? thrustFrom(input.state)
+          : { forward: false, reverse: false };
       const aim = aimYaw();
       const aimThrust = !!input.state.pointer?.down && playing();
       stepSim(sim, STEP, {
@@ -414,7 +467,10 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       acc -= STEP;
     }
 
-    audio.setThrust(sim.ship.thrusting && playing(), Math.min(1, Math.hypot(sim.ship.vx, sim.ship.vy) / 120));
+    audio.setThrust(
+      sim.ship.thrusting && playing(),
+      Math.min(1, Math.hypot(sim.ship.vx, sim.ship.vy) / 120),
+    );
 
     if (sim.landedId && sim.landedId !== prevLanded && sim.phase !== "title") audio.land();
     prevLanded = sim.landedId;
@@ -424,7 +480,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       audio.warn();
       sim.orbitDragAlarm = false;
     }
-    if (sim.camera.trauma > prevTrauma + 0.2 && sim.phase === "flight") audio.bump(sim.camera.trauma);
+    if (sim.camera.trauma > prevTrauma + 0.2 && sim.phase === "flight")
+      audio.bump(sim.camera.trauma);
     prevTrauma = sim.camera.trauma;
 
     drawFrame(ctx, sim, {
@@ -457,35 +514,37 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     raf = requestAnimationFrame(frame);
   };
 
-  window.__controlsTest = {
-    getYaw: () => 0,
-    getSpeed: () => 0,
-    getPhase: () => "creating",
-    getLanded: () => null,
-    getCrashed: () => null,
-    getBurned: () => false,
-    getFlares: () => [],
-    getOrbitLock: () => null,
-    getOrbitE: () => 0,
-    getNearestBody: () => null,
-    getBodies: () => [],
-    getPos: () => ({ x: 0, y: 0, vx: 0, vy: 0 }),
-    getGravityScale: () => 1,
-    getAtmoScale: () => 1,
-    getDrag: () => 0,
-    getOrbitHint: () => null,
-    getUserZoom: () => 1,
-    getOrbitShell: () => false,
-    getLagrangeLock: () => null,
-    getLagrangeShown: () => false,
-    getLagrangePoints: () => [],
-    getPhysicsMenu: () => false,
-    getGravityGrid: () => false,
-    getVerbose: () => false,
-    getPlanetPaths: () => [],
-    adjustGravity: () => {},
-    adjustAtmo: () => {},
-  };
+  if (import.meta.env.DEV) {
+    window.__controlsTest = {
+      getYaw: () => 0,
+      getSpeed: () => 0,
+      getPhase: () => "creating",
+      getLanded: () => null,
+      getCrashed: () => null,
+      getBurned: () => false,
+      getFlares: () => [],
+      getOrbitLock: () => null,
+      getOrbitE: () => 0,
+      getNearestBody: () => null,
+      getBodies: () => [],
+      getPos: () => ({ x: 0, y: 0, vx: 0, vy: 0 }),
+      getGravityScale: () => 1,
+      getAtmoScale: () => 1,
+      getDrag: () => 0,
+      getOrbitHint: () => null,
+      getUserZoom: () => 1,
+      getOrbitShell: () => false,
+      getLagrangeLock: () => null,
+      getLagrangeShown: () => false,
+      getLagrangePoints: () => [],
+      getPhysicsMenu: () => false,
+      getGravityGrid: () => false,
+      getVerbose: () => false,
+      getPlanetPaths: () => [],
+      adjustGravity: () => {},
+      adjustAtmo: () => {},
+    };
+  }
 
   const minMs = reducedMotion ? 90 : 720;
   bootTimer = window.setTimeout(begin, minMs);

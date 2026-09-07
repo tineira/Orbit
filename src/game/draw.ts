@@ -3,12 +3,12 @@ import type { Sim } from "./sim";
 import {
   atmoDrag,
   atmoRadius,
-  bodyMu,
   forwardOf,
   gravityAt,
   gravityPulls,
   LAGRANGE_CAPTURE_R,
   listLagrangePoints,
+  lockedOrbitPolyline,
   orbitPerturb,
   predictPath,
   predictPlanetPaths,
@@ -17,7 +17,13 @@ import {
   flareArcPoints,
   flareApexNow,
 } from "./sim";
-import { getMinimapWorldR, ORBIT_DRAG_BREAK, ORBIT_PERTURB_BREAK, orbitShellAlts, STAR_ATMO_FACTOR } from "./world";
+import {
+  getMinimapWorldR,
+  ORBIT_DRAG_BREAK,
+  ORBIT_PERTURB_BREAK,
+  orbitShellAlts,
+  STAR_ATMO_FACTOR,
+} from "./world";
 
 type DrawOpts = {
   w: number;
@@ -42,7 +48,9 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
 
   const cam = sim.camera;
   const shakeX = sim.reducedMotion ? 0 : (hash(performance.now() * 0.08) - 0.5) * cam.shake * 18;
-  const shakeY = sim.reducedMotion ? 0 : (hash(performance.now() * 0.09 + 9) - 0.5) * cam.shake * 18;
+  const shakeY = sim.reducedMotion
+    ? 0
+    : (hash(performance.now() * 0.09 + 9) - 0.5) * cam.shake * 18;
 
   if (!sim.showGravityGrid) drawStars(ctx, cam, cssW, cssH, shakeX, shakeY);
   ctx.save();
@@ -54,8 +62,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   drawSunBloom(ctx, sim);
   drawStarCorona(ctx, sim);
   drawLockRing(ctx, sim);
-  const path = predictPath(sim, 10);
-  drawPath(ctx, path, sim);
+  if (sim.phase === "flight") drawPath(ctx, predictPath(sim, 10), sim);
   const star = sim.planets.find((b) => b.kind === "star") ?? null;
   for (const p of sim.planets) drawPlanet(ctx, p, cam, star, sim.planets);
   drawSolarFlares(ctx, sim);
@@ -158,7 +165,13 @@ function strokeGridRun(
   ctx.stroke();
 }
 
-function drawGravityGrid(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera, cssW: number, cssH: number) {
+function drawGravityGrid(
+  ctx: CanvasRenderingContext2D,
+  sim: Sim,
+  cam: Camera,
+  cssW: number,
+  cssH: number,
+) {
   const zoom = Math.max(0.04, cam.zoom);
   const { fine: step, coarse, fade, target } = gridLod(zoom);
   const pad = step * 9;
@@ -207,7 +220,14 @@ function drawGravityGrid(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera, c
   ctx.restore();
 }
 
-function drawStarDot(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, rgb: [number, number, number], a: number) {
+function drawStarDot(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  rgb: [number, number, number],
+  a: number,
+) {
   ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`;
   if (size <= 1.05) {
     const s = Math.max(0.7, size);
@@ -219,7 +239,14 @@ function drawStarDot(ctx: CanvasRenderingContext2D, x: number, y: number, size: 
   ctx.fill();
 }
 
-function drawStars(ctx: CanvasRenderingContext2D, cam: Camera, cssW: number, cssH: number, sx: number, sy: number) {
+function drawStars(
+  ctx: CanvasRenderingContext2D,
+  cam: Camera,
+  cssW: number,
+  cssH: number,
+  sx: number,
+  sy: number,
+) {
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
 
@@ -326,12 +353,27 @@ function drawStarCorona(ctx: CanvasRenderingContext2D, sim: Sim) {
     const w = R * (0.16 + hash(i * 2.2) * 0.12);
     const c = Math.cos(a);
     const s = Math.sin(a);
-    const lg = ctx.createRadialGradient(star.x + c * R * 0.2, star.y + s * R * 0.2, R * 0.1, star.x + c * reach * 0.55, star.y + s * reach * 0.55, w);
+    const lg = ctx.createRadialGradient(
+      star.x + c * R * 0.2,
+      star.y + s * R * 0.2,
+      R * 0.1,
+      star.x + c * reach * 0.55,
+      star.y + s * reach * 0.55,
+      w,
+    );
     lg.addColorStop(0, `rgba(255, 210, 120, ${sim.reducedMotion ? 0.07 : 0.11})`);
     lg.addColorStop(1, "rgba(255, 140, 40, 0)");
     ctx.fillStyle = lg;
     ctx.beginPath();
-    ctx.ellipse(star.x + c * (reach * 0.35), star.y + s * (reach * 0.35), w, reach * 0.42, a, 0, Math.PI * 2);
+    ctx.ellipse(
+      star.x + c * (reach * 0.35),
+      star.y + s * (reach * 0.35),
+      w,
+      reach * 0.42,
+      a,
+      0,
+      Math.PI * 2,
+    );
     ctx.fill();
   }
   ctx.restore();
@@ -390,7 +432,7 @@ function drawSolarFlares(ctx: CanvasRenderingContext2D, sim: Sim) {
     if (!sim.reducedMotion && age > 0.28 && age < 0.92) {
       const rain = 7 + Math.floor(hash(f.seed) * 6);
       for (let i = 0; i < rain; i++) {
-        const fall = ((now * 0.00013 + hash(f.seed + i * 9) + age * 0.85) % 1);
+        const fall = (now * 0.00013 + hash(f.seed + i * 9) + age * 0.85) % 1;
         const side = hash(f.seed + i * 2) < 0.5 ? fall * 0.5 : 1 - fall * 0.5;
         const k = Math.min(main.length - 1, Math.max(0, Math.floor(side * (main.length - 1))));
         const p = main[k]!;
@@ -439,46 +481,17 @@ function drawOrbitShell(ctx: CanvasRenderingContext2D, sim: Sim) {
 }
 
 function drawLockRing(ctx: CanvasRenderingContext2D, sim: Sim) {
-  if (!sim.orbitLockId) return;
-  const p = sim.planets.find((b) => b.id === sim.orbitLockId);
-  if (!p) return;
-  const e = sim.orbitLockE;
-  const mu = bodyMu(p, sim.gravityScale);
-  if (mu <= 0) return;
-  const pParam = sim.orbitLockH === 0 ? sim.orbitLockR : (sim.orbitLockH * sim.orbitLockH) / mu;
-
+  const ring = lockedOrbitPolyline(sim);
+  if (ring.length < 2) return;
+  ctx.save();
   ctx.strokeStyle = "rgba(125, 155, 134, 0.22)";
   ctx.lineWidth = 6;
-  if (e < 0.05) {
-    const r = Math.max(8, pParam);
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(236, 234, 228, 0.55)";
-    ctx.lineWidth = 1.6;
-    ctx.setLineDash([8, 10]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    return;
-  }
-
-  const a = pParam / (1 - e * e);
-  const b = a * Math.sqrt(Math.max(0, 1 - e * e));
-  ctx.save();
-  ctx.translate(p.x, p.y);
-  ctx.rotate(sim.orbitLockPeri);
-  ctx.translate(-a * e, 0);
-  ctx.beginPath();
-  ctx.ellipse(0, 0, a, b, 0, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.ellipse(0, 0, a, b, 0, 0, Math.PI * 2);
+  ctx.lineJoin = "round";
+  strokeLoop(ctx, ring);
   ctx.strokeStyle = "rgba(236, 234, 228, 0.55)";
   ctx.lineWidth = 1.6;
   ctx.setLineDash([8, 10]);
-  ctx.stroke();
+  strokeLoop(ctx, ring);
   ctx.setLineDash([]);
   ctx.restore();
 }
@@ -511,7 +524,7 @@ function drawRelativePath(ctx: CanvasRenderingContext2D, sim: Sim) {
 }
 
 function drawPlanetPaths(ctx: CanvasRenderingContext2D, sim: Sim) {
-  if (sim.phase === "creating" || sim.phase === "crashed") return;
+  if (sim.phase === "creating" || sim.phase === "crashed" || sim.phase === "title") return;
   ctx.save();
   ctx.lineWidth = 1.45;
   ctx.lineCap = "round";
@@ -566,7 +579,14 @@ function hexRgbaLift(hex: string, alpha: number, lift = 0.42) {
 }
 
 function drawGravityArrows(ctx: CanvasRenderingContext2D, sim: Sim) {
-  if (sim.phase === "landed" || sim.phase === "crashed" || sim.phase === "creating" || sim.landedId || sim.lagrangeLockKey) return;
+  if (
+    sim.phase === "landed" ||
+    sim.phase === "crashed" ||
+    sim.phase === "creating" ||
+    sim.landedId ||
+    sim.lagrangeLockKey
+  )
+    return;
   const ship = sim.ship;
   ctx.save();
   ctx.lineCap = "round";
@@ -647,7 +667,13 @@ function pointUmbra(x: number, y: number, occ: Planet, star: Planet) {
   return 1 - (perp - inner) / (pen - inner);
 }
 
-function pointUmbraMax(x: number, y: number, bodies: Planet[], star: Planet, skipId: string | null) {
+function pointUmbraMax(
+  x: number,
+  y: number,
+  bodies: Planet[],
+  star: Planet,
+  skipId: string | null,
+) {
   let m = 0;
   for (const o of bodies) {
     if (o.kind === "star" || o.id === skipId) continue;
@@ -657,7 +683,12 @@ function pointUmbraMax(x: number, y: number, bodies: Planet[], star: Planet, ski
   return m;
 }
 
-function stampBodyShadows(ctx: CanvasRenderingContext2D, p: Planet, star: Planet, bodies: Planet[]) {
+function stampBodyShadows(
+  ctx: CanvasRenderingContext2D,
+  p: Planet,
+  star: Planet,
+  bodies: Planet[],
+) {
   const L = lightDir(p, star);
   const lit = Math.atan2(L.y, L.x);
   ctx.save();
@@ -712,7 +743,13 @@ function stampBodyShadows(ctx: CanvasRenderingContext2D, p: Planet, star: Planet
   ctx.restore();
 }
 
-function drawPlanet(ctx: CanvasRenderingContext2D, p: Planet, cam: Camera, star: Planet | null, bodies: Planet[]) {
+function drawPlanet(
+  ctx: CanvasRenderingContext2D,
+  p: Planet,
+  cam: Camera,
+  star: Planet | null,
+  bodies: Planet[],
+) {
   const r = p.radius;
   const outer = haloOuter(p);
   if (p.kind !== "star") {
@@ -910,7 +947,13 @@ function lockBarColor(remaining: number, healthy: string) {
   return "#c45c4a";
 }
 
-function drawLockBar(ctx: CanvasRenderingContext2D, x: number, y: number, remaining: number, healthy: string) {
+function drawLockBar(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  remaining: number,
+  healthy: string,
+) {
   const t = Math.max(0, Math.min(1, remaining));
   const filled = Math.round(t * LOCK_PIPS);
   const color = lockBarColor(t, healthy);
@@ -947,7 +990,14 @@ function drawOrbitLockBars(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera)
 }
 
 function drawVignette(ctx: CanvasRenderingContext2D, cssW: number, cssH: number) {
-  const g = ctx.createRadialGradient(cssW / 2, cssH / 2, Math.min(cssW, cssH) * 0.35, cssW / 2, cssH / 2, Math.max(cssW, cssH) * 0.72);
+  const g = ctx.createRadialGradient(
+    cssW / 2,
+    cssH / 2,
+    Math.min(cssW, cssH) * 0.35,
+    cssW / 2,
+    cssH / 2,
+    Math.max(cssW, cssH) * 0.72,
+  );
   g.addColorStop(0, "rgba(0,0,0,0)");
   g.addColorStop(1, "rgba(7,8,12,0.22)");
   ctx.fillStyle = g;
@@ -956,11 +1006,11 @@ function drawVignette(ctx: CanvasRenderingContext2D, cssW: number, cssH: number)
 
 function drawLagrangePoints(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera) {
   if (sim.phase === "creating" || sim.phase === "crashed" || sim.phase === "title") return;
-  const points = listLagrangePoints(sim);
-  if (!points.length) return;
   const showAll = sim.showLagrange;
   const locked = sim.lagrangeLockKey;
   if (!showAll && !locked) return;
+  const points = listLagrangePoints(sim);
+  if (!points.length) return;
   const zoom = Math.max(0.12, cam.zoom);
   const label = zoom >= 0.28;
 
@@ -970,7 +1020,11 @@ function drawLagrangePoints(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera
     if (!showAll && !isLocked) continue;
     const near =
       isLocked || Math.hypot(sim.ship.x - pt.x, sim.ship.y - pt.y) < LAGRANGE_CAPTURE_R * 1.8;
-    const ring = isLocked ? "rgba(183, 192, 204, 0.55)" : near ? "rgba(183, 192, 204, 0.34)" : "rgba(183, 192, 204, 0.16)";
+    const ring = isLocked
+      ? "rgba(183, 192, 204, 0.55)"
+      : near
+        ? "rgba(183, 192, 204, 0.34)"
+        : "rgba(183, 192, 204, 0.16)";
     ctx.beginPath();
     ctx.arc(pt.x, pt.y, LAGRANGE_CAPTURE_R, 0, Math.PI * 2);
     if (isLocked) {
@@ -1065,7 +1119,13 @@ function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH
     const py = cy + p.y * scale;
     ctx.beginPath();
     ctx.fillStyle = p.kind === "star" ? "#f0d48a" : p.colorA;
-    ctx.arc(px, py, Math.max(p.kind === "moon" ? 1.2 : 1.6, p.radius * scale * 0.9), 0, Math.PI * 2);
+    ctx.arc(
+      px,
+      py,
+      Math.max(p.kind === "moon" ? 1.2 : 1.6, p.radius * scale * 0.9),
+      0,
+      Math.PI * 2,
+    );
     ctx.fill();
   }
 
@@ -1082,7 +1142,14 @@ function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH
   ctx.restore();
 }
 
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r);

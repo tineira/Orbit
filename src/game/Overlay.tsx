@@ -48,7 +48,7 @@ export function Overlay({
   useEffect(() => {
     if (hud.phase !== "title") return;
     const onKey = (e: KeyboardEvent) => {
-      if (!isEnterKey(e)) return;
+      if (e.repeat || !isEnterKey(e)) return;
       e.preventDefault();
       onLaunch();
     };
@@ -59,6 +59,7 @@ export function Overlay({
   useEffect(() => {
     if (hud.phase !== "crashed") return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.repeat) return;
       if (isEnterKey(e) || e.code === "KeyR" || e.code === "Space") {
         e.preventDefault();
         onReboot();
@@ -71,7 +72,7 @@ export function Overlay({
   useEffect(() => {
     if (hud.phase !== "landed") return;
     const onKey = (e: KeyboardEvent) => {
-      if (!isEnterKey(e)) return;
+      if (e.repeat || !isEnterKey(e)) return;
       e.preventDefault();
       onTakeoff();
     };
@@ -102,8 +103,12 @@ export function Overlay({
           <header className="absolute top-0 left-0 right-0 flex flex-col gap-3 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <p className="font-mono text-xs tracking-[0.18em] uppercase text-muted">Nearest body</p>
-                <p className="mt-1 font-display text-2xl leading-tight font-medium tracking-tight text-fg">{hud.nearestName ?? "—"}</p>
+                <p className="font-mono text-xs tracking-[0.18em] uppercase text-muted">
+                  Nearest body
+                </p>
+                <p className="mt-1 font-display text-2xl leading-tight font-medium tracking-tight text-fg">
+                  {hud.nearestName ?? "—"}
+                </p>
                 <p className="mt-1 font-mono text-xs tabular-nums text-muted">
                   {hud.altitude != null ? `ALT ${fmt(hud.altitude)}` : "DEEP SPACE"}
                   <span className="mx-2 text-subtle">/</span>
@@ -123,7 +128,12 @@ export function Overlay({
                   </p>
                 </div>
                 {hud.physicsMenu ? (
-                  <PhysicsKnobs gravityScale={hud.gravityScale} atmoScale={hud.atmoScale} onGravity={onGravity} onAtmo={onAtmo} />
+                  <PhysicsKnobs
+                    gravityScale={hud.gravityScale}
+                    atmoScale={hud.atmoScale}
+                    onGravity={onGravity}
+                    onAtmo={onAtmo}
+                  />
                 ) : null}
               </div>
             </div>
@@ -138,10 +148,16 @@ export function Overlay({
               aria-label={hud.muted ? "Unmute" : "Mute"}
               className="pointer-events-auto mb-3 size-11 grid place-items-center rounded-md text-muted hover:text-fg transition-colors duration-[var(--motion-quick)] ease-[var(--ease-out)]"
             >
-              {hud.muted ? <VolumeX className="size-4" strokeWidth={1.75} /> : <Volume2 className="size-4" strokeWidth={1.75} />}
+              {hud.muted ? (
+                <VolumeX className="size-4" strokeWidth={1.75} />
+              ) : (
+                <Volume2 className="size-4" strokeWidth={1.75} />
+              )}
             </button>
             <p className="font-mono text-xs leading-relaxed text-muted">
-              <span className="hidden sm:inline">Left / right yaw. Up burns. Down retro. + / − or scroll to zoom.</span>
+              <span className="hidden sm:inline">
+                Left / right yaw. Up burns. Down retro. + / − or scroll to zoom.
+              </span>
               <span className="sm:hidden">Hold to point and burn. Pinch to zoom.</span>
             </p>
             <p className="mt-2 flex font-mono text-xs">
@@ -158,16 +174,24 @@ export function Overlay({
               />
             </p>
             {hud.orbitShell ? (
-              <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">Orbit shell · {hud.nearestName ?? "—"}</p>
+              <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">
+                Orbit shell · {hud.nearestName ?? "—"}
+              </p>
             ) : null}
             {hud.lagrangePoints ? (
-              <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">Lagrange points</p>
+              <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">
+                Lagrange points
+              </p>
             ) : null}
             {hud.gravityGrid ? (
-              <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">Gravity grid</p>
+              <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">
+                Gravity grid
+              </p>
             ) : null}
             {hud.verbose ? (
-              <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">Verbose</p>
+              <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">
+                Verbose
+              </p>
             ) : null}
             {hud.orbitHint && hud.phase !== "crashed" ? (
               <p
@@ -200,10 +224,19 @@ export function Overlay({
             aria-label={hud.muted ? "Unmute" : "Mute"}
             className="size-11 grid place-items-center rounded-md text-muted hover:text-fg transition-colors duration-[var(--motion-quick)] ease-[var(--ease-out)]"
           >
-            {hud.muted ? <VolumeX className="size-4" strokeWidth={1.75} /> : <Volume2 className="size-4" strokeWidth={1.75} />}
+            {hud.muted ? (
+              <VolumeX className="size-4" strokeWidth={1.75} />
+            ) : (
+              <Volume2 className="size-4" strokeWidth={1.75} />
+            )}
           </button>
           {hud.physicsMenu ? (
-            <PhysicsKnobs gravityScale={hud.gravityScale} atmoScale={hud.atmoScale} onGravity={onGravity} onAtmo={onAtmo} />
+            <PhysicsKnobs
+              gravityScale={hud.gravityScale}
+              atmoScale={hud.atmoScale}
+              onGravity={onGravity}
+              onAtmo={onAtmo}
+            />
           ) : null}
         </div>
       ) : null}
@@ -228,7 +261,10 @@ function Creating() {
           Lumen
         </h1>
       </div>
-      <p className="creating-world font-mono text-sm tracking-[0.2em] uppercase text-muted" aria-live="polite">
+      <p
+        className="creating-world font-mono text-sm tracking-[0.2em] uppercase text-muted"
+        aria-live="polite"
+      >
         Creating world
       </p>
     </div>
@@ -273,7 +309,8 @@ function Title({
           Lumen
         </h1>
         <p className="mt-4 max-w-md text-sm sm:text-base leading-relaxed text-muted">
-          A 2D craft with mass and inertia. Each world has its own well. Catch a circular or elliptical orbit and it locks. Burn to leave. Land if you arrive slow.
+          A 2D craft with mass and inertia. Each world has its own well. Catch a circular or
+          elliptical orbit and it locks. Burn to leave. Land if you arrive slow.
         </p>
       </div>
 
@@ -281,7 +318,9 @@ function Title({
         <ul className="grid grid-cols-2 gap-x-6 gap-y-2 font-mono text-xs text-muted sm:grid-cols-3">
           {destinations.map((p) => (
             <li key={p.id} className="flex items-baseline gap-2">
-              <span className="font-display text-sm font-medium tracking-tight text-fg">{p.name}</span>
+              <span className="font-display text-sm font-medium tracking-tight text-fg">
+                {p.name}
+              </span>
               <span className="text-subtle">{p.kicker}</span>
             </li>
           ))}
@@ -334,7 +373,9 @@ function LandingCard({
         className="pointer-events-auto w-full max-w-md rounded-xl bg-surface border border-border p-5 sm:p-6 shadow-lg"
       >
         <p className="font-mono text-xs tracking-[0.2em] uppercase text-muted">{planet.kicker}</p>
-        <h2 className="mt-2 font-display text-3xl leading-tight font-semibold tracking-tight text-fg">{planet.title}</h2>
+        <h2 className="mt-2 font-display text-3xl leading-tight font-semibold tracking-tight text-fg">
+          {planet.title}
+        </h2>
         <p className="mt-3 text-sm leading-relaxed text-muted">{planet.body}</p>
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <button
@@ -379,7 +420,9 @@ function CrashCard({
         className="pointer-events-auto w-full max-w-md rounded-xl bg-surface border border-border p-5 sm:p-6 shadow-lg"
       >
         <p className="font-mono text-xs tracking-[0.2em] uppercase text-warn">Hull loss</p>
-        <h2 className="mt-2 font-display text-3xl leading-tight text-fg">{burned ? "You burned" : "You crashed"}</h2>
+        <h2 className="mt-2 font-display text-3xl leading-tight text-fg">
+          {burned ? "You burned" : "You crashed"}
+        </h2>
         <p className="mt-3 text-sm leading-relaxed text-muted">
           {burned
             ? `A flare from ${planet.name} reached the craft.`
@@ -426,7 +469,13 @@ function VCell({
   wide?: boolean;
 }) {
   return (
-    <span className={cn("whitespace-nowrap", wide ? "sm:col-span-2" : undefined, warn ? "text-warn" : undefined)}>
+    <span
+      className={cn(
+        "whitespace-nowrap",
+        wide ? "sm:col-span-2" : undefined,
+        warn ? "text-warn" : undefined,
+      )}
+    >
       <span className="text-subtle">{label}</span> {value}
     </span>
   );
@@ -455,7 +504,11 @@ function VerbosePanel({ diag }: { diag: VerboseDiag }) {
         />
         <VCell label="Eng" value={fmtV(diag.energy)} />
         {shell ? <VCell label="Shell" value={shell} warn={shellWarn} wide /> : null}
-        <VCell label="Drag" value={`${fmtV(diag.drag)} / ${fmtV(diag.dragLim)}`} warn={diag.drag > diag.dragLim} />
+        <VCell
+          label="Drag"
+          value={`${fmtV(diag.drag)} / ${fmtV(diag.dragLim)}`}
+          warn={diag.drag > diag.dragLim}
+        />
         <VCell
           label="Pert"
           value={`${fmtV(diag.perturb)} / ${fmtV(diag.perturbLim)}`}
@@ -642,7 +695,9 @@ function ScaleRow({
         >
           <Minus className="size-3.5" strokeWidth={1.75} />
         </button>
-        <p className="flex-1 text-center font-mono text-sm tabular-nums text-fg">{fmtScale(value)}</p>
+        <p className="flex-1 text-center font-mono text-sm tabular-nums text-fg">
+          {fmtScale(value)}
+        </p>
         <button
           type="button"
           data-ui
