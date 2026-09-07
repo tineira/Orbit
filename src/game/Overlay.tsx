@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Minus, Plus, Volume2, VolumeX } from "lucide-react";
 import type { HudSnapshot, VerboseDiag } from "./types";
-import { ATMO_STEPS, GRAVITY_STEPS, getPlanets, planetById } from "./world";
+import { ATMO_STEPS, GRAVITY_STEPS, getPlanets, isGhostBody, planetById } from "./world";
 import { cn } from "@/lib/utils";
 
 const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
@@ -316,7 +316,7 @@ function Title({
   onToggleGravityGrid: () => void;
   onToggleVerbose: () => void;
 }) {
-  const destinations = getPlanets().filter((p) => p.kind !== "star");
+  const destinations = getPlanets().filter((p) => p.kind !== "star" && !isGhostBody(p));
   return (
     <div
       className="pointer-events-auto absolute inset-0 flex flex-col justify-between p-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-8"

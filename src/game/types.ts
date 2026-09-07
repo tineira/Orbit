@@ -1,4 +1,4 @@
-export type PlanetKind = "star" | "rocky" | "gas" | "moon";
+export type PlanetKind = "star" | "rocky" | "gas" | "moon" | "barycenter";
 
 export type Planet = {
   id: string;

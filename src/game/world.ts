@@ -1,4 +1,4 @@
-import type { Planet, PlanetKind } from "./types";
+import type { Planet } from "./types";
 
 /** Gravity constant in world units. a = G * GRAVITY_BASE * M / r² */
 export const G = 1;
@@ -67,8 +67,30 @@ export function orbitShellAlts(p: Planet, planets: Planet[] = []) {
     }
     if (Number.isFinite(innerPeri)) maxAlt = Math.min(maxAlt, innerPeri - p.radius - 280);
   }
+  const sibling = twinOf(p, planets);
+  if (sibling) {
+    const sep =
+      p.orbitR != null && sibling.orbitR != null
+        ? p.orbitR + sibling.orbitR
+        : Math.hypot(p.x - sibling.x, p.y - sibling.y);
+    const toSibling = sep - p.radius - sibling.radius;
+    if (toSibling > minAlt + 16) maxAlt = Math.min(maxAlt, toSibling * 0.5 - 8);
+    if (p.orbitR != null) maxAlt = Math.min(maxAlt, p.orbitR - p.radius - 12);
+  }
   if (maxAlt < minAlt) maxAlt = minAlt;
   return { minAlt, maxAlt };
+}
+
+/** Kinematic parent only — no gravity, hull, or drawing. */
+export function isGhostBody(p: Planet) {
+  return p.kind === "barycenter";
+}
+
+export function twinOf(p: Planet, planets: Planet[]): Planet | undefined {
+  if (!p.parentId) return undefined;
+  const parent = planets.find((b) => b.id === p.parentId);
+  if (!parent || parent.kind !== "barycenter") return undefined;
+  return planets.find((q) => q.parentId === p.parentId && q.id !== p.id && !isGhostBody(q));
 }
 
 export const TAKEOFF_SPEED = 20;
@@ -293,12 +315,43 @@ function makeSystem(seed: number): Planet[] {
 
   const rockyCount = rng() < 0.45 ? 3 : 4;
   const moonCount = rng() < 0.4 ? 1 : 2;
-  const roles = [ROCKY_ROLES[0]!, ...shuffle(rng, ROCKY_ROLES.slice(1))].slice(0, rockyCount);
+  /** About once per 4–5 systems; never replaces Home (seat 0). */
+  const pairSeat = rng() < 0.22 && rockyCount >= 3 ? 1 + Math.floor(rng() * (rockyCount - 1)) : -1;
+  const rockySingles = pairSeat >= 0 ? rockyCount - 1 : rockyCount;
+  const roles = [ROCKY_ROLES[0]!, ...shuffle(rng, ROCKY_ROLES.slice(1))].slice(0, rockySingles);
   const rockyPal = shuffle(rng, ROCKY_PALETTES);
 
-  type Draft = { kind: PlanetKind; radius: number; surfaceG: number };
+  type Draft =
+    | { kind: "rocky"; radius: number; surfaceG: number }
+    | { kind: "gas"; radius: number; surfaceG: number }
+    | {
+        kind: "pair";
+        radius: number;
+        radiusA: number;
+        radiusB: number;
+        surfaceGA: number;
+        surfaceGB: number;
+        sep: number;
+      };
   const drafts: Draft[] = [];
   for (let i = 0; i < rockyCount; i++) {
+    if (i === pairSeat) {
+      const radiusA = lerp(58, 96, rng());
+      const radiusB = radiusA * lerp(0.92, 1.08, rng());
+      const surfaceGA = lerp(9.2, 13.2, rng());
+      const surfaceGB = surfaceGA * lerp(0.95, 1.05, rng());
+      const sep = (radiusA + radiusB) * lerp(2.65, 3.3, rng());
+      drafts.push({
+        kind: "pair",
+        radius: sep * 0.5 + Math.max(radiusA, radiusB),
+        radiusA,
+        radiusB,
+        surfaceGA,
+        surfaceGB,
+        sep,
+      });
+      continue;
+    }
     drafts.push({
       kind: "rocky",
       radius: lerp(54, 104, rng()),
@@ -348,6 +401,99 @@ function makeSystem(seed: number): Planet[] {
         title: name,
         body: "A thick atmosphere. You can orbit. You cannot land.",
         deny: "Atmosphere too thick",
+      });
+      return;
+    }
+
+    if (draft.kind === "pair") {
+      const nameA = takeName(rng, WORLD_NAMES, used);
+      const nameB = takeName(rng, WORLD_NAMES, used);
+      const palA = rockyPal[rockyI % rockyPal.length]!;
+      const palB = rockyPal[(rockyI + 1) % rockyPal.length]!;
+      const mA = massFrom(draft.radiusA, draft.surfaceGA);
+      const mB = massFrom(draft.radiusB, draft.surfaceGB);
+      const baryId = slug("bary", planets.length);
+      const bary: Planet = {
+        id: baryId,
+        name: `${nameA}·${nameB}`,
+        kind: "barycenter",
+        ...rail,
+        radius: 0,
+        surfaceG: 0,
+        mass: mA + mB,
+        landable: false,
+        rotate: 0,
+        spin: 0,
+        colorA: palA[0],
+        colorB: palA[1],
+        atmo: "rgba(0,0,0,0)",
+        kicker: "Pair",
+        title: `${nameA} · ${nameB}`,
+        body: "",
+      };
+      planets.push(bary);
+
+      const mu = G * GRAVITY_BASE * (mA + mB);
+      const n = Math.sqrt(mu / (draft.sep * draft.sep * draft.sep));
+      const aA = draft.sep * (mB / (mA + mB));
+      const aB = draft.sep * (mA / (mA + mB));
+      const theta = rng() * Math.PI * 2;
+      const kA = keplerRail(aA, 0, 0, theta, n * n * aA * aA * aA);
+      const kB = keplerRail(aB, 0, 0, theta + Math.PI, n * n * aB * aB * aB);
+      const twinSpin = () => lerp(0.12, 0.32, rng()) * (rng() < 0.5 ? 1 : -1);
+      planets.push({
+        id: slug(nameA, planets.length),
+        name: nameA,
+        kind: "rocky",
+        x: bary.x + kA.x,
+        y: bary.y + kA.y,
+        vx: bary.vx + kA.vx,
+        vy: bary.vy + kA.vy,
+        radius: draft.radiusA,
+        surfaceG: draft.surfaceGA,
+        mass: mA,
+        landable: true,
+        rotate: rng() * Math.PI * 2,
+        spin: twinSpin(),
+        colorA: palA[0],
+        colorB: palA[1],
+        atmo: atmo(palA[0], 0.26),
+        parentId: baryId,
+        orbitR: aA,
+        orbitA: theta,
+        orbitW: n,
+        orbitE: 0,
+        orbitPeri: 0,
+        kicker: "Twin",
+        title: nameA,
+        body: `${nameA} is bound to ${nameB}. Two wells, one dance. Land on either; the other never sits still.`,
+      });
+      planets.push({
+        id: slug(nameB, planets.length),
+        name: nameB,
+        kind: "rocky",
+        x: bary.x + kB.x,
+        y: bary.y + kB.y,
+        vx: bary.vx + kB.vx,
+        vy: bary.vy + kB.vy,
+        radius: draft.radiusB,
+        surfaceG: draft.surfaceGB,
+        mass: mB,
+        landable: true,
+        rotate: rng() * Math.PI * 2,
+        spin: twinSpin(),
+        colorA: palB[0],
+        colorB: palB[1],
+        atmo: atmo(palB[0], 0.26),
+        parentId: baryId,
+        orbitR: aB,
+        orbitA: theta + Math.PI,
+        orbitW: n,
+        orbitE: 0,
+        orbitPeri: 0,
+        kicker: "Twin",
+        title: nameB,
+        body: `${nameB} is bound to ${nameA}. Two wells, one dance. Land on either; the other never sits still.`,
       });
       return;
     }
@@ -459,10 +605,15 @@ export function createSystem(seed = (Math.random() * 0xffffffff) >>> 0): Charted
       planets.reduce((m, p) => {
         if (p.kind === "star" || p.orbitR == null) return Math.max(m, Math.hypot(p.x, p.y) + p.radius);
         const apo = p.orbitR * (1 + (p.orbitE ?? 0));
-        if (p.kind === "moon") {
-          const parent = p.parentId ? planets.find((b) => b.id === p.parentId) : undefined;
-          const parentApo = parent?.orbitR != null ? parent.orbitR * (1 + (parent.orbitE ?? 0)) : Math.hypot(parent?.x ?? 0, parent?.y ?? 0);
-          return Math.max(m, parentApo + apo + p.radius);
+        if (p.parentId) {
+          const parent = planets.find((b) => b.id === p.parentId);
+          if (parent && parent.kind !== "star") {
+            const parentApo =
+              parent.orbitR != null
+                ? parent.orbitR * (1 + (parent.orbitE ?? 0))
+                : Math.hypot(parent.x, parent.y);
+            return Math.max(m, parentApo + apo + p.radius);
+          }
         }
         return Math.max(m, apo + p.radius);
       }, 0) * 1.12,

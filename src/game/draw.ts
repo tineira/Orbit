@@ -20,6 +20,7 @@ import {
 } from "./sim";
 import {
   getMinimapWorldR,
+  isGhostBody,
   ORBIT_DRAG_BREAK,
   ORBIT_PERTURB_BREAK,
   orbitShellAlts,
@@ -65,7 +66,9 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   drawLockRing(ctx, sim);
   if (sim.phase === "flight") drawPath(ctx, predictPath(sim, 10), sim);
   const star = sim.planets.find((b) => b.kind === "star") ?? null;
-  for (const p of sim.planets) drawPlanet(ctx, p, cam, star, sim.planets);
+  for (const p of sim.planets) {
+    if (!isGhostBody(p)) drawPlanet(ctx, p, cam, star, sim.planets);
+  }
   drawSolarFlares(ctx, sim);
   drawOrbitShell(ctx, sim);
   drawLagrangePoints(ctx, sim, cam);
@@ -123,6 +126,7 @@ function onLattice(v: number, step: number) {
 
 function gridBuried(x: number, y: number, planets: Planet[]) {
   for (const p of planets) {
+    if (isGhostBody(p) || p.radius <= 0) continue;
     if (Math.hypot(x - p.x, y - p.y) < p.radius * 0.88) return true;
   }
   return false;
@@ -455,7 +459,7 @@ function drawOrbitShell(ctx: CanvasRenderingContext2D, sim: Sim) {
   if (sim.phase === "creating" || sim.phase === "crashed") return;
   const p =
     (sim.orbitLockId ? sim.planets.find((b) => b.id === sim.orbitLockId) : null) ?? sim.nearest;
-  if (!p) return;
+  if (!p || isGhostBody(p) || p.radius <= 0) return;
   const { minAlt, maxAlt } = orbitShellAlts(p, sim.planets);
   const inner = p.radius + minAlt;
   const outer = p.radius + maxAlt;
@@ -679,7 +683,7 @@ function pointUmbraMax(
 ) {
   let m = 0;
   for (const o of bodies) {
-    if (o.kind === "star" || o.id === skipId) continue;
+    if (o.kind === "star" || o.id === skipId || isGhostBody(o) || o.radius <= 0) continue;
     m = Math.max(m, pointUmbra(x, y, o, star));
     if (m >= 1) return 1;
   }
@@ -705,7 +709,7 @@ function stampBodyShadows(
   ctx.clip();
 
   for (const o of bodies) {
-    if (o.id === p.id || o.kind === "star") continue;
+    if (o.id === p.id || o.kind === "star" || isGhostBody(o) || o.radius <= 0) continue;
     if (Math.hypot(p.x - o.x, p.y - o.y) < o.radius + p.radius * 0.12) continue;
     const { ux, uy, sep } = occluderAxis(o, star);
     const rx = p.x - o.x;
@@ -1308,16 +1312,22 @@ function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH
   ctx.clip();
 
   const byId = new Map(sim.planets.map((p) => [p.id, p]));
+  const drawnPair = new Set<string>();
   ctx.lineWidth = 1;
   for (const p of sim.planets) {
     if (p.kind === "star" || p.orbitR == null) continue;
     const parent = p.parentId ? byId.get(p.parentId) : undefined;
+    if (parent && isGhostBody(parent)) {
+      if (drawnPair.has(parent.id)) continue;
+      drawnPair.add(parent.id);
+    }
     const a = p.orbitR;
     const e = p.orbitE ?? 0;
     const peri = p.orbitPeri ?? 0;
     const px = parent?.x ?? 0;
     const py = parent?.y ?? 0;
-    ctx.strokeStyle = p.kind === "moon" ? "rgba(236, 234, 228, 0.12)" : "rgba(236, 234, 228, 0.18)";
+    const nested = p.kind === "moon" || (parent != null && isGhostBody(parent));
+    ctx.strokeStyle = nested ? "rgba(236, 234, 228, 0.12)" : "rgba(236, 234, 228, 0.18)";
     if (e < 0.008) {
       ctx.beginPath();
       ctx.arc(cx + px * scale, cy + py * scale, a * scale, 0, Math.PI * 2);
@@ -1337,6 +1347,7 @@ function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH
   }
 
   for (const p of sim.planets) {
+    if (isGhostBody(p)) continue;
     const px = cx + p.x * scale;
     const py = cy + p.y * scale;
     ctx.beginPath();

@@ -21,6 +21,8 @@ import {
   ORBIT_PERTURB_BREAK,
   orbitShellAlts,
   keplerRail,
+  isGhostBody,
+  twinOf,
   STAR_ATMO_FACTOR,
   KEPLER_STAR_APO_FACTOR,
   KEPLER_STAR_APO_CAP,
@@ -251,6 +253,12 @@ export function bodyMu(p: Planet, gravityScale: number) {
 }
 
 function bodyAccel(p: Planet, x: number, y: number, gravityScale: number) {
+  if (isGhostBody(p) || p.mass <= 0) {
+    const dx = p.x - x;
+    const dy = p.y - y;
+    const d = Math.hypot(dx, dy) || 1;
+    return { dx, dy, d, ax: 0, ay: 0, a: 0 };
+  }
   const dx = p.x - x;
   const dy = p.y - y;
   const d = Math.hypot(dx, dy) || 1;
@@ -267,9 +275,10 @@ export function gravityAt(
 ): { ax: number; ay: number; nearest: Planet; dist: number } {
   let ax = 0;
   let ay = 0;
-  let nearest = planets[0]!;
+  let nearest = planets.find((p) => !isGhostBody(p)) ?? planets[0]!;
   let best = Infinity;
   for (const p of planets) {
+    if (isGhostBody(p)) continue;
     const pull = bodyAccel(p, x, y, gravityScale);
     if (pull.d < best) {
       best = pull.d;
@@ -292,6 +301,7 @@ export function gravityPulls(sim: Sim): GravityPull[] {
   const { x, y } = sim.ship;
   const out: GravityPull[] = [];
   for (const p of sim.planets) {
+    if (isGhostBody(p)) continue;
     const pull = bodyAccel(p, x, y, sim.gravityScale);
     out.push({ planet: p, ax: pull.ax, ay: pull.ay, a: pull.a });
   }
@@ -452,15 +462,145 @@ function invalidateLagrange(sim: Sim) {
   lagrangeCache.delete(sim);
 }
 
+function rotatingPoint(
+  kind: LagrangeKind,
+  body: Planet,
+  bary: Planet,
+  x: number,
+  y: number,
+  w: number,
+  planets: Planet[],
+): LagrangePoint | null {
+  for (const q of planets) {
+    if (isGhostBody(q) || q.kind === "star") continue;
+    if (Math.hypot(x - q.x, y - q.y) < q.radius + 24) return null;
+  }
+  const dx = x - bary.x;
+  const dy = y - bary.y;
+  return {
+    key: `${body.id}:${kind}`,
+    kind,
+    planetId: body.id,
+    planetName: body.name,
+    x,
+    y,
+    vx: bary.vx - w * dy,
+    vy: bary.vy + w * dx,
+  };
+}
+
+function rayAccelPair(
+  r: number,
+  angle: number,
+  bary: Planet,
+  a: Planet,
+  b: Planet,
+  w: number,
+  gravityScale: number,
+) {
+  const pos = railPoint(bary, angle, r, w);
+  const g = gravityAt(pos.x, pos.y, [a, b], gravityScale);
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return (g.ax + w * w * (pos.x - bary.x)) * c + (g.ay + w * w * (pos.y - bary.y)) * s;
+}
+
+function pointsForBinary(
+  a: Planet,
+  b: Planet,
+  bary: Planet,
+  gravityScale: number,
+  planets: Planet[],
+): LagrangePoint[] {
+  if (a.orbitW == null) return [];
+  const w = bodyOrbitOmega(a, gravityScale);
+  if (w <= 0) return [];
+  const angA = Math.atan2(a.y - bary.y, a.x - bary.x);
+  const angB = Math.atan2(b.y - bary.y, b.x - bary.x);
+  const Ra = Math.hypot(a.x - bary.x, a.y - bary.y);
+  const Rb = Math.hypot(b.x - bary.x, b.y - bary.y);
+  const sep = Math.hypot(a.x - b.x, a.y - b.y);
+  if (sep < a.radius + b.radius + 48) return [];
+  const pairName = `${a.name} · ${b.name}`;
+  const tag = (kind: LagrangeKind, pt: LagrangePoint | null): LagrangePoint | null =>
+    pt ? { ...pt, planetName: pairName } : null;
+
+  const fA = (r: number) => rayAccelPair(r, angA, bary, a, b, w, gravityScale);
+  const fB = (r: number) => rayAccelPair(r, angB, bary, a, b, w, gravityScale);
+  const r1a = findRayRoot(fA, 0, Math.max(8, Ra - a.radius - 28));
+  const r1b = findRayRoot(fB, 0, Math.max(8, Rb - b.radius - 28));
+  const useB = r1a == null || (r1b != null && r1b < r1a);
+  const r1 = (useB ? r1b : r1a) ?? 0;
+  const ang1 = useB ? angB : angA;
+  const r2 =
+    findRayRoot(fA, Ra + a.radius + 28, Ra + Math.max(sep * 0.85, 220)) ?? Ra + sep * 0.4;
+  const r3 =
+    findRayRoot(fB, Rb + b.radius + 28, Rb + Math.max(sep * 0.85, 220)) ?? Rb + sep * 0.4;
+
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  const hx = ((b.y - a.y) / sep) * (Math.sqrt(3) / 2) * sep;
+  const hy = ((a.x - b.x) / sep) * (Math.sqrt(3) / 2) * sep;
+
+  return [
+    tag(
+      "L1",
+      rotatingPoint(
+        "L1",
+        a,
+        bary,
+        bary.x + Math.cos(ang1) * r1,
+        bary.y + Math.sin(ang1) * r1,
+        w,
+        planets,
+      ),
+    ),
+    tag(
+      "L2",
+      rotatingPoint(
+        "L2",
+        a,
+        bary,
+        bary.x + Math.cos(angA) * r2,
+        bary.y + Math.sin(angA) * r2,
+        w,
+        planets,
+      ),
+    ),
+    tag(
+      "L3",
+      rotatingPoint(
+        "L3",
+        a,
+        bary,
+        bary.x + Math.cos(angB) * r3,
+        bary.y + Math.sin(angB) * r3,
+        w,
+        planets,
+      ),
+    ),
+    tag("L4", rotatingPoint("L4", a, bary, mx + hx, my + hy, w, planets)),
+    tag("L5", rotatingPoint("L5", a, bary, mx - hx, my - hy, w, planets)),
+  ].filter((pt): pt is LagrangePoint => pt != null);
+}
+
 function computeLagrangePoints(planets: Planet[], gravityScale: number): LagrangePoint[] {
   if (gravityScale <= 0) return [];
   const byId = new Map(planets.map((p) => [p.id, p]));
   const out: LagrangePoint[] = [];
+  const binaryDone = new Set<string>();
   for (const p of planets) {
-    if (p.kind === "star") continue;
+    if (p.kind === "star" || isGhostBody(p)) continue;
     if (p.parentId == null || p.orbitR == null || p.orbitA == null || p.orbitW == null) continue;
     const parent = byId.get(p.parentId);
     if (!parent) continue;
+    if (isGhostBody(parent)) {
+      if (binaryDone.has(parent.id)) continue;
+      binaryDone.add(parent.id);
+      const sibling = twinOf(p, planets);
+      if (sibling) out.push(...pointsForBinary(p, sibling, parent, gravityScale, planets));
+      continue;
+    }
     out.push(...pointsForPair(p, parent, gravityScale));
   }
   return out;
@@ -471,14 +611,7 @@ function lagrangePointByKey(
   gravityScale: number,
   key: string,
 ): LagrangePoint | null {
-  const split = key.lastIndexOf(":");
-  if (split <= 0) return null;
-  const bodyId = key.slice(0, split);
-  const body = planets.find((p) => p.id === bodyId);
-  if (!body || body.parentId == null) return null;
-  const parent = planets.find((p) => p.id === body.parentId);
-  if (!parent) return null;
-  return pointsForPair(body, parent, gravityScale).find((pt) => pt.key === key) ?? null;
+  return computeLagrangePoints(planets, gravityScale).find((pt) => pt.key === key) ?? null;
 }
 
 export function listLagrangePoints(sim: Sim): LagrangePoint[] {
@@ -600,6 +733,7 @@ function dragNear(
   let ax = 0;
   let ay = 0;
   for (const p of planets) {
+    if (isGhostBody(p) || p.radius <= 0) continue;
     const dx = x - p.x;
     const dy = y - p.y;
     const d = Math.hypot(dx, dy);
@@ -845,7 +979,8 @@ function stepOrbitingBodies(planets: Planet[], dt: number, gravityScale: number)
     const r = bodyOrbitRadius(p);
     const dTheta = n * ((a * a) / Math.max(r * r, 1e-8)) * Math.sqrt(Math.max(0, 1 - e * e)) * dt;
     p.orbitA += dTheta;
-    const k = keplerRail(a, e, peri, p.orbitA, bodyMu(parent, gravityScale));
+    const mu = n * n * a * a * a;
+    const k = keplerRail(a, e, peri, p.orbitA, mu);
     p.vx = parent.vx + k.vx;
     p.vy = parent.vy + k.vy;
     p.x = parent.x + k.x;
@@ -933,7 +1068,12 @@ type KeplerInspect = {
   ey: number;
 };
 
-function inspectKepler(p: Planet, ship: Ship, gravityScale: number): KeplerInspect | null {
+function inspectKepler(
+  p: Planet,
+  ship: Ship,
+  gravityScale: number,
+  planets: Planet[],
+): KeplerInspect | null {
   const dx = ship.x - p.x;
   const dy = ship.y - p.y;
   const r = Math.hypot(dx, dy);
@@ -944,10 +1084,15 @@ function inspectKepler(p: Planet, ship: Ship, gravityScale: number): KeplerInspe
   const mu = bodyMu(p, gravityScale);
   const h = dx * rvy - dy * rvx;
   const v2 = rvx * rvx + rvy * rvy;
-  const maxApo =
+  let maxApo =
     p.kind === "star"
       ? p.radius + Math.min(p.radius * KEPLER_STAR_APO_FACTOR, KEPLER_STAR_APO_CAP)
       : p.radius + Math.min(p.radius * 4.8, 720);
+  const sibling = twinOf(p, planets);
+  if (sibling) {
+    const sep = Math.hypot(p.x - sibling.x, p.y - sibling.y);
+    maxApo = Math.min(maxApo, sep - sibling.radius - SHIP_HULL - 20);
+  }
   let energy: number | null = null;
   let a: number | null = null;
   let e: number | null = null;
@@ -999,8 +1144,8 @@ function keplerFromInspect(info: KeplerInspect): Kepler | null {
   };
 }
 
-function readKepler(p: Planet, ship: Ship, gravityScale: number): Kepler | null {
-  const info = inspectKepler(p, ship, gravityScale);
+function readKepler(p: Planet, ship: Ship, gravityScale: number, planets: Planet[]): Kepler | null {
+  const info = inspectKepler(p, ship, gravityScale, planets);
   if (!info) return null;
   return keplerFromInspect(info);
 }
@@ -1011,7 +1156,7 @@ function wellInspect(p: Planet, x: number, y: number, planets: Planet[]) {
   if (p.kind === "moon") {
     let aMax = 0;
     for (const q of planets) {
-      if (q.id === p.id) continue;
+      if (q.id === p.id || isGhostBody(q)) continue;
       const dq = Math.hypot(x - q.x, y - q.y) || 1;
       aMax = Math.max(aMax, (G * q.mass) / (dq * dq));
     }
@@ -1020,7 +1165,7 @@ function wellInspect(p: Planet, x: number, y: number, planets: Planet[]) {
   }
   let aRest = 0;
   for (const q of planets) {
-    if (q.id === p.id) continue;
+    if (q.id === p.id || isGhostBody(q)) continue;
     const dq = Math.hypot(x - q.x, y - q.y) || 1;
     aRest += (G * q.mass) / (dq * dq);
   }
@@ -1033,7 +1178,7 @@ function wellDominant(p: Planet, x: number, y: number, planets: Planet[]) {
 }
 
 function captureOrbit(sim: Sim, p: Planet) {
-  const k = readKepler(p, sim.ship, sim.gravityScale);
+  const k = readKepler(p, sim.ship, sim.gravityScale, sim.planets);
   if (!k) return false;
   const r = applyKepler(sim.ship, p, k);
   sim.orbitLockId = p.id;
@@ -1106,7 +1251,7 @@ function orbitPerturbRatio(
   let ax = 0;
   let ay = 0;
   for (const q of planets) {
-    if (q.id === host.id) continue;
+    if (q.id === host.id || isGhostBody(q)) continue;
     const atShip = bodyAccel(q, x, y, gravityScale);
     const atHost = bodyAccel(q, host.x, host.y, gravityScale);
     ax += atShip.ax - atHost.ax;
@@ -1121,10 +1266,17 @@ function lagrangePerturbRatio(pt: LagrangePoint, sim: Sim) {
   const parent = body?.parentId ? sim.planets.find((p) => p.id === body.parentId) : undefined;
   if (!body || !parent) return Infinity;
   const pair = new Set([body.id, parent.id]);
+  if (isGhostBody(parent)) {
+    pair.delete(parent.id);
+    for (const q of sim.planets) {
+      if (q.parentId === parent.id && !isGhostBody(q)) pair.add(q.id);
+    }
+  }
   let ax = 0;
   let ay = 0;
   let charA = 0;
   for (const q of sim.planets) {
+    if (isGhostBody(q)) continue;
     const pull = bodyAccel(q, sim.ship.x, sim.ship.y, sim.gravityScale);
     if (pair.has(q.id)) {
       if (pull.a > charA) charA = pull.a;
@@ -1601,6 +1753,7 @@ function emitBurnEmbers(sim: Sim) {
 function collidePlanets(sim: Sim) {
   const s = sim.ship;
   for (const p of sim.planets) {
+    if (isGhostBody(p) || p.radius <= 0) continue;
     const dx = s.x - p.x;
     const dy = s.y - p.y;
     const d = Math.hypot(dx, dy) || 0.0001;
@@ -1651,7 +1804,7 @@ function orbitReady(sim: Sim, nearest: Planet, dist: number) {
     ORBIT_PERTURB_BREAK
   )
     return false;
-  return readKepler(nearest, sim.ship, sim.gravityScale) != null;
+  return readKepler(nearest, sim.ship, sim.gravityScale, sim.planets) != null;
 }
 
 function fmtDiag(n: number, digits = 2) {
@@ -1699,7 +1852,7 @@ export function verboseDiag(sim: Sim): VerboseDiag {
       ? RETRO_FORCE / ship.mass
       : 0;
 
-  const info = host ? inspectKepler(host, ship, sim.gravityScale) : null;
+  const info = host ? inspectKepler(host, ship, sim.gravityScale, sim.planets) : null;
   const well = host ? wellInspect(host, ship.x, ship.y, sim.planets) : null;
   const shell = host ? orbitShellAlts(host, sim.planets) : null;
   const alt = host ? Math.hypot(ship.x - host.x, ship.y - host.y) - host.radius : sim.altitude;
@@ -1960,7 +2113,7 @@ export function adjustAtmoScale(sim: Sim, dir: number) {
 export function relativePathTarget(sim: Sim): Planet | null {
   if (sim.phase !== "flight" || sim.landedId || sim.orbitLockId || sim.lagrangeLockKey) return null;
   const p = sim.nearest;
-  if (!p || p.kind === "star") return null;
+  if (!p || p.kind === "star" || isGhostBody(p)) return null;
   const dist = Math.hypot(sim.ship.x - p.x, sim.ship.y - p.y);
   const alt = dist - p.radius;
   const { maxAlt } = orbitShellAlts(p, sim.planets);
@@ -2061,7 +2214,7 @@ export function predictPlanetPaths(
   sim: Sim,
   seconds = 10,
 ): { planet: Planet; path: { x: number; y: number }[] }[] {
-  const movers = sim.planets.filter(isOrbiting);
+  const movers = sim.planets.filter((p) => isOrbiting(p) && !isGhostBody(p));
   if (!movers.length) return [];
   const ghosts = copyPlanets(sim.planets);
   const byId = new Map(ghosts.map((p) => [p.id, p]));
