@@ -280,7 +280,22 @@ function placeOnRails(
   });
 }
 
-function makeSystem(seed: number): Planet[] {
+export type ChartFlags = {
+  twins?: "on" | "tight";
+};
+
+/** `?twins` / `?twins=1` always rolls a pair. `?twins=tight` always rolls a close one. */
+export function chartFlagsFromSearch(search = ""): ChartFlags {
+  const raw = search.startsWith("?") ? search.slice(1) : search;
+  const v = new URLSearchParams(raw).get("twins");
+  if (v == null) return {};
+  const t = v.trim().toLowerCase();
+  if (t === "0" || t === "off" || t === "false" || t === "no") return {};
+  if (t === "tight" || t === "close") return { twins: "tight" };
+  return { twins: "on" };
+}
+
+function makeSystem(seed: number, flags: ChartFlags = {}): Planet[] {
   const rng = mulberry32(seed);
   const used = new Set<string>(["lumen"]);
   const planets: Planet[] = [];
@@ -316,7 +331,11 @@ function makeSystem(seed: number): Planet[] {
   const rockyCount = rng() < 0.45 ? 3 : 4;
   const moonCount = rng() < 0.4 ? 1 : 2;
   /** About once per 4–5 systems; never replaces Home (seat 0). */
-  const pairSeat = rng() < 0.22 && rockyCount >= 3 ? 1 + Math.floor(rng() * (rockyCount - 1)) : -1;
+  const pairSeat = flags.twins
+    ? 1 + Math.floor(rng() * Math.max(1, rockyCount - 1))
+    : rng() < 0.22 && rockyCount >= 3
+      ? 1 + Math.floor(rng() * (rockyCount - 1))
+      : -1;
   const rockySingles = pairSeat >= 0 ? rockyCount - 1 : rockyCount;
   const roles = [ROCKY_ROLES[0]!, ...shuffle(rng, ROCKY_ROLES.slice(1))].slice(0, rockySingles);
   const rockyPal = shuffle(rng, ROCKY_PALETTES);
@@ -340,7 +359,9 @@ function makeSystem(seed: number): Planet[] {
       const radiusB = radiusA * lerp(0.85, 1.15, rng());
       const surfaceGA = lerp(9.2, 13.2, rng());
       const surfaceGB = surfaceGA * lerp(0.95, 1.05, rng());
-      const sep = (radiusA + radiusB) * lerp(2.65, 3.3, rng());
+      const sep =
+        (radiusA + radiusB) *
+        (flags.twins === "tight" ? lerp(1.9, 2.15, rng()) : lerp(1.9, 3.3, Math.sqrt(rng())));
       drafts.push({
         kind: "pair",
         radius: sep * 0.5 + Math.max(radiusA, radiusB),
@@ -585,8 +606,12 @@ export function getSystem(): ChartedSystem {
   return system;
 }
 
-export function createSystem(seed = (Math.random() * 0xffffffff) >>> 0): ChartedSystem {
-  const planets = makeSystem(seed);
+export function createSystem(
+  seed = (Math.random() * 0xffffffff) >>> 0,
+  flags: ChartFlags = {},
+): ChartedSystem {
+  const fromUrl = typeof window !== "undefined" ? chartFlagsFromSearch(window.location.search) : {};
+  const planets = makeSystem(seed, { ...fromUrl, ...flags });
   const home = planets.find((p) => p.kicker === "Home") ?? planets.find((p) => p.kind === "rocky")!;
   const pad = home.radius + SHIP_HULL * 0.85;
   system = {
