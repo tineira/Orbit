@@ -261,9 +261,8 @@ export function Overlay({
 
       {hud.phase === "crashed" && crashed ? (
         <CrashCard
-          planet={crashed}
           burned={hud.burned}
-          burnCause={hud.burnCause}
+          detail={crashDetail(crashed.name, hud.burned, hud.burnCause)}
           onReboot={onReboot}
           onNewWorld={onNewWorld}
         />
@@ -457,16 +456,22 @@ function LandingCard({
   );
 }
 
+function crashDetail(name: string, burned: boolean, cause: HudSnapshot["burnCause"]) {
+  if (!burned) {
+    return `The approach into ${name} was too fast. The well won. Bring the craft back and try a slower pass — or catch an orbit first.`;
+  }
+  if (cause === "flare") return `A flare from ${name} reached the craft.`;
+  return `Too close to ${name}. The hull cooked.`;
+}
+
 function CrashCard({
-  planet,
   burned,
-  burnCause,
+  detail,
   onReboot,
   onNewWorld,
 }: {
-  planet: NonNullable<ReturnType<typeof planetById>>;
   burned: boolean;
-  burnCause: HudSnapshot["burnCause"];
+  detail: string;
   onReboot: () => void;
   onNewWorld: () => void;
 }) {
@@ -480,13 +485,7 @@ function CrashCard({
         <h2 className="mt-2 font-display text-3xl leading-tight text-fg">
           {burned ? "You burned" : "You crashed"}
         </h2>
-        <p className="mt-3 text-sm leading-relaxed text-muted">
-          {burned
-            ? burnCause === "flare"
-              ? `A flare from ${planet.name} reached the craft.`
-              : `Too close to ${planet.name}. The hull cooked.`
-            : `The approach into ${planet.name} was too fast. The well won. Bring the craft back and try a slower pass — or catch an orbit first.`}
-        </p>
+        <p className="mt-3 text-sm leading-relaxed text-muted">{detail}</p>
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <button
             type="button"
