@@ -10,6 +10,7 @@ Every load charts a new system — names, sizes, and orbits are rolled on the sp
 - **Up** (or W) burns
 - **Down** (or S) retro
 - **Enter** enters the system, takes off, or reboots after a crash
+- **N** (or **Create new world**) charts a new system from the title or after a crash
 - On a phone, hold the sky — the ship turns toward your finger and fires
 
 Arrive slow enough to land. Too fast and the well wins.

@@ -19,6 +19,7 @@ const INITIAL: HudSnapshot = {
   landedId: null,
   crashedId: null,
   burned: false,
+  burnCause: null,
   muted: false,
   touching: false,
   gravityScale: 1,
@@ -59,6 +60,10 @@ export function SpaceGame() {
   const onReboot = useCallback(() => {
     gameRef.current?.reboot();
   }, []);
+  const onNewWorld = useCallback(() => {
+    if (hud.phase !== "title" && hud.phase !== "crashed") return;
+    gameRef.current?.newWorld();
+  }, [hud.phase]);
   const onMute = useCallback(() => {
     gameRef.current?.setMuted(!hud.muted);
   }, [hud.muted]);
@@ -94,6 +99,7 @@ export function SpaceGame() {
         onLaunch={onLaunch}
         onTakeoff={onTakeoff}
         onReboot={onReboot}
+        onNewWorld={onNewWorld}
         onMute={onMute}
         onGravity={onGravity}
         onAtmo={onAtmo}

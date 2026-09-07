@@ -16,6 +16,7 @@ type Props = {
   onLaunch: () => void;
   onTakeoff: () => void;
   onReboot: () => void;
+  onNewWorld: () => void;
   onMute: () => void;
   onGravity: (dir: number) => void;
   onAtmo: (dir: number) => void;
@@ -34,6 +35,7 @@ export function Overlay({
   onLaunch,
   onTakeoff,
   onReboot,
+  onNewWorld,
   onMute,
   onGravity,
   onAtmo,
@@ -80,12 +82,24 @@ export function Overlay({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [hud.phase, onTakeoff]);
 
+  useEffect(() => {
+    if (hud.phase !== "title" && hud.phase !== "crashed") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat || e.code !== "KeyN") return;
+      e.preventDefault();
+      onNewWorld();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [hud.phase, onNewWorld]);
+
   return (
     <div className="pointer-events-none absolute inset-0 text-fg">
       {hud.phase === "creating" ? <Creating /> : null}
       {hud.phase === "title" ? (
         <Title
           onLaunch={onLaunch}
+          onNewWorld={onNewWorld}
           physicsMenu={hud.physicsMenu}
           orbitShell={hud.orbitShell}
           lagrangePoints={hud.lagrangePoints}
@@ -246,7 +260,13 @@ export function Overlay({
       ) : null}
 
       {hud.phase === "crashed" && crashed ? (
-        <CrashCard planet={crashed} burned={hud.burned} onReboot={onReboot} />
+        <CrashCard
+          planet={crashed}
+          burned={hud.burned}
+          burnCause={hud.burnCause}
+          onReboot={onReboot}
+          onNewWorld={onNewWorld}
+        />
       ) : null}
     </div>
   );
@@ -273,6 +293,7 @@ function Creating() {
 
 function Title({
   onLaunch,
+  onNewWorld,
   physicsMenu,
   orbitShell,
   lagrangePoints,
@@ -284,6 +305,7 @@ function Title({
   onToggleVerbose,
 }: {
   onLaunch: () => void;
+  onNewWorld: () => void;
   physicsMenu: boolean;
   orbitShell: boolean;
   lagrangePoints: boolean;
@@ -342,20 +364,51 @@ function Title({
               onToggleVerbose={onToggleVerbose}
             />
           </p>
-          <button
-            type="button"
-            data-ui
-            onClick={onLaunch}
-            className="pointer-events-auto h-12 px-5 rounded-lg bg-fg text-accent-fg text-sm font-medium tracking-wide inline-flex items-center gap-3 hover:opacity-90 active:scale-[0.98] transition-[opacity,transform] duration-[var(--motion-quick)] ease-[var(--ease-out)]"
-          >
-            <span>Take off</span>
-            <kbd className="font-mono text-xs tracking-widest uppercase px-1.5 py-0.5 rounded border border-accent-fg/25 opacity-70">
-              Enter
-            </kbd>
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              data-ui
+              onClick={onLaunch}
+              className="pointer-events-auto h-12 px-5 rounded-lg bg-fg text-accent-fg text-sm font-medium tracking-wide inline-flex items-center gap-3 hover:opacity-90 active:scale-[0.98] transition-[opacity,transform] duration-[var(--motion-quick)] ease-[var(--ease-out)]"
+            >
+              <span>Take off</span>
+              <kbd className="font-mono text-xs tracking-widest uppercase px-1.5 py-0.5 rounded border border-accent-fg/25 opacity-70">
+                Enter
+              </kbd>
+            </button>
+            <NewWorldButton onNewWorld={onNewWorld} size="lg" />
+          </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function NewWorldButton({
+  onNewWorld,
+  size = "md",
+}: {
+  onNewWorld: () => void;
+  size?: "md" | "lg";
+}) {
+  return (
+    <button
+      type="button"
+      data-ui
+      onClick={(e) => {
+        e.stopPropagation();
+        onNewWorld();
+      }}
+      className={cn(
+        "pointer-events-auto rounded-md border border-border-strong text-sm font-medium text-fg inline-flex items-center gap-3 hover:bg-surface-2 active:scale-[0.98] transition-[background-color,transform] duration-[var(--motion-quick)] ease-[var(--ease-out)]",
+        size === "lg" ? "h-12 px-5 rounded-lg" : "h-11 px-5",
+      )}
+    >
+      <span>Create new world</span>
+      <kbd className="font-mono text-xs tracking-widest uppercase px-1.5 py-0.5 rounded border border-border-strong opacity-70">
+        N
+      </kbd>
+    </button>
   );
 }
 
@@ -407,11 +460,15 @@ function LandingCard({
 function CrashCard({
   planet,
   burned,
+  burnCause,
   onReboot,
+  onNewWorld,
 }: {
   planet: NonNullable<ReturnType<typeof planetById>>;
   burned: boolean;
+  burnCause: HudSnapshot["burnCause"];
   onReboot: () => void;
+  onNewWorld: () => void;
 }) {
   return (
     <div className="absolute inset-0 flex items-end justify-center p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 sm:pb-5 pointer-events-none">
@@ -425,10 +482,12 @@ function CrashCard({
         </h2>
         <p className="mt-3 text-sm leading-relaxed text-muted">
           {burned
-            ? `A flare from ${planet.name} reached the craft.`
+            ? burnCause === "flare"
+              ? `A flare from ${planet.name} reached the craft.`
+              : `Too close to ${planet.name}. The hull cooked.`
             : `The approach into ${planet.name} was too fast. The well won. Bring the craft back and try a slower pass — or catch an orbit first.`}
         </p>
-        <div className="mt-5">
+        <div className="mt-5 flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={onReboot}
@@ -439,6 +498,7 @@ function CrashCard({
               Enter
             </kbd>
           </button>
+          <NewWorldButton onNewWorld={onNewWorld} />
         </div>
       </article>
     </div>

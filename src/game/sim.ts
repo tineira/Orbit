@@ -1,4 +1,5 @@
 import type {
+  BurnCause,
   Camera,
   FlightStatus,
   Particle,
@@ -74,6 +75,7 @@ export type Sim = {
   flares: SolarFlare[];
   flareWait: number;
   burned: boolean;
+  burnCause: BurnCause | null;
 };
 
 export const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
@@ -143,6 +145,7 @@ export function createSim(): Sim {
     flares: [],
     flareWait: 6,
     burned: false,
+    burnCause: null,
   };
   landOnHome(sim);
   return sim;
@@ -160,6 +163,42 @@ function freshShip(): Ship {
     thrusting: false,
     reverse: false,
   };
+}
+
+export type SimViewPrefs = {
+  gravityScale: number;
+  atmoScale: number;
+  showOrbitShell: boolean;
+  showLagrange: boolean;
+  showPhysics: boolean;
+  showGravityGrid: boolean;
+  showVerbose: boolean;
+  userZoom: number;
+};
+
+export function simViewPrefs(sim: Sim): SimViewPrefs {
+  return {
+    gravityScale: sim.gravityScale,
+    atmoScale: sim.atmoScale,
+    showOrbitShell: sim.showOrbitShell,
+    showLagrange: sim.showLagrange,
+    showPhysics: sim.showPhysics,
+    showGravityGrid: sim.showGravityGrid,
+    showVerbose: sim.showVerbose,
+    userZoom: sim.camera.userZoom,
+  };
+}
+
+export function applySimViewPrefs(sim: Sim, prefs: SimViewPrefs) {
+  sim.gravityScale = prefs.gravityScale;
+  sim.atmoScale = prefs.atmoScale;
+  sim.showOrbitShell = prefs.showOrbitShell;
+  sim.showLagrange = prefs.showLagrange;
+  sim.showPhysics = prefs.showPhysics;
+  sim.showGravityGrid = prefs.showGravityGrid;
+  sim.showVerbose = prefs.showVerbose;
+  sim.camera.userZoom = prefs.userZoom;
+  sim.camera.zoom = sim.camera.zoomAuto * prefs.userZoom;
 }
 
 export function rebootSim(sim: Sim) {
@@ -184,6 +223,7 @@ export function rebootSim(sim: Sim) {
   sim.flares = [];
   sim.flareWait = 5 + Math.random() * 6;
   sim.burned = false;
+  sim.burnCause = null;
   landOnHome(sim);
   sim.camera.zoomAuto = 0.96;
   sim.camera.zoom = 0.96 * sim.camera.userZoom;
@@ -684,6 +724,7 @@ function stepBurnedFall(sim: Sim, dt: number) {
     carryOnSurface(sim, p, dt);
     sim.nearest = p;
     sim.altitude = SHIP_HULL * 0.85;
+    emitBurnEmbers(sim);
     return;
   }
 
@@ -699,11 +740,13 @@ function stepBurnedFall(sim: Sim, dt: number) {
     pinToSurface(sim, p);
     sim.nearest = p;
     sim.altitude = SHIP_HULL * 0.85;
+    emitBurnEmbers(sim);
     return;
   }
 
   sim.nearest = g.nearest;
   sim.altitude = g.dist - g.nearest.radius;
+  emitBurnEmbers(sim);
 }
 
 function landOnHome(sim: Sim) {
@@ -1263,9 +1306,11 @@ function emitExhaust(sim: Sim, f: { x: number; y: number }, power: number) {
 
 function crashInto(sim: Sim, p: Planet, nx: number, ny: number, rel: number) {
   const s = sim.ship;
+  const hot = p.kind === "star";
   sim.phase = "crashed";
   sim.crashedId = p.id;
-  sim.burned = false;
+  sim.burned = hot;
+  sim.burnCause = hot ? "star" : null;
   sim.landedId = null;
   sim.landedAngle = Math.atan2(nx, -ny);
   sim.orbitLockId = null;
@@ -1278,19 +1323,7 @@ function crashInto(sim: Sim, p: Planet, nx: number, ny: number, rel: number) {
   s.thrusting = false;
   s.reverse = false;
   sim.camera.trauma = 1;
-  const n = sim.reducedMotion ? 6 : 18;
-  for (let i = 0; i < n; i++) {
-    spawn(
-      sim,
-      s.x,
-      s.y,
-      s.vx + nx * (20 + Math.random() * 90) + (Math.random() - 0.5) * 70,
-      s.vy + ny * (20 + Math.random() * 90) + (Math.random() - 0.5) * 70,
-      0.45 + Math.random() * 0.4,
-      1.4 + Math.random() * 2.4,
-      18 + Math.random() * 22,
-    );
-  }
+  burstWreck(sim, nx, ny, hot);
   void rel;
 }
 
@@ -1404,6 +1437,7 @@ function burnInFlare(sim: Sim) {
   const s = sim.ship;
   sim.phase = "crashed";
   sim.burned = true;
+  sim.burnCause = "flare";
   sim.crashedId = star.id;
   sim.landedId = null;
   sim.orbitLockId = null;
@@ -1417,17 +1451,68 @@ function burnInFlare(sim: Sim) {
   s.vx *= 0.35;
   s.vy *= 0.35;
   sim.camera.trauma = 1;
-  const n = sim.reducedMotion ? 8 : 22;
+  burstWreck(sim, 0, 0, true);
+}
+
+function burstWreck(sim: Sim, nx: number, ny: number, hot: boolean) {
+  const s = sim.ship;
+  const n = sim.reducedMotion ? (hot ? 10 : 6) : hot ? 26 : 18;
+  const spread = hot ? 120 : 70;
   for (let i = 0; i < n; i++) {
     spawn(
       sim,
-      s.x,
-      s.y,
-      s.vx + (Math.random() - 0.5) * 110,
-      s.vy + (Math.random() - 0.5) * 110,
-      0.4 + Math.random() * 0.45,
-      1.3 + Math.random() * 2.2,
-      22 + Math.random() * 28,
+      s.x + (hot ? (Math.random() - 0.5) * 8 : 0),
+      s.y + (hot ? (Math.random() - 0.5) * 8 : 0),
+      s.vx + nx * (20 + Math.random() * 90) + (Math.random() - 0.5) * spread,
+      s.vy + ny * (20 + Math.random() * 90) + (Math.random() - 0.5) * spread,
+      (hot ? 0.5 : 0.45) + Math.random() * (hot ? 0.55 : 0.4),
+      (hot ? 1.6 : 1.4) + Math.random() * (hot ? 3.2 : 2.4),
+      hot ? 8 + Math.random() * 40 : 18 + Math.random() * 22,
+    );
+  }
+}
+
+function burnLift(sim: Sim): { x: number; y: number } {
+  const s = sim.ship;
+  const p = crashedHost(sim);
+  let rx = 0;
+  let ry = -1;
+  if (p) {
+    const dx = s.x - p.x;
+    const dy = s.y - p.y;
+    const d = Math.hypot(dx, dy) || 1;
+    rx = dx / d;
+    ry = dy / d;
+  }
+  const sp = Math.hypot(s.vx, s.vy);
+  if (p && !shipTouchesHull(sim, p) && sp > 6) {
+    const x = (-s.vx / sp) * 0.65 + rx * 0.35;
+    const y = (-s.vy / sp) * 0.65 + ry * 0.35;
+    const m = Math.hypot(x, y) || 1;
+    return { x: x / m, y: y / m };
+  }
+  return { x: rx, y: ry };
+}
+
+function emitBurnEmbers(sim: Sim) {
+  if (sim.reducedMotion) return;
+  const s = sim.ship;
+  const lift = burnLift(sim);
+  const n = Math.random() < 0.55 ? 2 : 1;
+  for (let i = 0; i < n; i++) {
+    const jitter = (Math.random() - 0.5) * 0.9;
+    const jx = -lift.y * jitter;
+    const jy = lift.x * jitter;
+    const speed = 14 + Math.random() * 22;
+    spawn(
+      sim,
+      s.x + (Math.random() - 0.5) * 10,
+      s.y + (Math.random() - 0.5) * 10,
+      s.vx + (lift.x + jx) * speed + (Math.random() - 0.5) * 8,
+      s.vy + (lift.y + jy) * speed + (Math.random() - 0.5) * 8,
+      0.28 + Math.random() * 0.42,
+      1.1 + Math.random() * 2.1,
+      10 + Math.random() * 38,
     );
   }
 }

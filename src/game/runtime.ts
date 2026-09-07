@@ -4,6 +4,7 @@ import { createInput, enterHeld, held, steerFrom, thrustFrom } from "./input";
 import {
   adjustAtmoScale,
   adjustGravityScale,
+  applySimViewPrefs,
   atmoDrag,
   createSim,
   listLagrangePoints,
@@ -11,20 +12,23 @@ import {
   launchSim,
   rebootSim,
   setUserZoom,
+  simViewPrefs,
   stepSim,
   STEP,
   takeoff,
   verboseDiag,
   wrapPi,
   type Sim,
+  type SimViewPrefs,
 } from "./sim";
 import type { GameUiHandler, HudSnapshot } from "./types";
-import { createSystem } from "./world";
+import { createSystem, getSystem } from "./world";
 
 export type GameHandle = {
   launch: () => void;
   takeoff: () => void;
   reboot: () => void;
+  newWorld: () => void;
   setMuted: (muted: boolean) => void;
   adjustGravity: (dir: number) => void;
   adjustAtmo: (dir: number) => void;
@@ -92,6 +96,8 @@ declare global {
       getPhysicsMenu?: () => boolean;
       getGravityGrid?: () => boolean;
       getVerbose?: () => boolean;
+      getSeed?: () => number | null;
+      newWorld?: () => void;
       adjustGravity?: (dir: number) => void;
       adjustAtmo?: (dir: number) => void;
     };
@@ -114,6 +120,7 @@ const CREATING_HUD: HudSnapshot = {
   landedId: null,
   crashedId: null,
   burned: false,
+  burnCause: null,
   muted: false,
   touching: false,
   gravityScale: 1,
@@ -160,6 +167,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let pWasDown = false;
   let gWasDown = false;
   let vWasDown = false;
+  let nWasDown = false;
+  let pendingPrefs: SimViewPrefs | null = null;
 
   const resize = () => {
     const rect = canvas.getBoundingClientRect();
@@ -214,6 +223,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       landedId: sim.landedId,
       crashedId: sim.crashedId,
       burned: sim.burned,
+      burnCause: sim.burnCause,
       muted,
       touching: !!input.state.pointer?.down,
       gravityScale: sim.gravityScale,
@@ -292,6 +302,13 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     return pressed;
   };
 
+  const consumeNewWorld = () => {
+    const down = held(input.state).has("KeyN");
+    const pressed = down && !nWasDown;
+    nWasDown = down;
+    return pressed;
+  };
+
   const attachProbe = (s: Sim) => {
     if (!import.meta.env.DEV) return;
     window.__controlsTest = {
@@ -308,6 +325,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         s.landedId = null;
         s.crashedId = null;
         s.burned = false;
+        s.burnCause = null;
         s.orbitLockId = null;
         s.orbitDwell = 0;
         s.orbitLockCooldown = 0;
@@ -380,6 +398,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getPhysicsMenu: () => s.showPhysics,
       getGravityGrid: () => s.showGravityGrid,
       getVerbose: () => s.showVerbose,
+      getSeed: () => getSystem().seed,
+      newWorld: () => chartNewWorld(),
       getLagrangePoints: () =>
         listLagrangePoints(s).map((p) => ({
           key: p.key,
@@ -448,6 +468,10 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         publish();
       }
     }
+    if (consumeNewWorld() && (sim.phase === "title" || sim.phase === "crashed")) {
+      chartNewWorld();
+      return;
+    }
 
     while (acc >= STEP) {
       const steer = playing() || sim.phase === "landed" ? steerFrom(input.state) : 0;
@@ -508,13 +532,41 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     createSystem();
     sim = createSim();
     sim.reducedMotion = reducedMotion;
+    if (pendingPrefs) {
+      applySimViewPrefs(sim, pendingPrefs);
+      pendingPrefs = null;
+    }
     attachProbe(sim);
     last = performance.now();
+    acc = 0;
+    prevLanded = sim.landedId;
+    prevCrashed = null;
+    prevTrauma = 0;
+    nWasDown = held(input.state).has("KeyN");
     publish();
     raf = requestAnimationFrame(frame);
   };
 
-  if (import.meta.env.DEV) {
+  const creatingDelay = () => (reducedMotion ? 90 : 720);
+
+  const chartNewWorld = () => {
+    if (!running || !sim) return;
+    if (sim.phase !== "title" && sim.phase !== "crashed") return;
+    pendingPrefs = simViewPrefs(sim);
+    audio.unlock();
+    input.state.qaKeys = null;
+    input.state.qaSteer = null;
+    window.clearTimeout(bootTimer);
+    cancelAnimationFrame(raf);
+    sim = null;
+    paintBoot();
+    onUi({ ...CREATING_HUD, muted });
+    attachCreatingProbe();
+    bootTimer = window.setTimeout(begin, creatingDelay());
+  };
+
+  const attachCreatingProbe = () => {
+    if (!import.meta.env.DEV) return;
     window.__controlsTest = {
       getYaw: () => 0,
       getSpeed: () => 0,
@@ -541,13 +593,15 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getGravityGrid: () => false,
       getVerbose: () => false,
       getPlanetPaths: () => [],
+      getSeed: () => null,
+      newWorld: () => {},
       adjustGravity: () => {},
       adjustAtmo: () => {},
     };
-  }
+  };
 
-  const minMs = reducedMotion ? 90 : 720;
-  bootTimer = window.setTimeout(begin, minMs);
+  attachCreatingProbe();
+  bootTimer = window.setTimeout(begin, creatingDelay());
 
   return {
     launch() {
@@ -570,6 +624,9 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       input.state.qaKeys = null;
       input.state.qaSteer = null;
       publish();
+    },
+    newWorld() {
+      chartNewWorld();
     },
     setMuted(next) {
       muted = next;

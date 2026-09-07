@@ -70,10 +70,18 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   drawLagrangePoints(ctx, sim, cam);
   drawRelativePath(ctx, sim);
   drawPlanetPaths(ctx, sim);
-  drawParticles(ctx, sim.particles);
+  if (!sim.burned) drawParticles(ctx, sim.particles);
   drawGravityArrows(ctx, sim);
   const shipUmbra = star ? pointUmbraMax(sim.ship.x, sim.ship.y, sim.planets, star, null) : 0;
-  drawShip(ctx, sim.ship, sim.phase !== "title" && sim.ship.thrusting, shipUmbra);
+  drawShip(
+    ctx,
+    sim.ship,
+    sim.phase !== "title" && sim.ship.thrusting,
+    shipUmbra,
+    sim.burned,
+    sim.reducedMotion,
+  );
+  if (sim.burned) drawParticles(ctx, sim.particles);
   drawOrbitLockBars(ctx, sim, cam);
 
   ctx.restore();
@@ -871,12 +879,106 @@ function drawParticles(ctx: CanvasRenderingContext2D, particles: Particle[]) {
   ctx.globalAlpha = 1;
 }
 
-function drawShip(ctx: CanvasRenderingContext2D, ship: Ship, thrusting: boolean, umbra = 0) {
+function flameTri(
+  ctx: CanvasRenderingContext2D,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  halfW: number,
+  fill: string,
+) {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const len = Math.hypot(dx, dy) || 1;
+  const px = (-dy / len) * halfW;
+  const py = (dx / len) * halfW;
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.moveTo(x0 + px, y0 + py);
+  ctx.lineTo(x1, y1);
+  ctx.lineTo(x0 - px, y0 - py);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawHullFire(
+  ctx: CanvasRenderingContext2D,
+  reducedMotion: boolean,
+  layer: "back" | "front",
+) {
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const now = performance.now();
+  const flick = reducedMotion ? 1 : 0.78 + hash(now * 0.017) * 0.45;
+  const flick2 = reducedMotion ? 1 : 0.72 + hash(now * 0.029 + 3.1) * 0.5;
+  const flick3 = reducedMotion ? 1 : 0.8 + hash(now * 0.023 + 7.4) * 0.4;
+
+  if (layer === "back") {
+    const g = ctx.createRadialGradient(0, 2, 1.5, 0, 3, 26 * flick);
+    g.addColorStop(0, `rgba(255, 210, 130, ${0.62 * flick})`);
+    g.addColorStop(0.32, `rgba(255, 110, 45, ${0.32 * flick})`);
+    g.addColorStop(1, "rgba(255, 40, 10, 0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 2, 26 * flick, 0, Math.PI * 2);
+    ctx.fill();
+
+    flameTri(ctx, 0, 7, 0, 19 + flick * 9, 5.8, `rgba(255, 95, 40, ${0.5 * flick})`);
+    flameTri(ctx, -6.2, 5, -12 - flick * 3, 15 + flick * 5, 3.4, `rgba(255, 110, 50, ${0.4 * flick2})`);
+    flameTri(ctx, 6.2, 5, 12 + flick2 * 3, 15 + flick2 * 5, 3.4, `rgba(255, 110, 50, ${0.4 * flick})`);
+    if (!reducedMotion) {
+      flameTri(
+        ctx,
+        0,
+        -7,
+        (hash(now * 0.02) - 0.5) * 5,
+        -19 - flick3 * 5,
+        2.5,
+        `rgba(255, 130, 60, ${0.32 * flick3})`,
+      );
+    }
+  } else {
+    flameTri(ctx, 0, 6.5, 0, 14 + flick2 * 6, 2.5, `rgba(255, 230, 170, ${0.72 * flick2})`);
+    flameTri(ctx, -5.4, 4.5, -9 - flick * 2, 11 + flick * 3, 1.7, `rgba(255, 220, 150, ${0.55 * flick})`);
+    flameTri(ctx, 5.4, 4.5, 9 + flick2 * 2, 11 + flick2 * 3, 1.7, `rgba(255, 220, 150, ${0.55 * flick2})`);
+    if (!reducedMotion) {
+      const sparks = 3;
+      for (let i = 0; i < sparks; i++) {
+        const a = hash(now * 0.008 + i * 5.2);
+        const r = 6 + a * 10;
+        const ang = (hash(i * 9.1 + now * 0.004) - 0.5) * Math.PI;
+        ctx.fillStyle = `rgba(255, ${180 + Math.round(a * 50)}, 90, ${0.45 + a * 0.3})`;
+        ctx.beginPath();
+        ctx.arc(
+          Math.sin(ang) * r * 0.45,
+          4 + Math.cos(ang) * r * 0.35,
+          0.7 + a * 1.1,
+          0,
+          Math.PI * 2,
+        );
+        ctx.fill();
+      }
+    }
+  }
+  ctx.restore();
+}
+
+function drawShip(
+  ctx: CanvasRenderingContext2D,
+  ship: Ship,
+  thrusting: boolean,
+  umbra = 0,
+  burned = false,
+  reducedMotion = false,
+) {
   ctx.save();
   ctx.translate(ship.x, ship.y);
   ctx.rotate(-ship.yaw);
 
-  if (thrusting) {
+  if (burned) drawHullFire(ctx, reducedMotion, "back");
+
+  if (thrusting && !burned) {
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
     const flicker = 0.75 + Math.random() * 0.35;
@@ -899,9 +1001,12 @@ function drawShip(ctx: CanvasRenderingContext2D, ship: Ship, thrusting: boolean,
 
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
-  const dim = 1 - 0.72 * Math.max(0, Math.min(1, umbra));
-  const hull = Math.round(236 * dim);
-  ctx.fillStyle = `rgb(${hull}, ${Math.round(234 * dim)}, ${Math.round(228 * dim)})`;
+  if (burned) {
+    ctx.fillStyle = "rgb(46, 34, 30)";
+  } else {
+    const dim = 1 - 0.72 * Math.max(0, Math.min(1, umbra));
+    ctx.fillStyle = `rgb(${Math.round(236 * dim)}, ${Math.round(234 * dim)}, ${Math.round(228 * dim)})`;
+  }
   ctx.strokeStyle = "#07080c";
   ctx.lineWidth = 1.4;
   ctx.beginPath();
@@ -913,7 +1018,7 @@ function drawShip(ctx: CanvasRenderingContext2D, ship: Ship, thrusting: boolean,
   ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = "#12141a";
+  ctx.fillStyle = burned ? "rgba(255, 140, 70, 0.78)" : "#12141a";
   ctx.beginPath();
   ctx.moveTo(0, -6);
   ctx.lineTo(3.2, 2);
@@ -929,6 +1034,8 @@ function drawShip(ctx: CanvasRenderingContext2D, ship: Ship, thrusting: boolean,
   ctx.moveTo(8.5, 10);
   ctx.lineTo(4, 6);
   ctx.stroke();
+
+  if (burned) drawHullFire(ctx, reducedMotion, "front");
 
   ctx.restore();
 }

@@ -78,6 +78,8 @@ export type SolarFlare = {
 
 export type Phase = "creating" | "title" | "flight" | "landed" | "crashed";
 
+export type BurnCause = "flare" | "star";
+
 export type FlightStatus = "deep" | "approach" | "orbit" | "lagrange" | "too-fast" | "landed" | "crashed";
 
 export type VerboseDiag = {
@@ -121,6 +123,7 @@ export type HudSnapshot = {
   landedId: string | null;
   crashedId: string | null;
   burned: boolean;
+  burnCause: BurnCause | null;
   muted: boolean;
   touching: boolean;
   gravityScale: number;
