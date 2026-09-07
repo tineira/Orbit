@@ -337,7 +337,7 @@ function makeSystem(seed: number): Planet[] {
   for (let i = 0; i < rockyCount; i++) {
     if (i === pairSeat) {
       const radiusA = lerp(58, 96, rng());
-      const radiusB = radiusA * lerp(0.92, 1.08, rng());
+      const radiusB = radiusA * lerp(0.85, 1.15, rng());
       const surfaceGA = lerp(9.2, 13.2, rng());
       const surfaceGB = surfaceGA * lerp(0.95, 1.05, rng());
       const sep = (radiusA + radiusB) * lerp(2.65, 3.3, rng());
