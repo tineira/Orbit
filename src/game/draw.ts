@@ -1047,10 +1047,21 @@ const LOCK_PIP_GAP = 2;
 const LOCK_BAR_PAD = 2;
 const LOCK_BAR_W = LOCK_BAR_PAD * 2 + LOCK_PIPS * LOCK_PIP_W + (LOCK_PIPS - 1) * LOCK_PIP_GAP;
 const LOCK_BAR_H = LOCK_BAR_PAD * 2 + LOCK_PIP_H;
+const LOCK_BAR_CAUTION = 0.55;
+const LOCK_BAR_WARN = 0.28;
+const LOCK_LABEL_GAP = 4;
+const LOCK_LABEL_PAD_X = 3;
+const LOCK_LABEL_IDLE = "rgba(138, 141, 150, 0.78)";
 
 function lockBarColor(remaining: number, healthy: string) {
-  if (remaining > 0.55) return healthy;
-  if (remaining > 0.28) return "#c4a05a";
+  if (remaining > LOCK_BAR_CAUTION) return healthy;
+  if (remaining > LOCK_BAR_WARN) return "#c4a05a";
+  return "#c45c4a";
+}
+
+function lockLabelColor(remaining: number) {
+  if (remaining > LOCK_BAR_CAUTION) return LOCK_LABEL_IDLE;
+  if (remaining > LOCK_BAR_WARN) return "#c4a05a";
   return "#c45c4a";
 }
 
@@ -1081,6 +1092,30 @@ function drawLockBar(
   }
 }
 
+function drawLockBarLabel(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  remaining: number,
+  label: string,
+) {
+  const color = lockLabelColor(remaining);
+  ctx.font = '500 10px "IBM Plex Mono", ui-monospace, monospace';
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  const textX = x + LOCK_BAR_W + LOCK_LABEL_GAP + LOCK_LABEL_PAD_X;
+  const tw = ctx.measureText(label).width;
+  ctx.fillStyle = "rgba(7, 8, 12, 0.72)";
+  ctx.fillRect(
+    x + LOCK_BAR_W + LOCK_LABEL_GAP,
+    y,
+    Math.ceil(tw + LOCK_LABEL_PAD_X * 2),
+    LOCK_BAR_H,
+  );
+  ctx.fillStyle = color;
+  ctx.fillText(label, textX, y + LOCK_BAR_H / 2);
+}
+
 function drawOrbitLockBars(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera) {
   if (!sim.orbitLockId && !sim.lagrangeLockKey) return;
   const zoom = Math.max(0.04, cam.zoom);
@@ -1091,8 +1126,11 @@ function drawOrbitLockBars(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera)
   ctx.scale(1 / zoom, 1 / zoom);
   const x = -Math.round(LOCK_BAR_W / 2);
   const y = Math.round(13 * zoom + 10);
+  const gravY = y + LOCK_BAR_H + 3;
   drawLockBar(ctx, x, y, dragLeft, "#7d9b86");
-  drawLockBar(ctx, x, y + LOCK_BAR_H + 3, gravLeft, "#b7c0cc");
+  drawLockBarLabel(ctx, x, y, dragLeft, "Atmo Lock");
+  drawLockBar(ctx, x, gravY, gravLeft, "#b7c0cc");
+  drawLockBarLabel(ctx, x, gravY, gravLeft, "Gravity Lock");
   ctx.restore();
 }
 

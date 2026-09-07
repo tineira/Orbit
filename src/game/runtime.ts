@@ -65,6 +65,8 @@ declare global {
         id: string;
         x: number;
         y: number;
+        vx?: number;
+        vy?: number;
         kind: string;
         parentId?: string;
         radius: number;
@@ -376,6 +378,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
           id: p.id,
           x: p.x,
           y: p.y,
+          vx: p.vx,
+          vy: p.vy,
           kind: p.kind,
           parentId: p.parentId,
           radius: p.radius,
