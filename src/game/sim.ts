@@ -885,6 +885,9 @@ function stepBurnedFall(sim: Sim, dt: number) {
     return;
   }
 
+  collidePlanets(sim);
+  if (!sim.burned) return;
+
   sim.nearest = g.nearest;
   sim.altitude = g.dist - g.nearest.radius;
   emitBurnEmbers(sim);
@@ -1743,6 +1746,8 @@ function collidePlanets(sim: Sim) {
   const s = sim.ship;
   for (const p of sim.planets) {
     if (isGhostBody(p) || p.radius <= 0) continue;
+    // A flare wreck already owns the star: sink there, crash on everything else.
+    if (sim.burned && p.kind === "star") continue;
     const dx = s.x - p.x;
     const dy = s.y - p.y;
     const d = Math.hypot(dx, dy) || 0.0001;
