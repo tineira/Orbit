@@ -860,31 +860,28 @@ function shipTouchesHull(sim: Sim, p: Planet) {
   return Math.hypot(sim.ship.x - p.x, sim.ship.y - p.y) <= p.radius + SHIP_HULL;
 }
 
-/** After a flare, keep falling under gravity until the star's surface, then ride it like a crash. */
+/** After a flare, keep coasting under gravity and drag until the star, then sink in like a gas giant. */
 function stepBurnedFall(sim: Sim, dt: number) {
   const ship = sim.ship;
   const p = crashedHost(sim);
   if (p && shipTouchesHull(sim, p)) {
-    carryOnSurface(sim, p, dt);
-    sim.nearest = p;
-    sim.altitude = SHIP_HULL * 0.85;
-    emitBurnEmbers(sim);
+    if (sim.crashAge === 0) pinToSurface(sim, p);
+    sim.crashAge += dt;
+    stepSink(sim, dt);
     return;
   }
 
-  ship.vx *= Math.max(0, 1 - dt * 1.8);
-  ship.vy *= Math.max(0, 1 - dt * 1.8);
   const g = gravityAt(ship.x, ship.y, sim.planets, sim.gravityScale);
-  ship.vx += g.ax * dt;
-  ship.vy += g.ay * dt;
+  const drag = dragNear(ship.x, ship.y, ship.vx, ship.vy, sim.planets, sim.atmoScale);
+  ship.vx += (g.ax + drag.ax) * dt;
+  ship.vy += (g.ay + drag.ay) * dt;
   ship.x += ship.vx * dt;
   ship.y += ship.vy * dt;
 
   if (p && shipTouchesHull(sim, p)) {
     pinToSurface(sim, p);
-    sim.nearest = p;
-    sim.altitude = SHIP_HULL * 0.85;
-    emitBurnEmbers(sim);
+    sim.crashAge += dt;
+    stepSink(sim, dt);
     return;
   }
 
@@ -909,7 +906,9 @@ function stepSink(sim: Sim, dt: number) {
   if (!sim.reducedMotion) ship.yaw += dt * 1.35;
   sim.nearest = p;
   sim.altitude = pad - p.radius;
-  emitSinkMist(sim, t);
+  if (sim.burned) {
+    if (t < 0.92) emitBurnEmbers(sim);
+  } else emitSinkMist(sim, t);
 }
 
 function emitSinkMist(sim: Sim, t: number) {
@@ -1387,12 +1386,13 @@ export function stepSim(
   }
 
   if (sim.phase === "crashed") {
-    sim.crashAge += dt;
     if (sim.burned) {
       stepBurnedFall(sim, dt);
     } else if (sim.crashKind === "sink") {
+      sim.crashAge += dt;
       stepSink(sim, dt);
     } else if (sim.crashedId) {
+      sim.crashAge += dt;
       const p = sim.planets.find((b) => b.id === sim.crashedId);
       if (p) {
         carryOnSurface(sim, p, dt);
@@ -1514,7 +1514,7 @@ export function crashKindFor(p: Planet): CrashKind {
 export const SINK_DURATION = 1.55;
 
 export function sinkAlpha(sim: Sim) {
-  if (sim.crashKind !== "sink") return 1;
+  if (sim.crashKind !== "sink" && !sim.burned) return 1;
   const t = Math.min(1, sim.crashAge / (sim.reducedMotion ? 0.18 : SINK_DURATION));
   return Math.max(0, 1 - t * t);
 }
@@ -1669,8 +1669,6 @@ function burnInFlare(sim: Sim) {
   sim.orbitHint = null;
   s.thrusting = false;
   s.reverse = false;
-  s.vx *= 0.35;
-  s.vy *= 0.35;
   sim.camera.trauma = 1;
   burstWreck(sim, 0, 0, "burn");
 }
