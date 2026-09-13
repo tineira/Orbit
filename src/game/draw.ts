@@ -89,7 +89,10 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
     drawSunBloom(ctx, sim);
     drawStarCorona(ctx, sim);
     drawLockRing(ctx, sim);
-    if (sim.phase === "flight") drawPath(ctx, predictPath(sim, 10), sim);
+    if (sim.phase === "flight") {
+      const sp = Math.hypot(sim.ship.vx, sim.ship.vy);
+      drawPath(ctx, predictPath(sim, sp > 400 ? 3 : 10), sim);
+    }
     const star = sim.planets.find((b) => b.kind === "star") ?? null;
     for (const p of sim.planets) {
       if (!isGhostBody(p)) drawPlanet(ctx, p, cam, star, sim.planets);
@@ -130,14 +133,6 @@ function worldToScreen(cam: Camera, x: number, y: number, cssW: number, cssH: nu
 
 function wrapSpan(v: number, span: number) {
   return ((v % span) + span) % span;
-}
-
-function starRgb(i: number): [number, number, number] {
-  const t = hash(i * 3.17);
-  if (t < 0.52) return [210, 224, 255];
-  if (t < 0.8) return [248, 248, 252];
-  if (t < 0.93) return [255, 232, 196];
-  return [255, 186, 138];
 }
 
 /** World units of mesh slide per unit of acceleration. Linear so the star's gradient reads at planet distance. */
@@ -259,24 +254,91 @@ function drawGravityGrid(
   ctx.restore();
 }
 
-function drawStarDot(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  size: number,
-  rgb: [number, number, number],
-  a: number,
-) {
-  ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`;
-  if (size <= 1.05) {
-    const s = Math.max(0.7, size);
-    ctx.fillRect(x - s * 0.5, y - s * 0.5, s, s);
-    return;
-  }
-  ctx.beginPath();
-  ctx.arc(x, y, size, 0, Math.PI * 2);
-  ctx.fill();
+const STAR_TINTS: [number, number, number][] = [
+  [210, 224, 255],
+  [248, 248, 252],
+  [255, 232, 196],
+  [255, 186, 138],
+];
+const STAR_TINT_CSS = STAR_TINTS.map(([r, g, b]) => `rgb(${r}, ${g}, ${b})`);
+
+type StarSpec = {
+  gx: number;
+  gy: number;
+  size: number;
+  a: number;
+  tint: number;
+};
+
+type StarLayer = {
+  par: number;
+  span: number;
+  lineW: number;
+  stars: StarSpec[];
+};
+
+function starTint(i: number) {
+  const t = hash(i * 3.17);
+  if (t < 0.52) return 0;
+  if (t < 0.8) return 1;
+  if (t < 0.93) return 2;
+  return 3;
 }
+
+function makeStarLayer(
+  n: number,
+  par: number,
+  size: number,
+  a: number,
+  span: number,
+  seed = 0,
+): StarLayer {
+  const stars: StarSpec[] = [];
+  for (let i = 0; i < n; i++) {
+    const mag = hash(i * 11.9 + par + seed);
+    stars.push({
+      gx: hash(i * 19.17 + par * 8 + seed) * span,
+      gy: hash(i * 47.3 + par * 3 + seed) * span,
+      size: size * (0.65 + mag * 0.7),
+      a: a * (0.55 + mag * 0.45),
+      tint: starTint(i + seed),
+    });
+  }
+  stars.sort((p, q) => p.tint - q.tint || p.a - q.a);
+  return { par, span, lineW: Math.max(size, 0.85), stars };
+}
+
+function makeMilkyLayer(): StarLayer {
+  const span = 2600;
+  const par = 0.022;
+  const stars: StarSpec[] = [];
+  const ca = Math.cos(-0.48);
+  const sa = Math.sin(-0.48);
+  for (let i = 0; i < 1600; i++) {
+    const along = (hash(i * 2.13) - 0.5) * span * 1.35;
+    const u = hash(i * 8.41) * 2 - 1;
+    const across = u * u * u * 520;
+    const mag = hash(i * 4.6);
+    stars.push({
+      gx: span * 0.5 + along * ca - across * sa,
+      gy: span * 0.5 + along * sa + across * ca,
+      size: 0.4 + mag * 0.55,
+      a: 0.14 + mag * 0.24,
+      tint: starTint(i + 400),
+    });
+  }
+  stars.sort((p, q) => p.tint - q.tint || p.a - q.a);
+  return { par, span, lineW: 0.85, stars };
+}
+
+const STAR_LAYERS: StarLayer[] = [
+  makeStarLayer(1400, 0.018, 0.5, 0.28, 2400),
+  makeStarLayer(900, 0.028, 0.72, 0.44, 2100),
+  makeStarLayer(420, 0.04, 1.0, 0.62, 1800),
+  makeStarLayer(160, 0.055, 1.25, 0.78, 1600),
+];
+const MILKY_LAYER = makeMilkyLayer();
+const BRIGHT_LAYER = makeStarLayer(36, 0.06, 1.45, 0.82, 2000, 90);
 
 function chartFade(sim: Sim) {
   if (sim.warpLost) return 0;
@@ -300,35 +362,6 @@ function warpRumbleStrength(sim: Sim) {
   return rumbleFromSpeed(WARP_FX_SPEED + t * (WARP_RUMBLE_REF_SPEED - WARP_FX_SPEED));
 }
 
-function drawStarMark(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  size: number,
-  rgb: [number, number, number],
-  a: number,
-  streak: number,
-  ux: number,
-  uy: number,
-  lenScale = 1,
-) {
-  const len = streak * lenScale;
-  if (len < 0.45) {
-    drawStarDot(ctx, x, y, size, rgb, a);
-    return;
-  }
-  const mix = Math.min(1, (len - 0.45) / 7.5);
-  if (mix < 0.98) drawStarDot(ctx, x, y, size, rgb, a * (1 - mix));
-  const lineA = a * (0.95 + 0.35 * mix);
-  ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${lineA})`;
-  ctx.lineWidth = Math.max(size, 0.85);
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(x - ux * len, y - uy * len);
-  ctx.lineTo(x + ux * len * 0.15, y + uy * len * 0.15);
-  ctx.stroke();
-}
-
 function starStreak(sim: Sim | undefined) {
   if (!sim || sim.reducedMotion) return 0;
   if (sim.warpLost || (sim.phase === "transit" && !sim.transitPunched)) {
@@ -343,6 +376,111 @@ function starStreak(sim: Sim | undefined) {
   return a * 8 + c * 36 + c * c * 70;
 }
 
+const STAR_PAR_NEAR = 0.06;
+const STAR_PAR_FAR = 0.018;
+
+function starStreakFull(sim: Sim | undefined) {
+  if (!sim || sim.reducedMotion) return false;
+  return sim.warpLost || (sim.phase === "transit" && !sim.transitPunched);
+}
+
+/** Near field streaks first. Far layers stay as dots until the spool is much higher. */
+function layerStreakLen(base: number, par: number, full: boolean) {
+  if (base <= 0) return 0;
+  const d = Math.max(0, Math.min(1, (par - STAR_PAR_FAR) / (STAR_PAR_NEAR - STAR_PAR_FAR)));
+  if (full) return base * (0.38 + 0.62 * d);
+  const hold = (1 - d) * (1 - d) * 11;
+  return Math.max(0, base - hold) * (0.2 + 0.8 * d);
+}
+
+function drawStarLayer(
+  ctx: CanvasRenderingContext2D,
+  layer: StarLayer,
+  ox: number,
+  oy: number,
+  cssW: number,
+  cssH: number,
+  streak: number,
+  ux: number,
+  uy: number,
+  lenScale: number,
+) {
+  const { span, stars, lineW } = layer;
+  const cx = cssW / 2 - span / 2;
+  const cy = cssH / 2 - span / 2;
+  const len = streak * lenScale;
+  ctx.globalAlpha = 1;
+  if (len < 0.45) {
+    let tint = -1;
+    for (const s of stars) {
+      const x = wrapSpan(s.gx - ox, span) + cx;
+      const y = wrapSpan(s.gy - oy, span) + cy;
+      if (s.tint !== tint) {
+        tint = s.tint;
+        ctx.fillStyle = STAR_TINT_CSS[tint]!;
+      }
+      ctx.globalAlpha = s.a;
+      if (s.size <= 1.05) {
+        const sz = Math.max(0.7, s.size);
+        ctx.fillRect(x - sz * 0.5, y - sz * 0.5, sz, sz);
+      } else {
+        ctx.beginPath();
+        ctx.arc(x, y, s.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    return;
+  }
+  const mix = Math.min(1, (len - 0.45) / 7.5);
+  if (mix < 0.98) {
+    let tint = -1;
+    for (const s of stars) {
+      const x = wrapSpan(s.gx - ox, span) + cx;
+      const y = wrapSpan(s.gy - oy, span) + cy;
+      if (s.tint !== tint) {
+        tint = s.tint;
+        ctx.fillStyle = STAR_TINT_CSS[tint]!;
+      }
+      ctx.globalAlpha = s.a * (1 - mix);
+      if (s.size <= 1.05) {
+        const sz = Math.max(0.7, s.size);
+        ctx.fillRect(x - sz * 0.5, y - sz * 0.5, sz, sz);
+      } else {
+        ctx.beginPath();
+        ctx.arc(x, y, s.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  ctx.lineCap = "round";
+  ctx.lineWidth = lineW;
+  const lineA = 0.95 + 0.35 * mix;
+  let i = 0;
+  while (i < stars.length) {
+    const tint = stars[i]!.tint;
+    ctx.strokeStyle = STAR_TINT_CSS[tint]!;
+    let end = i;
+    while (end < stars.length && stars[end]!.tint === tint) end += 1;
+    const mid = i + ((end - i) >> 1);
+    for (const [from, to, band] of [
+      [i, mid, 0.5],
+      [mid, end, 0.92],
+    ] as const) {
+      ctx.globalAlpha = band * lineA;
+      ctx.beginPath();
+      for (let k = from; k < to; k++) {
+        const s = stars[k]!;
+        const x = wrapSpan(s.gx - ox, span) + cx;
+        const y = wrapSpan(s.gy - oy, span) + cy;
+        ctx.moveTo(x - ux * len, y - uy * len);
+        ctx.lineTo(x + ux * len * 0.15, y + uy * len * 0.15);
+      }
+      ctx.stroke();
+    }
+    i = end;
+  }
+}
+
 function drawStars(
   ctx: CanvasRenderingContext2D,
   cam: Camera,
@@ -354,79 +492,79 @@ function drawStars(
 ) {
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
-  const streak = starStreak(sim);
+  const base = starStreak(sim);
+  const full = starStreakFull(sim);
   const sp = sim ? Math.hypot(sim.ship.vx, sim.ship.vy) : 0;
   const ux = sim && sp > 1e-6 ? sim.ship.vx / sp : 0;
   const uy = sim && sp > 1e-6 ? sim.ship.vy / sp : 0;
   const driftX = cam.starDriftX ?? 0;
   const driftY = cam.starDriftY ?? 0;
+  const px = cam.x + driftX + sx;
+  const py = cam.y + driftY + sy;
 
-  const layers = [
-    { n: 1400, par: 0.018, size: 0.5, a: 0.28, span: 2400 },
-    { n: 900, par: 0.028, size: 0.72, a: 0.44, span: 2100 },
-    { n: 420, par: 0.04, size: 1.0, a: 0.62, span: 1800 },
-    { n: 160, par: 0.055, size: 1.25, a: 0.78, span: 1600 },
-  ];
-
-  for (const layer of layers) {
-    const { span } = layer;
-    const ox = (cam.x + driftX) * layer.par + sx * layer.par;
-    const oy = (cam.y + driftY) * layer.par + sy * layer.par;
-    for (let i = 0; i < layer.n; i++) {
-      const gx = hash(i * 19.17 + layer.par * 8) * span;
-      const gy = hash(i * 47.3 + layer.par * 3) * span;
-      const x = wrapSpan(gx - ox, span) + cssW / 2 - span / 2;
-      const y = wrapSpan(gy - oy, span) + cssH / 2 - span / 2;
-      const mag = hash(i * 11.9 + layer.par);
-      const size = layer.size * (0.65 + mag * 0.7);
-      const a = layer.a * (0.55 + mag * 0.45);
-      drawStarMark(ctx, x, y, size, starRgb(i), a, streak, ux, uy);
-    }
+  for (const layer of STAR_LAYERS) {
+    drawStarLayer(
+      ctx,
+      layer,
+      px * layer.par,
+      py * layer.par,
+      cssW,
+      cssH,
+      layerStreakLen(base, layer.par, full),
+      ux,
+      uy,
+      1,
+    );
   }
+  drawStarLayer(
+    ctx,
+    MILKY_LAYER,
+    px * MILKY_LAYER.par,
+    py * MILKY_LAYER.par,
+    cssW,
+    cssH,
+    layerStreakLen(base, MILKY_LAYER.par, full),
+    ux,
+    uy,
+    1,
+  );
 
-  const milky = { n: 1600, par: 0.022, span: 2600 };
-  const oxm = (cam.x + driftX) * milky.par + sx * milky.par;
-  const oym = (cam.y + driftY) * milky.par + sy * milky.par;
-  const ca = Math.cos(-0.48);
-  const sa = Math.sin(-0.48);
-  for (let i = 0; i < milky.n; i++) {
-    const along = (hash(i * 2.13) - 0.5) * milky.span * 1.35;
-    const u = hash(i * 8.41) * 2 - 1;
-    const across = u * u * u * 520;
-    const gx = milky.span * 0.5 + along * ca - across * sa;
-    const gy = milky.span * 0.5 + along * sa + across * ca;
-    const x = wrapSpan(gx - oxm, milky.span) + cssW / 2 - milky.span / 2;
-    const y = wrapSpan(gy - oym, milky.span) + cssH / 2 - milky.span / 2;
-    const mag = hash(i * 4.6);
-    const rgb = starRgb(i + 400);
-    const a = 0.14 + mag * 0.24;
-    const size = 0.4 + mag * 0.55;
-    drawStarMark(ctx, x, y, size, rgb, a, streak, ux, uy, 0.55);
-  }
-
-  const brights = 36;
-  const spanB = 2000;
-  const parB = 0.06;
-  const oxb = (cam.x + driftX) * parB + sx * parB;
-  const oyb = (cam.y + driftY) * parB + sy * parB;
-  for (let i = 0; i < brights; i++) {
-    const gx = hash(i * 13.7 + 2) * spanB;
-    const gy = hash(i * 29.1 + 4) * spanB;
-    const x = wrapSpan(gx - oxb, spanB) + cssW / 2 - spanB / 2;
-    const y = wrapSpan(gy - oyb, spanB) + cssH / 2 - spanB / 2;
-    const rgb = starRgb(i + 90);
-    const size = 1.25 + hash(i * 6.2) * 0.55;
-    const len = streak * 1.15;
-    const mix = len < 0.45 ? 0 : Math.min(1, (len - 0.45) / 7.5);
-    if (mix < 0.98) {
-      ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${0.08 * (1 - mix)})`;
+  const len = layerStreakLen(base, BRIGHT_LAYER.par, full);
+  const mix = len < 0.45 ? 0 : Math.min(1, (len - 0.45) / 7.5);
+  if (mix < 0.98) {
+    const spanB = BRIGHT_LAYER.span;
+    const oxb = px * BRIGHT_LAYER.par;
+    const oyb = py * BRIGHT_LAYER.par;
+    const cx = cssW / 2 - spanB / 2;
+    const cy = cssH / 2 - spanB / 2;
+    let tint = -1;
+    for (const s of BRIGHT_LAYER.stars) {
+      const x = wrapSpan(s.gx - oxb, spanB) + cx;
+      const y = wrapSpan(s.gy - oyb, spanB) + cy;
+      if (s.tint !== tint) {
+        tint = s.tint;
+        ctx.fillStyle = STAR_TINT_CSS[tint]!;
+      }
+      ctx.globalAlpha = 0.08 * (1 - mix);
       ctx.beginPath();
-      ctx.arc(x, y, size * 1.6, 0, Math.PI * 2);
+      ctx.arc(x, y, s.size * 1.6, 0, Math.PI * 2);
       ctx.fill();
     }
-    drawStarMark(ctx, x, y, size, rgb, 0.82, streak, ux, uy, 1.15);
   }
+  drawStarLayer(
+    ctx,
+    BRIGHT_LAYER,
+    px * BRIGHT_LAYER.par,
+    py * BRIGHT_LAYER.par,
+    cssW,
+    cssH,
+    len,
+    ux,
+    uy,
+    1,
+  );
 
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 
@@ -646,6 +784,7 @@ function drawPlanetPaths(ctx: CanvasRenderingContext2D, sim: Sim) {
     sim.phase === "transit"
   )
     return;
+  if (Math.hypot(sim.ship.vx, sim.ship.vy) > 400) return;
   ctx.save();
   ctx.lineWidth = 1.45;
   ctx.lineCap = "round";

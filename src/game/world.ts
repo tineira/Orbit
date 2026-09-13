@@ -102,6 +102,179 @@ export function warpSpool(speed: number) {
   return (speed - WARP_FX_SPEED) / (WARP_JUMP_SPEED - WARP_FX_SPEED);
 }
 
+/** Distance covered during the arrival brake, matching stepTransit's cubic ease. */
+export function warpBrakeTravel(streakSpeed: number, duration = WARP_BRAKE) {
+  return duration * (streakSpeed * 0.25 + WARP_BRAKE_SPEED * 0.75);
+}
+
+export type WarpArrivalFlavor = "scatter" | "close";
+
+export type WarpArrival = {
+  x: number;
+  y: number;
+  dirX: number;
+  dirY: number;
+  hostId: string | null;
+};
+
+const WARP_CLOSE_CHANCE = 0.42;
+/** Incoming path sampled this far behind the drop so the brake does not clip a body. */
+const WARP_ARRIVAL_LOOKBACK = 760;
+
+function solidBodies(planets: Planet[]) {
+  return planets.filter((p) => !isGhostBody(p) && p.radius > 0);
+}
+
+function chartRadius(bodies: Planet[]) {
+  let r = 7200;
+  for (const p of bodies) r = Math.max(r, Math.hypot(p.x, p.y) + p.radius);
+  return r;
+}
+
+function scatterKeepout(p: Planet) {
+  if (p.kind === "star") return p.radius * STAR_ATMO_FACTOR + 260;
+  if (p.kind === "gas") return p.radius * 1.95 + 120;
+  return p.radius + SHIP_HULL + 200;
+}
+
+function closeOtherKeepout(p: Planet) {
+  if (p.kind === "star") return p.radius * STAR_ATMO_FACTOR + 90;
+  if (p.kind === "gas") return p.radius * 1.85 + 36;
+  return p.radius + SHIP_HULL + 36;
+}
+
+function encounterRange(p: Planet) {
+  if (p.kind === "gas") {
+    const atmo = p.radius * 1.85;
+    return { min: atmo + 70, max: atmo + 280 };
+  }
+  return { min: p.radius + SHIP_HULL + 110, max: p.radius + SHIP_HULL + 360 };
+}
+
+function arrivalClear(
+  x: number,
+  y: number,
+  bodies: Planet[],
+  host: Planet | null,
+  hostMin: number,
+) {
+  for (const p of bodies) {
+    const min =
+      host && p.id === host.id ? hostMin : host ? closeOtherKeepout(p) : scatterKeepout(p);
+    if (Math.hypot(x - p.x, y - p.y) < min) return false;
+  }
+  return true;
+}
+
+function arrivalPathClear(x: number, y: number, dirX: number, dirY: number, bodies: Planet[]) {
+  const steps = 10;
+  for (let i = 0; i < steps; i++) {
+    const t = i / steps;
+    const px = x - dirX * WARP_ARRIVAL_LOOKBACK * (1 - t);
+    const py = y - dirY * WARP_ARRIVAL_LOOKBACK * (1 - t);
+    for (const p of bodies) {
+      if (Math.hypot(px - p.x, py - p.y) < p.radius + SHIP_HULL + 8) return false;
+    }
+  }
+  return true;
+}
+
+function unitDir(dir: { x: number; y: number } | undefined, rng: () => number) {
+  if (dir) {
+    const m = Math.hypot(dir.x, dir.y);
+    if (m > 1e-6) return { x: dir.x / m, y: dir.y / m };
+  }
+  const h = rng() * Math.PI * 2;
+  return { x: Math.cos(h), y: Math.sin(h) };
+}
+
+function tryCloseArrival(
+  bodies: Planet[],
+  worlds: Planet[],
+  rng: () => number,
+  dirX: number,
+  dirY: number,
+): WarpArrival | null {
+  const host = worlds[Math.floor(rng() * worlds.length)]!;
+  const { min, max } = encounterRange(host);
+  const dist = lerp(min, max, rng());
+  const roll = rng();
+  let offset: number;
+  if (roll < 0.36) offset = lerp(0.02, 0.22, rng());
+  else if (roll < 0.78) offset = lerp(0.4, 1.05, rng());
+  else offset = lerp(1.15, 1.85, rng());
+  const side = rng() < 0.5 ? 1 : -1;
+  const along = dist * Math.cos(offset);
+  const miss = dist * Math.sin(offset) * side;
+  const x = host.x - dirX * along - dirY * miss;
+  const y = host.y - dirY * along + dirX * miss;
+  if (!arrivalClear(x, y, bodies, host, dist * 0.92)) return null;
+  if (!arrivalPathClear(x, y, dirX, dirY, bodies)) return null;
+  return { x, y, dirX, dirY, hostId: host.id };
+}
+
+function tryScatterArrival(
+  bodies: Planet[],
+  rng: () => number,
+  dirX: number,
+  dirY: number,
+): WarpArrival | null {
+  const star = bodies.find((p) => p.kind === "star");
+  const minR = star ? scatterKeepout(star) : 1600;
+  const maxR = Math.max(minR + 800, chartRadius(bodies) * 1.02);
+  const dist = lerp(minR, maxR, rng());
+  const ang = rng() * Math.PI * 2;
+  const ox = star?.x ?? 0;
+  const oy = star?.y ?? 0;
+  const x = ox + Math.cos(ang) * dist;
+  const y = oy + Math.sin(ang) * dist;
+  if (!arrivalClear(x, y, bodies, null, 0)) return null;
+  if (!arrivalPathClear(x, y, dirX, dirY, bodies)) return null;
+  return { x, y, dirX, dirY, hostId: null };
+}
+
+function farFallback(
+  bodies: Planet[],
+  rng: () => number,
+  dirX: number,
+  dirY: number,
+): WarpArrival {
+  const star = bodies.find((p) => p.kind === "star");
+  const r = chartRadius(bodies) + 2200;
+  const ang = rng() * Math.PI * 2;
+  return {
+    x: (star?.x ?? 0) + Math.cos(ang) * r,
+    y: (star?.y ?? 0) + Math.sin(ang) * r,
+    dirX,
+    dirY,
+    hostId: null,
+  };
+}
+
+/** Pose when control returns after warp. Heading stays the jump travel dir. */
+export function pickWarpArrival(
+  planets: Planet[],
+  rng: () => number = Math.random,
+  flavor?: WarpArrivalFlavor,
+  travel?: { x: number; y: number },
+): WarpArrival {
+  const bodies = solidBodies(planets);
+  const worlds = bodies.filter((p) => p.kind !== "star");
+  const { x: dirX, y: dirY } = unitDir(travel, rng);
+  const kind = flavor ?? (worlds.length > 0 && rng() < WARP_CLOSE_CHANCE ? "close" : "scatter");
+  if (kind === "close" && worlds.length > 0) {
+    for (let i = 0; i < 28; i++) {
+      const hit = tryCloseArrival(bodies, worlds, rng, dirX, dirY);
+      if (hit) return hit;
+    }
+  }
+  for (let i = 0; i < 28; i++) {
+    const hit = tryScatterArrival(bodies, rng, dirX, dirY);
+    if (hit) return hit;
+  }
+  return farFallback(bodies, rng, dirX, dirY);
+}
+
 export const GRAVITY_STEPS = [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 8] as const;
 export const ATMO_STEPS = [0, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6] as const;
 

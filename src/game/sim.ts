@@ -64,6 +64,8 @@ import {
   transitPunchAt,
   warpCharge,
   warpApproach,
+  warpBrakeTravel,
+  pickWarpArrival,
 } from "./world";
 
 export type Sim = {
@@ -395,43 +397,46 @@ function streakSpan(sim: Sim) {
 /** Open the new chart and put the ship just off the viewport edge, aimed at the arrival point. */
 function punchWarp(sim: Sim, settle = false) {
   const prefs = simViewPrefs(sim);
-  const dir = shipTravelDir(sim.ship);
   createSystem(undefined, {}, sim.warpTarget?.pal ?? null, sim.warpTarget?.name ?? null);
   const sys = getSystem();
   sim.planets = copyPlanets(sys.planets);
   sim.nearby = sys.nearby.slice();
   sim.warpTarget = null;
   applySimViewPrefs(sim, prefs);
-  const star = sim.planets.find((p) => p.kind === "star") ?? sim.planets[0]!;
-  const aimR = Math.max(star.radius * 11, 2600);
-  const ax = star.x - dir.x * aimR;
-  const ay = star.y - dir.y * aimR;
+  const mag = Math.hypot(sim.transitDirX, sim.transitDirY) || 1;
+  const dirx = sim.transitDirX / mag;
+  const diry = sim.transitDirY / mag;
+  sim.transitDirX = dirx;
+  sim.transitDirY = diry;
+  const arrival = pickWarpArrival(sim.planets, Math.random, undefined, { x: dirx, y: diry });
   const span = streakSpan(sim);
-  sim.transitDirX = dir.x;
-  sim.transitDirY = dir.y;
+  sim.transitStreakSpeed = Math.min(WARP_STREAK_SPEED_CAP, span / Math.max(0.35, WARP_STREAK));
+  const brakeTravel = settle ? 0 : warpBrakeTravel(sim.transitStreakSpeed);
+  const ax = arrival.x - dirx * brakeTravel;
+  const ay = arrival.y - diry * brakeTravel;
   sim.transitAimX = ax;
   sim.transitAimY = ay;
-  sim.transitStreakSpeed = Math.min(WARP_STREAK_SPEED_CAP, span / Math.max(0.35, WARP_STREAK));
   if (settle) {
-    sim.ship.x = ax;
-    sim.ship.y = ay;
-    sim.ship.vx = dir.x * WARP_BRAKE_SPEED;
-    sim.ship.vy = dir.y * WARP_BRAKE_SPEED;
+    sim.ship.x = arrival.x;
+    sim.ship.y = arrival.y;
+    sim.ship.vx = dirx * WARP_BRAKE_SPEED;
+    sim.ship.vy = diry * WARP_BRAKE_SPEED;
     sim.transitBoomed = true;
     sim.camera.zoomAuto = 0.86;
   } else {
-    sim.ship.x = ax - dir.x * span;
-    sim.ship.y = ay - dir.y * span;
-    sim.ship.vx = dir.x * sim.transitStreakSpeed;
-    sim.ship.vy = dir.y * sim.transitStreakSpeed;
+    sim.ship.x = ax - dirx * span;
+    sim.ship.y = ay - diry * span;
+    sim.ship.vx = dirx * sim.transitStreakSpeed;
+    sim.ship.vy = diry * sim.transitStreakSpeed;
     sim.camera.zoomAuto = WARP_STREAK_ZOOM;
   }
-  sim.ship.yaw = Math.atan2(-dir.x, -dir.y);
+  sim.ship.yaw = Math.atan2(-dirx, -diry);
   sim.ship.thrusting = false;
   sim.ship.reverse = false;
   sim.transitPunched = true;
-  sim.nearest = star;
-  sim.altitude = Math.hypot(sim.ship.x - star.x, sim.ship.y - star.y) - star.radius;
+  const near = gravityAt(sim.ship.x, sim.ship.y, sim.planets, sim.gravityScale);
+  sim.nearest = near.nearest;
+  sim.altitude = near.dist - near.nearest.radius;
   sim.camera.x = sim.ship.x;
   sim.camera.y = sim.ship.y;
   sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
@@ -493,11 +498,9 @@ function stepTransit(sim: Sim, dt: number) {
   sim.status = "warp";
   sim.orbitHint = null;
   if (sim.transitPunched) {
-    const star = sim.planets.find((p) => p.kind === "star");
-    if (star) {
-      sim.nearest = star;
-      sim.altitude = Math.hypot(ship.x - star.x, ship.y - star.y) - star.radius;
-    }
+    const near = gravityAt(ship.x, ship.y, sim.planets, sim.gravityScale);
+    sim.nearest = near.nearest;
+    sim.altitude = near.dist - near.nearest.radius;
     if (beat === "streak") {
       sim.warpCharge = 1;
       sim.warpApproach = 1;
@@ -2651,6 +2654,8 @@ export function predictRelativePath(
 }
 
 export function predictPath(sim: Sim, seconds = 9): { x: number; y: number }[] {
+  const speed = Math.hypot(sim.ship.vx, sim.ship.vy);
+  if (speed > 400) seconds = Math.min(seconds, 3);
   if (sim.lagrangeLockKey) {
     const key = sim.lagrangeLockKey;
     const bodies = copyPlanets(sim.planets);
@@ -2691,7 +2696,7 @@ export function predictPath(sim: Sim, seconds = 9): { x: number; y: number }[] {
   let vx = sim.ship.vx;
   let vy = sim.ship.vy;
   const bodies = copyPlanets(sim.planets);
-  const dt = 1 / 36;
+  const dt = speed > 400 ? 1 / 18 : 1 / 36;
   const n = Math.floor(seconds / dt);
   for (let i = 0; i < n; i++) {
     stepOrbitingBodies(bodies, dt, sim.gravityScale);

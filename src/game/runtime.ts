@@ -111,6 +111,7 @@ declare global {
       getTransitPunched?: () => boolean;
       getTransitBoomed?: () => boolean;
       getTransitAge?: () => number;
+      getNearby?: () => { angle: number; name: string }[];
       newWorld?: () => void;
       adjustGravity?: (dir: number) => void;
       adjustAtmo?: (dir: number) => void;
@@ -444,6 +445,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getTransitPunched: () => s.transitPunched,
       getTransitBoomed: () => s.transitBoomed,
       getTransitAge: () => s.transitAge,
+      getNearby: () => s.nearby.map((n) => ({ angle: n.angle, name: n.name })),
       newWorld: () => chartNewWorld(),
       getLagrangePoints: () =>
         listLagrangePoints(s).map((p) => ({
@@ -521,7 +523,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     sim.viewCssW = canvas.clientWidth;
     sim.viewCssH = canvas.clientHeight;
 
-    while (acc >= STEP) {
+    const stepOnce = () => {
       const steer = playing() ? steerFrom(input.state) : 0;
       const thr = playing()
         ? thrustFrom(input.state)
@@ -535,7 +537,15 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         aimYaw: aim,
         aimThrust,
       });
+    };
+    while (acc >= STEP) {
+      stepOnce();
       acc -= STEP;
+    }
+    // 60 Hz displays often land a hair under 1/60; skipping that tick freezes the starfield.
+    if (acc > STEP * 0.88) {
+      stepOnce();
+      acc = 0;
     }
 
     audio.setThrust(
