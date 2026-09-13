@@ -45,7 +45,7 @@ export const WARP_RUMBLE_REF_SPEED = 1150;
 /** Crossing this speed commits the jump to a new chart. */
 export const WARP_JUMP_SPEED = 1500;
 /** Half-angle of the warp heading cone, in degrees. Tight on purpose. */
-export const WARP_AIM_DEG = 2.5;
+export const WARP_AIM_DEG = 0.5;
 /** Cruise speed after the arrival brake. */
 export const WARP_BRAKE_SPEED = 88;
 export const WARP_STREAK_ZOOM = 0.3;
@@ -199,7 +199,7 @@ function scatterHeadings(rng: () => number, n: number): number[] {
   return angles;
 }
 
-function rollNearby(rng: () => number): NearbyHeading[] {
+function rollNearby(rng: () => number, used: Set<string>): NearbyHeading[] {
   const n = rng() < 0.18 ? 1 : rng() < 0.72 ? 2 : 3;
   const angles = scatterHeadings(rng, n);
   const pals = STAR_PALETTES.slice();
@@ -211,7 +211,7 @@ function rollNearby(rng: () => number): NearbyHeading[] {
   }
   return angles.map((angle, i) => {
     const pal = pals[i % pals.length]!;
-    return { angle, color: pal[0], pal };
+    return { angle, color: pal[0], pal, name: takeName(rng, STAR_NAMES, used) };
   });
 }
 
@@ -505,6 +505,7 @@ function makeSystem(
   seed: number,
   flags: ChartFlags = {},
   starPal: [string, string, string] | null = null,
+  starNameForced: string | null = null,
 ): Planet[] {
   const rng = mulberry32(seed);
   const used = new Set<string>(["lumen"]);
@@ -512,7 +513,9 @@ function makeSystem(
 
   const starR = lerp(220, 300, rng());
   const starG = lerp(22, 30, rng());
-  const starName = takeName(rng, STAR_NAMES, used);
+  const starName = starNameForced
+    ? (used.add(starNameForced.toLowerCase()), starNameForced)
+    : takeName(rng, STAR_NAMES, used);
   const pal = starPal ?? pick(rng, STAR_PALETTES);
   const star: Planet = {
     id: slug(starName, 0),
@@ -822,17 +825,18 @@ export function createSystem(
   seed = (Math.random() * 0xffffffff) >>> 0,
   flags: ChartFlags = {},
   starPal: [string, string, string] | null = null,
+  starName: string | null = null,
 ): ChartedSystem {
   const fromUrl = typeof window !== "undefined" ? chartFlagsFromSearch(window.location.search) : {};
   const rng = mulberry32(seed ^ 0x51ed);
-  const planets = makeSystem(seed, { ...fromUrl, ...flags }, starPal);
+  const planets = makeSystem(seed, { ...fromUrl, ...flags }, starPal, starName);
   const home = planets.find((p) => p.kicker === "Home") ?? planets.find((p) => p.kind === "rocky")!;
   const star = planets.find((p) => p.kind === "star");
   const pad = home.radius + SHIP_HULL * 0.85;
   system = {
     seed,
     name: star?.name ?? "Lumen",
-    nearby: rollNearby(rng),
+    nearby: rollNearby(rng, new Set(planets.map((p) => p.name.toLowerCase()))),
     planets,
     home,
     start: {

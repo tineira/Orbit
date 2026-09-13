@@ -396,7 +396,7 @@ function streakSpan(sim: Sim) {
 function punchWarp(sim: Sim, settle = false) {
   const prefs = simViewPrefs(sim);
   const dir = shipTravelDir(sim.ship);
-  createSystem(undefined, {}, sim.warpTarget?.pal ?? null);
+  createSystem(undefined, {}, sim.warpTarget?.pal ?? null, sim.warpTarget?.name ?? null);
   const sys = getSystem();
   sim.planets = copyPlanets(sys.planets);
   sim.nearby = sys.nearby.slice();

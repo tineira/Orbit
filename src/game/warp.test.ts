@@ -39,7 +39,7 @@ test("warp spool keeps rising through 1300 and peaks at the 1500 jump", () => {
 
 test("warp heading lock is a tight cone", () => {
   const pal: [string, string, string] = ["#fff", "#000", "rgba(0,0,0,0)"];
-  const n = { angle: 0, color: "#fff", pal };
+  const n = { angle: 0, color: "#fff", pal, name: "Ember" };
   const v = headingVec(0);
   assert.ok(lockedNearby(v.x, v.y, [n], WARP_AIM_DEG));
   const miss = headingVec((WARP_AIM_DEG + 2) * (Math.PI / 180));

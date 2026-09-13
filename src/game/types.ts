@@ -112,6 +112,7 @@ export type NearbyHeading = {
   angle: number;
   color: string;
   pal: [string, string, string];
+  name: string;
 };
 
 export type LostCopy = {

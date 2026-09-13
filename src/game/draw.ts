@@ -103,7 +103,6 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   }
   const particlesOver = sim.burned || sim.crashKind === "sink";
   drawIonTrail(ctx, sim);
-  drawWarpAims(ctx, sim);
   if (!particlesOver) drawParticles(ctx, sim.particles);
   if (fade > 0.04) drawGravityArrows(ctx, sim);
   const star = sim.planets.find((b) => b.kind === "star") ?? null;
@@ -116,6 +115,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   ctx.restore();
   drawVignette(ctx, cssW, cssH);
   drawArrivalFlash(ctx, sim, cssW, cssH);
+  drawWarpAims(ctx, sim, cssW, cssH);
   if (sim.phase !== "transit" && !sim.warpLost) drawMinimap(ctx, sim, cssW, cssH);
   void w;
   void h;
@@ -1174,33 +1174,62 @@ function warpGasPath(
   ctx.closePath();
 }
 
-function drawWarpAims(ctx: CanvasRenderingContext2D, sim: Sim) {
+function drawWarpAims(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH: number) {
   if (sim.phase !== "flight" || sim.nearby.length === 0) return;
   if (Math.hypot(sim.ship.vx, sim.ship.vy) < WARP_BAR_SPEED && sim.status !== "warp") return;
   const dir = { x: sim.ship.vx, y: sim.ship.vy };
+  const sp = Math.hypot(dir.x, dir.y) || 1;
+  const hx = dir.x / sp;
+  const hy = dir.y / sp;
   const locked = lockedNearby(dir.x, dir.y, sim.nearby, WARP_AIM_DEG);
-  const zoom = Math.max(0.12, sim.camera.zoom);
-  const ring = (Math.min(sim.viewCssW || 1280, sim.viewCssH || 800) * 0.42) / zoom;
+  const origin = worldToScreen(sim.camera, sim.ship.x, sim.ship.y, cssW, cssH);
+  const ring = Math.min(cssW, cssH) * 0.42;
   ctx.save();
   ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "rgba(236, 234, 228, 0.2)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(origin.x, origin.y, ring, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const hd = { x: origin.x + hx * ring, y: origin.y + hy * ring };
+  ctx.fillStyle = "rgba(236, 234, 228, 0.92)";
+  ctx.strokeStyle = "rgba(236, 234, 228, 0.92)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(hd.x + hx * 6, hd.y + hy * 6);
+  ctx.lineTo(hd.x - hx * 4 + hy * 4.2, hd.y - hy * 4 - hx * 4.2);
+  ctx.lineTo(hd.x - hx * 4 - hy * 4.2, hd.y - hy * 4 + hx * 4.2);
+  ctx.closePath();
+  ctx.stroke();
+
+  ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
   for (const n of sim.nearby) {
     const v = headingVec(n.angle);
-    const x = sim.ship.x + v.x * ring;
-    const y = sim.ship.y + v.y * ring;
+    const x = origin.x + v.x * ring;
+    const y = origin.y + v.y * ring;
     const on = n === locked;
-    ctx.fillStyle = n.color;
-    ctx.globalAlpha = on ? 0.95 : 0.55;
+    const col = on ? "#7d9b86" : "#c45c4a";
+    ctx.fillStyle = col;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.35;
     ctx.beginPath();
-    ctx.arc(x, y, (on ? 4.2 : 3.1) / zoom, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.rect(x - 3.5, y - 3.5, 7, 7);
+    ctx.stroke();
     if (on) {
-      ctx.globalAlpha = 0.7;
-      ctx.strokeStyle = n.color;
-      ctx.lineWidth = 1.4 / zoom;
       ctx.beginPath();
-      ctx.arc(x, y, 7.5 / zoom, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.rect(x - 1.5, y - 1.5, 3, 3);
+      ctx.fill();
     }
+    const lx = x + v.x * 14;
+    const ly = y + v.y * 14;
+    ctx.fillStyle = col;
+    ctx.globalAlpha = on ? 0.92 : 0.72;
+    ctx.textAlign = v.x >= 0.2 ? "left" : v.x <= -0.2 ? "right" : "center";
+    ctx.textBaseline = v.y >= 0.35 ? "top" : v.y <= -0.35 ? "bottom" : "middle";
+    ctx.fillText(n.name, lx, ly);
+    ctx.globalAlpha = 1;
   }
   ctx.restore();
 }
@@ -1737,6 +1766,33 @@ function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH
   ctx.restore();
 }
 
+function drawMinimapEdgeArrow(
+  ctx: CanvasRenderingContext2D,
+  sx: number,
+  sy: number,
+  ux: number,
+  uy: number,
+  color: string,
+) {
+  const tipX = sx + ux * 4;
+  const tipY = sy + uy * 4;
+  const hx = ux * 4.8;
+  const hy = uy * 4.8;
+  const wx = uy * 3.6;
+  const wy = -ux * 3.6;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.55;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(sx - ux * 3.5, sy - uy * 3.5);
+  ctx.lineTo(tipX, tipY);
+  ctx.moveTo(tipX - hx + wx, tipY - hy + wy);
+  ctx.lineTo(tipX, tipY);
+  ctx.lineTo(tipX - hx - wx, tipY - hy - wy);
+  ctx.stroke();
+}
+
 function drawMinimapNearby(
   ctx: CanvasRenderingContext2D,
   sim: Sim,
@@ -1748,10 +1804,9 @@ function drawMinimapNearby(
   radius: number,
 ) {
   if (sim.nearby.length === 0) return;
-  const dir = { x: sim.ship.vx, y: sim.ship.vy };
-  const locked =
-    sim.phase === "flight" ? lockedNearby(dir.x, dir.y, sim.nearby, WARP_AIM_DEG) : null;
   const inset = 8;
+  ctx.font = '500 8px "IBM Plex Mono", ui-monospace, monospace';
+  ctx.fillStyle = "rgba(140, 142, 148, 0.88)";
   for (const n of sim.nearby) {
     const v = headingVec(n.angle);
     const hit = rayHitRoundedRect(
@@ -1763,14 +1818,13 @@ function drawMinimapNearby(
     );
     const px = cx + hit.x;
     const py = cy + hit.y;
-    const on = n === locked;
-    ctx.fillStyle = n.color;
-    ctx.globalAlpha = on ? 1 : 0.82;
-    ctx.beginPath();
-    ctx.arc(px, py, on ? 3.4 : 2.6, 0, Math.PI * 2);
-    ctx.fill();
+    drawMinimapEdgeArrow(ctx, px, py, hit.ux, hit.uy, "rgba(140, 142, 148, 0.88)");
+    const lx = px - hit.ux * 9;
+    const ly = py - hit.uy * 9;
+    ctx.textAlign = hit.ux > 0.35 ? "right" : hit.ux < -0.35 ? "left" : "center";
+    ctx.textBaseline = hit.uy > 0.35 ? "bottom" : hit.uy < -0.35 ? "top" : "middle";
+    ctx.fillText(n.name, lx, ly);
   }
-  ctx.globalAlpha = 1;
 }
 
 function roundedRectContains(
@@ -1864,27 +1918,7 @@ function drawMinimapShip(
     size / 2 - inset,
     Math.max(1, radius - inset),
   );
-  const sx = cx + hit.x;
-  const sy = cy + hit.y;
-  const ux = hit.ux;
-  const uy = hit.uy;
-  const tipX = sx + ux * 4;
-  const tipY = sy + uy * 4;
-  const hx = ux * 4.8;
-  const hy = uy * 4.8;
-  const wx = uy * 3.6;
-  const wy = -ux * 3.6;
-  ctx.strokeStyle = "#eceae4";
-  ctx.lineWidth = 1.55;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.beginPath();
-  ctx.moveTo(sx - ux * 3.5, sy - uy * 3.5);
-  ctx.lineTo(tipX, tipY);
-  ctx.moveTo(tipX - hx + wx, tipY - hy + wy);
-  ctx.lineTo(tipX, tipY);
-  ctx.lineTo(tipX - hx - wx, tipY - hy - wy);
-  ctx.stroke();
+  drawMinimapEdgeArrow(ctx, cx + hit.x, cy + hit.y, hit.ux, hit.uy, "#eceae4");
   ctx.restore();
 }
 
