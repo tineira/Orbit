@@ -325,6 +325,10 @@ function clearFlightLocks(sim: Sim) {
 /** Drop into the tunnel. The new chart is generated on the punch, not here. */
 export function enterWarp(sim: Sim) {
   clearFlightLocks(sim);
+  const dir = shipTravelDir(sim.ship);
+  sim.transitDirX = dir.x;
+  sim.transitDirY = dir.y;
+  sim.ship.yaw = Math.atan2(-dir.x, -dir.y);
   sim.ship.thrusting = false;
   sim.ship.reverse = false;
   sim.phase = "transit";
@@ -390,8 +394,8 @@ function punchWarp(sim: Sim, settle = false) {
   sim.transitPunched = true;
   sim.nearest = star;
   sim.altitude = Math.hypot(sim.ship.x - star.x, sim.ship.y - star.y) - star.radius;
-  sim.camera.x = ax;
-  sim.camera.y = ay;
+  sim.camera.x = sim.ship.x;
+  sim.camera.y = sim.ship.y;
   sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
 }
 
@@ -428,7 +432,9 @@ function stepTransit(sim: Sim, dt: number) {
     ship.x += ship.vx * dt;
     ship.y += ship.vy * dt;
   }
-  if (dirx || diry) ship.yaw = Math.atan2(-dirx, -diry);
+  if (sim.transitDirX || sim.transitDirY) {
+    ship.yaw = Math.atan2(-sim.transitDirX, -sim.transitDirY);
+  }
   sim.transitAge += dt;
   sim.status = "warp";
   sim.orbitHint = null;
@@ -2308,44 +2314,52 @@ function starfieldRush(sim: Sim): { x: number; y: number } {
   return { x: s.vx, y: s.vy };
 }
 
+function zoomFromSpeed(speed: number) {
+  if (speed > 400) {
+    const t = Math.max(0, Math.min(1, (speed - 400) / (WARP_BAR_SPEED - 400)));
+    const u = t * t * (3 - 2 * t);
+    return 0.48 - 0.16 * u;
+  }
+  if (speed > 42) return 0.76;
+  if (speed > 24) return 0.88;
+  return 0.98;
+}
+
+/** Keep the destination on-screen: speed-zoom alone pulls in as you brake and throws the star off the edge. */
+function zoomToHoldStar(sim: Sim) {
+  const body =
+    sim.nearest?.kind === "star"
+      ? sim.nearest
+      : (sim.planets.find((p) => p.kind === "star") ?? sim.nearest);
+  if (!body) return 1;
+  const dist = Math.hypot(sim.ship.x - body.x, sim.ship.y - body.y) - body.radius;
+  if (dist < 420) return 1;
+  const half = Math.min(sim.viewCssW || 1280, sim.viewCssH || 800) * 0.4;
+  return Math.max(WARP_STREAK_ZOOM, Math.min(1, half / dist));
+}
+
 function updateCamera(sim: Sim, dt: number) {
   const s = sim.ship;
   const speed = Math.hypot(s.vx, s.vy);
   const rush = starfieldRush(sim);
   sim.camera.starDriftX += (rush.x - s.vx) * dt;
   sim.camera.starDriftY += (rush.y - s.vy) * dt;
-  const look = speed > 400 ? 0.42 : 0.28;
+  const beat = sim.phase === "transit" ? transitBeat(sim.transitAge, sim.reducedMotion) : null;
+  const rideShip = beat === "streak" || beat === "flash" || beat === "brake";
+  const look = rideShip ? 0 : speed > 400 ? 0.42 : 0.28;
   const targetX = s.x + s.vx * look;
   const targetY = s.y + s.vy * look;
   const k = sim.phase === "title" ? 1.8 : 3.4;
   const a = 1 - Math.exp(-k * dt);
-  sim.camera.x += (targetX - sim.camera.x) * a;
-  sim.camera.y += (targetY - sim.camera.y) * a;
-  const zoomT = Math.max(0, Math.min(1, (speed - 400) / (WARP_BAR_SPEED - 400)));
-  const warpZoom = zoomT * zoomT * (3 - 2 * zoomT);
-  const beat = sim.phase === "transit" ? transitBeat(sim.transitAge, sim.reducedMotion) : null;
-  if (beat === "streak" || beat === "flash") {
-    sim.camera.x = sim.transitAimX;
-    sim.camera.y = sim.transitAimY;
+  if (rideShip) {
+    sim.camera.x = s.x;
+    sim.camera.y = s.y;
+  } else {
+    sim.camera.x += (targetX - sim.camera.x) * a;
+    sim.camera.y += (targetY - sim.camera.y) * a;
   }
-  const brakeU =
-    beat === "brake"
-      ? Math.min(1, Math.max(0, (sim.transitAge - transitBoomAt(sim.reducedMotion) - WARP_FLASH) / WARP_BRAKE))
-      : 0;
   const zWant =
-    beat === "tunnel"
-      ? 0.15
-      : beat === "streak" || beat === "flash"
-        ? WARP_STREAK_ZOOM
-        : beat === "brake"
-          ? WARP_STREAK_ZOOM + (0.78 - WARP_STREAK_ZOOM) * (1 - (1 - brakeU) * (1 - brakeU))
-          : speed > 400
-            ? 0.48 - 0.16 * warpZoom
-            : speed > 42
-              ? 0.76
-              : speed > 24
-                ? 0.88
-                : 0.98;
+    beat === "tunnel" ? 0.15 : Math.min(zoomFromSpeed(speed), zoomToHoldStar(sim));
   sim.camera.zoomAuto += (zWant - sim.camera.zoomAuto) * (1 - Math.exp(-1.6 * dt));
   sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
   sim.camera.trauma = Math.max(0, sim.camera.trauma - dt * 1.6);

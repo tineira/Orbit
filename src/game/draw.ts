@@ -1143,7 +1143,10 @@ function drawShipLightRay(ctx: CanvasRenderingContext2D, sim: Sim) {
   const uy = sim.transitDirY;
   const x = sim.ship.x;
   const y = sim.ship.y;
-  const len = Math.min(1100, Math.max(420, sim.transitStreakSpeed * 0.2));
+  const zoom = Math.max(0.12, sim.camera.zoom);
+  const full = Math.max(sim.viewCssW, sim.viewCssH) * 0.62 / zoom;
+  const grow = sim.transitPunched ? 1 : Math.min(1, 0.12 + sim.transitAge / 0.28);
+  const len = full * grow;
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
   ctx.lineCap = "round";
@@ -1198,7 +1201,7 @@ function drawArrivalFlash(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number,
 }
 
 function drawShip(ctx: CanvasRenderingContext2D, sim: Sim, umbra = 0) {
-  if (sim.phase === "transit" && sim.transitPunched && !sim.transitBoomed) {
+  if (sim.phase === "transit" && !sim.transitBoomed) {
     drawShipLightRay(ctx, sim);
     return;
   }
