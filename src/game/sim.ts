@@ -2554,11 +2554,14 @@ function starfieldRush(sim: Sim): { x: number; y: number } {
 }
 
 function zoomFromSpeed(speed: number) {
+  const ease = (t: number) => {
+    const x = Math.max(0, Math.min(1, t));
+    return x * x * (3 - 2 * x);
+  };
   if (speed > 400) {
-    const t = Math.max(0, Math.min(1, (speed - 400) / (WARP_BAR_SPEED - 400)));
-    const u = t * t * (3 - 2 * t);
-    return 0.48 - 0.16 * u;
+    return 0.48 - 0.16 * ease((speed - 400) / (WARP_BAR_SPEED - 400));
   }
+  if (speed > 80) return 0.76 - 0.28 * ease((speed - 80) / 320);
   if (speed > 42) return 0.76;
   if (speed > 24) return 0.88;
   return 0.98;
@@ -2586,7 +2589,9 @@ function updateCamera(sim: Sim, dt: number) {
   const beat = sim.phase === "transit" ? transitBeat(sim.transitAge, sim.reducedMotion) : null;
   const rideShip = beat === "streak" || beat === "brake";
   const lostCoast = sim.warpLost;
-  const look = rideShip || lostCoast ? 0 : speed > 400 ? 0.42 : 0.28;
+  const lookT = Math.max(0, Math.min(1, (speed - 80) / 320));
+  const lookU = lookT * lookT * (3 - 2 * lookT);
+  const look = rideShip || lostCoast ? 0 : 0.28 + 0.14 * lookU;
   const targetX = s.x + s.vx * look;
   const targetY = s.y + s.vy * look;
   const k = sim.phase === "title" ? 1.8 : 3.4;
@@ -2602,7 +2607,7 @@ function updateCamera(sim: Sim, dt: number) {
     beat === "tunnel" || lostCoast
       ? 0.15
       : Math.min(zoomFromSpeed(speed), zoomToHoldStar(sim));
-  sim.camera.zoomAuto += (zWant - sim.camera.zoomAuto) * (1 - Math.exp(-1.6 * dt));
+  sim.camera.zoomAuto += (zWant - sim.camera.zoomAuto) * (1 - Math.exp(-0.7 * dt));
   sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
   sim.camera.trauma = Math.max(0, sim.camera.trauma - dt * 1.6);
   sim.camera.shake = sim.reducedMotion ? 0 : sim.camera.trauma * sim.camera.trauma;
