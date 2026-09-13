@@ -22,7 +22,14 @@ import {
   type SimViewPrefs,
 } from "./sim";
 import type { GameUiHandler, HudSnapshot } from "./types";
-import { createSystem, getSystem, transitBeat, warpSpool } from "./world";
+import {
+  createSystem,
+  getSystem,
+  transitBeat,
+  warpSpool,
+  WARP_LOST_FADE,
+  WARP_LOST_FADE_REDUCED,
+} from "./world";
 
 export type GameHandle = {
   launch: () => void;
@@ -129,6 +136,7 @@ const CREATING_HUD: HudSnapshot = {
   burned: false,
   burnCause: null,
   crashKind: null,
+  lostCopy: null,
   muted: false,
   touching: false,
   gravityScale: 1,
@@ -240,6 +248,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       burned: sim.burned,
       burnCause: sim.burnCause,
       crashKind: sim.crashKind,
+      lostCopy: sim.lostCopy,
       muted,
       touching: !!input.state.pointer?.down,
       gravityScale: sim.gravityScale,
@@ -534,13 +543,20 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       Math.min(1, Math.hypot(sim.ship.vx, sim.ship.vy) / 120),
     );
     const beat = sim.phase === "transit" ? transitBeat(sim.transitAge, sim.reducedMotion) : "off";
-    const spool =
-      beat === "tunnel" || beat === "streak"
-        ? 1
-        : beat === "brake"
-          ? 0
-          : warpSpool(Math.hypot(sim.ship.vx, sim.ship.vy));
-    audio.setWarp(spool > 0.02, spool);
+    const lostFade = sim.reducedMotion ? WARP_LOST_FADE_REDUCED : WARP_LOST_FADE;
+    if (sim.warpLost) {
+      const vol =
+        sim.phase === "transit" ? Math.max(0, 1 - sim.transitAge / lostFade) : 0;
+      audio.setWarp(vol > 0.02, vol, 1);
+    } else {
+      const spool =
+        beat === "tunnel" || beat === "streak"
+          ? 1
+          : beat === "brake"
+            ? 0
+            : warpSpool(Math.hypot(sim.ship.vx, sim.ship.vy));
+      audio.setWarp(spool > 0.02, spool);
+    }
     prevPunched = sim.transitPunched;
     if (sim.transitBoomed && !prevBoomed) audio.sonicBooms();
     prevBoomed = sim.transitBoomed;
@@ -550,7 +566,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     if (sim.landedId && sim.landedId !== prevLanded && sim.phase !== "title") audio.land();
     prevLanded = sim.landedId;
     if (sim.crashedId && sim.crashedId !== prevCrashed) audio.crash();
-    prevCrashed = sim.crashedId;
+    prevCrashed = sim.crashedId ?? (sim.crashKind === "lost" ? "lost" : null);
     if (sim.orbitDragAlarm) {
       audio.warn();
       sim.orbitDragAlarm = false;

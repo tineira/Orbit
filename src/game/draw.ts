@@ -21,6 +21,10 @@ import {
 import {
   getMinimapWorldR,
   getSystemName,
+  headingVec,
+  lockedNearby,
+  WARP_AIM_DEG,
+  WARP_BAR_SPEED,
   isGhostBody,
   ORBIT_DRAG_BREAK,
   ORBIT_PERTURB_BREAK,
@@ -99,6 +103,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   }
   const particlesOver = sim.burned || sim.crashKind === "sink";
   drawIonTrail(ctx, sim);
+  drawWarpAims(ctx, sim);
   if (!particlesOver) drawParticles(ctx, sim.particles);
   if (fade > 0.04) drawGravityArrows(ctx, sim);
   const star = sim.planets.find((b) => b.kind === "star") ?? null;
@@ -111,7 +116,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   ctx.restore();
   drawVignette(ctx, cssW, cssH);
   drawArrivalFlash(ctx, sim, cssW, cssH);
-  if (sim.phase !== "transit") drawMinimap(ctx, sim, cssW, cssH);
+  if (sim.phase !== "transit" && !sim.warpLost) drawMinimap(ctx, sim, cssW, cssH);
   void w;
   void h;
 }
@@ -274,6 +279,7 @@ function drawStarDot(
 }
 
 function chartFade(sim: Sim) {
+  if (sim.warpLost) return 0;
   if (sim.phase !== "transit" || sim.transitPunched) return 1;
   const t = Math.min(1, sim.transitAge / 0.38);
   return (1 - t) * (1 - t);
@@ -325,7 +331,7 @@ function drawStarMark(
 
 function starStreak(sim: Sim | undefined) {
   if (!sim || sim.reducedMotion) return 0;
-  if (sim.phase === "transit" && !sim.transitPunched) {
+  if (sim.warpLost || (sim.phase === "transit" && !sim.transitPunched)) {
     return 90 + Math.min(1, sim.transitAge / 0.4) * 80;
   }
   if (sim.phase === "transit" && transitBeat(sim.transitAge, sim.reducedMotion) === "streak") {
@@ -1168,6 +1174,37 @@ function warpGasPath(
   ctx.closePath();
 }
 
+function drawWarpAims(ctx: CanvasRenderingContext2D, sim: Sim) {
+  if (sim.phase !== "flight" || sim.nearby.length === 0) return;
+  if (Math.hypot(sim.ship.vx, sim.ship.vy) < WARP_BAR_SPEED && sim.status !== "warp") return;
+  const dir = { x: sim.ship.vx, y: sim.ship.vy };
+  const locked = lockedNearby(dir.x, dir.y, sim.nearby, WARP_AIM_DEG);
+  const zoom = Math.max(0.12, sim.camera.zoom);
+  const ring = (Math.min(sim.viewCssW || 1280, sim.viewCssH || 800) * 0.42) / zoom;
+  ctx.save();
+  ctx.lineCap = "round";
+  for (const n of sim.nearby) {
+    const v = headingVec(n.angle);
+    const x = sim.ship.x + v.x * ring;
+    const y = sim.ship.y + v.y * ring;
+    const on = n === locked;
+    ctx.fillStyle = n.color;
+    ctx.globalAlpha = on ? 0.95 : 0.55;
+    ctx.beginPath();
+    ctx.arc(x, y, (on ? 4.2 : 3.1) / zoom, 0, Math.PI * 2);
+    ctx.fill();
+    if (on) {
+      ctx.globalAlpha = 0.7;
+      ctx.strokeStyle = n.color;
+      ctx.lineWidth = 1.4 / zoom;
+      ctx.beginPath();
+      ctx.arc(x, y, 7.5 / zoom, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
 function drawIonTrail(ctx: CanvasRenderingContext2D, sim: Sim) {
   if (sim.ionTrail.length === 0) return;
   ctx.save();
@@ -1311,7 +1348,7 @@ function drawArrivalFlash(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number,
 }
 
 function drawShip(ctx: CanvasRenderingContext2D, sim: Sim, umbra = 0) {
-  if (sim.phase === "transit" && !sim.transitBoomed) {
+  if ((sim.phase === "transit" || sim.warpLost) && !sim.transitBoomed) {
     drawShipLightRay(ctx, sim);
     return;
   }
@@ -1695,7 +1732,45 @@ function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH
   ctx.textBaseline = "top";
   ctx.fillStyle = "rgba(236, 234, 228, 0.62)";
   ctx.fillText(name, x + 10, y + 8);
+
+  drawMinimapNearby(ctx, sim, cx, cy, x, y, size, radius);
   ctx.restore();
+}
+
+function drawMinimapNearby(
+  ctx: CanvasRenderingContext2D,
+  sim: Sim,
+  cx: number,
+  cy: number,
+  x: number,
+  y: number,
+  size: number,
+  radius: number,
+) {
+  if (sim.nearby.length === 0) return;
+  const dir = { x: sim.ship.vx, y: sim.ship.vy };
+  const locked =
+    sim.phase === "flight" ? lockedNearby(dir.x, dir.y, sim.nearby, WARP_AIM_DEG) : null;
+  const inset = 8;
+  for (const n of sim.nearby) {
+    const v = headingVec(n.angle);
+    const hit = rayHitRoundedRect(
+      v.x * 1000,
+      v.y * 1000,
+      size / 2 - inset,
+      size / 2 - inset,
+      Math.max(1, radius - inset),
+    );
+    const px = cx + hit.x;
+    const py = cy + hit.y;
+    const on = n === locked;
+    ctx.fillStyle = n.color;
+    ctx.globalAlpha = on ? 1 : 0.82;
+    ctx.beginPath();
+    ctx.arc(px, py, on ? 3.4 : 2.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 }
 
 function roundedRectContains(

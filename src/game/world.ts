@@ -1,4 +1,4 @@
-import type { Planet, TransitBeat } from "./types";
+import type { LostCopy, NearbyHeading, Planet, TransitBeat } from "./types";
 
 /** Gravity constant in world units. a = G * GRAVITY_BASE * M / r² */
 export const G = 1;
@@ -44,6 +44,8 @@ export const WARP_FX_SPEED = 800;
 export const WARP_RUMBLE_REF_SPEED = 1150;
 /** Crossing this speed commits the jump to a new chart. */
 export const WARP_JUMP_SPEED = 1500;
+/** Half-angle of the warp heading cone, in degrees. Tight on purpose. */
+export const WARP_AIM_DEG = 2.5;
 /** Cruise speed after the arrival brake. */
 export const WARP_BRAKE_SPEED = 88;
 export const WARP_STREAK_ZOOM = 0.3;
@@ -56,6 +58,9 @@ export const WARP_BRAKE = WARP_BOOM_TIMES[WARP_BOOM_TIMES.length - 1];
 export const WARP_FLASH = WARP_BRAKE;
 export const WARP_TRANSIT = WARP_TUNNEL + WARP_STREAK + WARP_BRAKE;
 export const WARP_TRANSIT_REDUCED = 0.05;
+/** Missed heading: light-ray hold while the spool dies. */
+export const WARP_LOST_FADE = 2.8;
+export const WARP_LOST_FADE_REDUCED = 0.45;
 
 export function transitPunchAt(reduced: boolean) {
   return reduced ? 0 : WARP_TUNNEL;
@@ -173,6 +178,147 @@ function pick<T>(rng: () => number, list: T[]): T {
   return list[Math.floor(rng() * list.length)]!;
 }
 
+function angDiff(a: number, b: number) {
+  let d = Math.abs(a - b) % (Math.PI * 2);
+  if (d > Math.PI) d = Math.PI * 2 - d;
+  return d;
+}
+
+function scatterHeadings(rng: () => number, n: number): number[] {
+  const minSep = (52 * Math.PI) / 180;
+  const angles: number[] = [];
+  let guard = 0;
+  while (angles.length < n && guard++ < 90) {
+    const a = rng() * Math.PI * 2;
+    if (angles.every((b) => angDiff(a, b) >= minSep)) angles.push(a);
+  }
+  if (angles.length < n) {
+    const base = rng() * Math.PI * 2;
+    return Array.from({ length: n }, (_, i) => base + (i * Math.PI * 2) / n);
+  }
+  return angles;
+}
+
+function rollNearby(rng: () => number): NearbyHeading[] {
+  const n = rng() < 0.18 ? 1 : rng() < 0.72 ? 2 : 3;
+  const angles = scatterHeadings(rng, n);
+  const pals = STAR_PALETTES.slice();
+  for (let i = pals.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const t = pals[i]!;
+    pals[i] = pals[j]!;
+    pals[j] = t;
+  }
+  return angles.map((angle, i) => {
+    const pal = pals[i % pals.length]!;
+    return { angle, color: pal[0], pal };
+  });
+}
+
+export function headingVec(angle: number) {
+  return { x: Math.cos(angle), y: Math.sin(angle) };
+}
+
+export function lockedNearby(
+  dirx: number,
+  diry: number,
+  nearby: NearbyHeading[],
+  deg = WARP_AIM_DEG,
+): NearbyHeading | null {
+  const mag = Math.hypot(dirx, diry) || 1;
+  const ux = dirx / mag;
+  const uy = diry / mag;
+  const minDot = Math.cos((deg * Math.PI) / 180);
+  let best: NearbyHeading | null = null;
+  let bestDot = minDot;
+  for (const n of nearby) {
+    const v = headingVec(n.angle);
+    const d = ux * v.x + uy * v.y;
+    if (d >= bestDot) {
+      bestDot = d;
+      best = n;
+    }
+  }
+  return best;
+}
+
+const LOST_COPY: LostCopy[] = [
+  {
+    kicker: "Deep space",
+    title: "No chart",
+    body: "You left the well. Nothing took you. The craft will coast until the dark forgets it.",
+  },
+  {
+    kicker: "Off the map",
+    title: "You missed",
+    body: "The heading was wrong by a breath. There is no well this way. Only distance.",
+  },
+  {
+    kicker: "No return",
+    title: "Still going",
+    body: "Home is behind you and getting smaller. It will not get larger again.",
+  },
+  {
+    kicker: "Empty",
+    title: "You kept flying",
+    body: "The stars do not care. They were not waiting.",
+  },
+  {
+    kicker: "Lost",
+    title: "No one is coming",
+    body: "The radio will die before the hull does. The hull will die before the dark does.",
+  },
+  {
+    kicker: "Drift",
+    title: "Forever is quiet",
+    body: "You aimed at nothing and nothing answered.",
+  },
+  {
+    kicker: "Cold",
+    title: "The well closed",
+    body: "Whatever you were leaving did not follow. Whatever you wanted is not out here.",
+  },
+  {
+    kicker: "Silence",
+    title: "Out of range",
+    body: "There is no orbit to catch. There is no ground to miss. There is only the going.",
+  },
+  {
+    kicker: "Dark",
+    title: "You are the last light",
+    body: "And then you will not be.",
+  },
+  {
+    kicker: "Uncharted",
+    title: "This is not a system",
+    body: "It is the gap between systems. It does not end.",
+  },
+  {
+    kicker: "Missed",
+    title: "Almost",
+    body: "Almost is the same as never, out here.",
+  },
+  {
+    kicker: "Gone",
+    title: "The chart ran out",
+    body: "You flew off the edge of the last true thing.",
+  },
+  {
+    kicker: "Void",
+    title: "Nothing will catch you",
+    body: "The craft is a grain. The dark is the rest of the sentence.",
+  },
+  {
+    kicker: "Spent",
+    title: "Fuel for nowhere",
+    body: "You burned everything to arrive at the absence of a place.",
+  },
+];
+
+export function pickLostCopy() {
+  return LOST_COPY[Math.floor(Math.random() * LOST_COPY.length)]!;
+}
+
 function takeName(rng: () => number, pool: string[], used: Set<string>): string {
   const avail = pool.filter((n) => !used.has(n.toLowerCase()));
   const name = avail.length ? pick(rng, avail) : `Body-${used.size + 1}`;
@@ -242,7 +388,7 @@ const MOON_PALETTES: [string, string][] = [
   ["#b4c8b8", "#3e4c42"],
 ];
 
-const STAR_PALETTES: [string, string, string][] = [
+export const STAR_PALETTES: [string, string, string][] = [
   ["#f3e3b0", "#d8882c", "rgba(255, 186, 74, 0.22)"],
   ["#f6f0dc", "#e0a24a", "rgba(255, 214, 140, 0.2)"],
   ["#f0d4a8", "#c45c22", "rgba(255, 150, 70, 0.22)"],
@@ -355,7 +501,11 @@ export function chartFlagsFromSearch(search = ""): ChartFlags {
   return { twins: "on" };
 }
 
-function makeSystem(seed: number, flags: ChartFlags = {}): Planet[] {
+function makeSystem(
+  seed: number,
+  flags: ChartFlags = {},
+  starPal: [string, string, string] | null = null,
+): Planet[] {
   const rng = mulberry32(seed);
   const used = new Set<string>(["lumen"]);
   const planets: Planet[] = [];
@@ -363,7 +513,7 @@ function makeSystem(seed: number, flags: ChartFlags = {}): Planet[] {
   const starR = lerp(220, 300, rng());
   const starG = lerp(22, 30, rng());
   const starName = takeName(rng, STAR_NAMES, used);
-  const starPal = pick(rng, STAR_PALETTES);
+  const pal = starPal ?? pick(rng, STAR_PALETTES);
   const star: Planet = {
     id: slug(starName, 0),
     name: starName,
@@ -378,9 +528,9 @@ function makeSystem(seed: number, flags: ChartFlags = {}): Planet[] {
     landable: false,
     rotate: 0,
     spin: lerp(0.08, 0.2, rng()),
-    colorA: starPal[0],
-    colorB: starPal[1],
-    atmo: starPal[2],
+    colorA: pal[0],
+    colorB: pal[1],
+    atmo: pal[2],
     kicker: "Star",
     title: starName,
     body: "The well at the center. Too hot to land.",
@@ -652,6 +802,7 @@ export type ChartedSystem = {
   name: string;
   planets: Planet[];
   home: Planet;
+  nearby: NearbyHeading[];
   start: { x: number; y: number; vx: number; vy: number; yaw: number };
   minimapWorldR: number;
 };
@@ -670,15 +821,18 @@ export function getSystem(): ChartedSystem {
 export function createSystem(
   seed = (Math.random() * 0xffffffff) >>> 0,
   flags: ChartFlags = {},
+  starPal: [string, string, string] | null = null,
 ): ChartedSystem {
   const fromUrl = typeof window !== "undefined" ? chartFlagsFromSearch(window.location.search) : {};
-  const planets = makeSystem(seed, { ...fromUrl, ...flags });
+  const rng = mulberry32(seed ^ 0x51ed);
+  const planets = makeSystem(seed, { ...fromUrl, ...flags }, starPal);
   const home = planets.find((p) => p.kicker === "Home") ?? planets.find((p) => p.kind === "rocky")!;
   const star = planets.find((p) => p.kind === "star");
   const pad = home.radius + SHIP_HULL * 0.85;
   system = {
     seed,
     name: star?.name ?? "Lumen",
+    nearby: rollNearby(rng),
     planets,
     home,
     start: {
@@ -728,4 +882,8 @@ export function getMinimapWorldR() {
 
 export function getSystemName() {
   return system?.name ?? "Lumen";
+}
+
+export function getNearbyHeadings(): NearbyHeading[] {
+  return system?.nearby ?? [];
 }

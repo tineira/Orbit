@@ -3,7 +3,7 @@ import { WARP_BOOM_TIMES } from "./world";
 type AudioApi = {
   unlock: () => void;
   setThrust: (on: boolean, intensity: number) => void;
-  setWarp: (on: boolean, intensity: number) => void;
+  setWarp: (on: boolean, intensity: number, pitch?: number) => void;
   warpJump: () => void;
   sonicBooms: () => void;
   bump: (amount: number) => void;
@@ -137,7 +137,7 @@ export function createAudio(): AudioApi {
       thrustFilter.frequency.setTargetAtTime(on ? 380 + intensity * 420 : 220, ctx.currentTime, 0.08);
       void thrustOn;
     },
-    setWarp(on, intensity) {
+    setWarp(on, intensity, pitch) {
       if (
         !ctx ||
         !warpSub ||
@@ -151,16 +151,19 @@ export function createAudio(): AudioApi {
       )
         return;
       const t = ctx.currentTime;
-      const c = on ? Math.max(0, Math.min(1, intensity)) : 0;
+      const vol = on ? Math.max(0, Math.min(1, intensity)) : 0;
+      const c = Math.max(0, Math.min(1, pitch ?? intensity));
       const late = Math.max(0, (c - 0.62) / 0.38);
-      warpSubGain.gain.setTargetAtTime(c > 0 ? 0.028 + c * 0.055 : 0, t, 0.07);
-      warpSub.frequency.setTargetAtTime(28 + c * 22, t, 0.08);
-      warpSpoolGain.gain.setTargetAtTime(c > 0 ? 0.014 + c * 0.042 : 0, t, 0.07);
-      warpSpool.frequency.setTargetAtTime(72 * Math.pow(2, c * 3.15), t, 0.08);
-      warpScreamGain.gain.setTargetAtTime(late * late * 0.034, t, 0.06);
-      warpScream.frequency.setTargetAtTime(420 + late * 1280, t, 0.07);
-      warpAirGain.gain.setTargetAtTime(c > 0 ? 0.01 + c * 0.08 : 0, t, 0.07);
-      warpAirFilter.frequency.setTargetAtTime(380 + c * 3200, t, 0.08);
+      warpSubGain.gain.setTargetAtTime(vol > 0 ? (0.028 + c * 0.055) * vol : 0, t, 0.07);
+      warpSpoolGain.gain.setTargetAtTime(vol > 0 ? (0.014 + c * 0.042) * vol : 0, t, 0.07);
+      warpScreamGain.gain.setTargetAtTime(vol > 0 ? late * late * 0.034 * vol : 0, t, 0.06);
+      warpAirGain.gain.setTargetAtTime(vol > 0 ? (0.01 + c * 0.08) * vol : 0, t, 0.07);
+      if (vol > 0.001) {
+        warpSub.frequency.setTargetAtTime(28 + c * 22, t, 0.08);
+        warpSpool.frequency.setTargetAtTime(72 * Math.pow(2, c * 3.15), t, 0.08);
+        warpScream.frequency.setTargetAtTime(420 + late * 1280, t, 0.07);
+        warpAirFilter.frequency.setTargetAtTime(380 + c * 3200, t, 0.08);
+      }
     },
     warpJump() {
       if (!ctx || !sfx || !noiseSrc) return;

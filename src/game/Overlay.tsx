@@ -62,7 +62,7 @@ export function Overlay({
     if (hud.phase !== "crashed") return;
     const onKey = (e: KeyboardEvent) => {
       if (e.repeat) return;
-      if (e.code === "KeyR" || e.code === "Space") {
+      if (e.code === "KeyR" || e.code === "Space" || isEnterKey(e)) {
         e.preventDefault();
         onReboot();
       }
@@ -263,7 +263,10 @@ export function Overlay({
         <LandingCard planet={landed} onTakeoff={onTakeoff} />
       ) : null}
 
-      {hud.phase === "crashed" && crashed ? (
+      {hud.phase === "crashed" && hud.crashKind === "lost" && hud.lostCopy ? (
+        <LostCard copy={hud.lostCopy} onReboot={onReboot} onNewWorld={onNewWorld} />
+      ) : null}
+      {hud.phase === "crashed" && crashed && hud.crashKind !== "lost" ? (
         <CrashCard
           burned={hud.burned}
           crashKind={hud.crashKind}
@@ -487,6 +490,42 @@ function crashDetail(
   }
   if (cause === "flare") return `A flare from ${name} reached the craft.`;
   return `Too close to ${name}. The hull cooked.`;
+}
+
+function LostCard({
+  copy,
+  onReboot,
+  onNewWorld,
+}: {
+  copy: NonNullable<HudSnapshot["lostCopy"]>;
+  onReboot: () => void;
+  onNewWorld: () => void;
+}) {
+  return (
+    <div className="absolute inset-0 flex items-end justify-center p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 sm:pb-5 pointer-events-none">
+      <article
+        data-ui
+        className="pointer-events-auto w-full max-w-md rounded-xl bg-surface border border-border p-5 sm:p-6 shadow-lg"
+      >
+        <p className="font-mono text-xs tracking-[0.2em] uppercase text-warn">{copy.kicker}</p>
+        <h2 className="mt-2 font-display text-3xl leading-tight text-fg">{copy.title}</h2>
+        <p className="mt-3 text-sm leading-relaxed text-muted">{copy.body}</p>
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={onReboot}
+            className="h-11 px-5 rounded-md bg-fg text-accent-fg text-sm font-medium inline-flex items-center gap-3 hover:opacity-90 active:scale-[0.98] transition-[opacity,transform] duration-[var(--motion-quick)] ease-[var(--ease-out)]"
+          >
+            <span>Reboot</span>
+            <kbd className="font-mono text-xs tracking-widest uppercase px-1.5 py-0.5 rounded border border-accent-fg/25 opacity-70">
+              Enter
+            </kbd>
+          </button>
+          <NewWorldButton onNewWorld={onNewWorld} />
+        </div>
+      </article>
+    </div>
+  );
 }
 
 function CrashCard({

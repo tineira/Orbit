@@ -10,6 +10,8 @@ import type {
   VerboseDiag,
   WarpRing,
   IonWisp,
+  LostCopy,
+  NearbyHeading,
 } from "./types";
 import {
   G,
@@ -34,6 +36,10 @@ import {
   getSystem,
   createSystem,
   getMinimapWorldR,
+  getNearbyHeadings,
+  lockedNearby,
+  pickLostCopy,
+  WARP_AIM_DEG,
   RETRO_FORCE,
   SHIP_HULL,
   SHIP_MASS,
@@ -46,6 +52,8 @@ import {
   WARP_BRAKE,
   WARP_BRAKE_SPEED,
   WARP_JUMP_SPEED,
+  WARP_LOST_FADE,
+  WARP_LOST_FADE_REDUCED,
   WARP_STREAK,
   WARP_STREAK_SPEED_CAP,
   WARP_STREAK_ZOOM,
@@ -100,6 +108,10 @@ export type Sim = {
   burned: boolean;
   burnCause: BurnCause | null;
   crashKind: CrashKind | null;
+  lostCopy: LostCopy | null;
+  nearby: NearbyHeading[];
+  warpTarget: NearbyHeading | null;
+  warpLost: boolean;
   crashAge: number;
   wreckSeed: number;
   warpCharge: number;
@@ -192,6 +204,10 @@ export function createSim(): Sim {
     burned: false,
     burnCause: null,
     crashKind: null,
+    lostCopy: null,
+    nearby: getNearbyHeadings(),
+    warpTarget: null,
+    warpLost: false,
     crashAge: 0,
     wreckSeed: 0,
     warpCharge: 0,
@@ -267,6 +283,9 @@ export function rebootSim(sim: Sim) {
   sim.ship = freshShip();
   sim.phase = "landed";
   sim.crashedId = null;
+  sim.lostCopy = null;
+  sim.warpTarget = null;
+  sim.warpLost = false;
   sim.orbitHint = null;
   sim.orbitLockId = null;
   sim.orbitLockR = 0;
@@ -337,7 +356,7 @@ function clearFlightLocks(sim: Sim) {
 }
 
 /** Drop into the tunnel. The new chart is generated on the punch, not here. */
-export function enterWarp(sim: Sim) {
+export function enterWarp(sim: Sim, lost = false) {
   clearFlightLocks(sim);
   const dir = shipTravelDir(sim.ship);
   sim.transitDirX = dir.x;
@@ -348,6 +367,7 @@ export function enterWarp(sim: Sim) {
   sim.phase = "transit";
   sim.transitAge = 0;
   sim.transitPunched = false;
+  sim.warpLost = lost;
   sim.warpCharge = 1;
   sim.warpApproach = 1;
   sim.status = "warp";
@@ -355,6 +375,7 @@ export function enterWarp(sim: Sim) {
   sim.nearest = null;
   sim.transitBoomed = false;
   sim.transitBoomN = 0;
+  if (lost) return;
   if (sim.reducedMotion) {
     punchWarp(sim, true);
     sim.phase = "flight";
@@ -375,9 +396,11 @@ function streakSpan(sim: Sim) {
 function punchWarp(sim: Sim, settle = false) {
   const prefs = simViewPrefs(sim);
   const dir = shipTravelDir(sim.ship);
-  createSystem();
+  createSystem(undefined, {}, sim.warpTarget?.pal ?? null);
   const sys = getSystem();
   sim.planets = copyPlanets(sys.planets);
+  sim.nearby = sys.nearby.slice();
+  sim.warpTarget = null;
   applySimViewPrefs(sim, prefs);
   const star = sim.planets.find((p) => p.kind === "star") ?? sim.planets[0]!;
   const aimR = Math.max(star.radius * 11, 2600);
@@ -418,6 +441,10 @@ function stepTransit(sim: Sim, dt: number) {
   const ship = sim.ship;
   ship.thrusting = false;
   ship.reverse = false;
+  if (sim.warpLost) {
+    stepLostWarp(sim, dt);
+    return;
+  }
   const punchAt = transitPunchAt(sim.reducedMotion);
   const boomAt = transitBoomAt(sim.reducedMotion);
   if (!sim.transitPunched && sim.transitAge + dt >= punchAt) punchWarp(sim);
@@ -1709,6 +1736,17 @@ export function stepSim(
   }
 
   if (sim.phase === "crashed") {
+    if (sim.crashKind === "lost") {
+      ship.thrusting = false;
+      ship.reverse = false;
+      ship.x += ship.vx * dt;
+      ship.y += ship.vy * dt;
+      decayParticles(sim, dt);
+      updateCamera(sim, dt);
+      sim.status = "crashed";
+      sim.orbitHint = null;
+      return;
+    }
     if (sim.burned) {
       stepBurnedFall(sim, dt);
     } else if (sim.crashKind === "sink") {
@@ -1757,7 +1795,14 @@ export function stepSim(
   }
 
   if (Math.hypot(ship.vx, ship.vy) >= WARP_JUMP_SPEED) {
-    enterWarp(sim);
+    const dir = shipTravelDir(ship);
+    const aim = lockedNearby(dir.x, dir.y, sim.nearby, WARP_AIM_DEG);
+    if (aim) {
+      sim.warpTarget = aim;
+      enterWarp(sim);
+    } else {
+      enterWarp(sim, true);
+    }
     decayParticles(sim, dt);
     updateCamera(sim, dt);
     return;
@@ -1859,12 +1904,51 @@ export function sinkAlpha(sim: Sim) {
   return Math.max(0, 1 - t * t);
 }
 
+function stepLostWarp(sim: Sim, dt: number) {
+  const ship = sim.ship;
+  ship.x += ship.vx * dt;
+  ship.y += ship.vy * dt;
+  if (sim.transitDirX || sim.transitDirY) {
+    ship.yaw = Math.atan2(-sim.transitDirX, -sim.transitDirY);
+  }
+  sim.transitAge += dt;
+  sim.warpCharge = 1;
+  sim.warpApproach = 1;
+  sim.status = "warp";
+  sim.orbitHint = null;
+  sim.nearest = null;
+  decayParticles(sim, dt);
+  updateCamera(sim, dt);
+  const dur = sim.reducedMotion ? WARP_LOST_FADE_REDUCED : WARP_LOST_FADE;
+  if (sim.transitAge < dur) return;
+  loseInSpace(sim);
+}
+
+function loseInSpace(sim: Sim) {
+  clearFlightLocks(sim);
+  sim.phase = "crashed";
+  sim.crashKind = "lost";
+  sim.lostCopy = pickLostCopy();
+  sim.crashedId = null;
+  sim.crashAge = 0;
+  sim.burned = false;
+  sim.burnCause = null;
+  sim.status = "crashed";
+  sim.orbitHint = null;
+  sim.warpCharge = 1;
+  sim.warpApproach = 1;
+  sim.warpTarget = null;
+  sim.ship.thrusting = false;
+  sim.ship.reverse = false;
+}
+
 function crashInto(sim: Sim, p: Planet, nx: number, ny: number, rel: number) {
   const s = sim.ship;
   const kind = crashKindFor(p);
   sim.phase = "crashed";
   sim.crashedId = p.id;
   sim.crashKind = kind;
+  sim.lostCopy = null;
   sim.crashAge = 0;
   sim.wreckSeed = Math.random() * 1000;
   sim.burned = kind === "burn";
@@ -2403,8 +2487,8 @@ function starfieldRush(sim: Sim): { x: number; y: number } {
   const ux = s.vx / sp;
   const uy = s.vy / sp;
   if (sim.reducedMotion) return { x: s.vx, y: s.vy };
-  if (sim.phase === "transit" && !sim.transitPunched) {
-    const t = Math.min(1, sim.transitAge / 0.5);
+  if (sim.warpLost || (sim.phase === "transit" && !sim.transitPunched)) {
+    const t = sim.warpLost ? 1 : Math.min(1, sim.transitAge / 0.5);
     const rush = 2800 + t * t * 6400;
     return { x: ux * rush, y: uy * rush };
   }
@@ -2449,12 +2533,13 @@ function updateCamera(sim: Sim, dt: number) {
   sim.camera.starDriftY += (rush.y - s.vy) * dt;
   const beat = sim.phase === "transit" ? transitBeat(sim.transitAge, sim.reducedMotion) : null;
   const rideShip = beat === "streak" || beat === "brake";
-  const look = rideShip ? 0 : speed > 400 ? 0.42 : 0.28;
+  const lostCoast = sim.warpLost;
+  const look = rideShip || lostCoast ? 0 : speed > 400 ? 0.42 : 0.28;
   const targetX = s.x + s.vx * look;
   const targetY = s.y + s.vy * look;
   const k = sim.phase === "title" ? 1.8 : 3.4;
   const a = 1 - Math.exp(-k * dt);
-  if (rideShip) {
+  if (rideShip || lostCoast) {
     sim.camera.x = s.x;
     sim.camera.y = s.y;
   } else {
@@ -2462,7 +2547,9 @@ function updateCamera(sim: Sim, dt: number) {
     sim.camera.y += (targetY - sim.camera.y) * a;
   }
   const zWant =
-    beat === "tunnel" ? 0.15 : Math.min(zoomFromSpeed(speed), zoomToHoldStar(sim));
+    beat === "tunnel" || lostCoast
+      ? 0.15
+      : Math.min(zoomFromSpeed(speed), zoomToHoldStar(sim));
   sim.camera.zoomAuto += (zWant - sim.camera.zoomAuto) * (1 - Math.exp(-1.6 * dt));
   sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
   sim.camera.trauma = Math.max(0, sim.camera.trauma - dt * 1.6);

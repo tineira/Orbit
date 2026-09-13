@@ -106,7 +106,19 @@ export type TransitBeat = "tunnel" | "streak" | "brake";
 
 export type BurnCause = "flare" | "star";
 
-export type CrashKind = "burn" | "wreck" | "sink";
+export type CrashKind = "burn" | "wreck" | "sink" | "lost";
+
+export type NearbyHeading = {
+  angle: number;
+  color: string;
+  pal: [string, string, string];
+};
+
+export type LostCopy = {
+  kicker: string;
+  title: string;
+  body: string;
+};
 
 export type FlightStatus =
   | "deep"
@@ -161,6 +173,7 @@ export type HudSnapshot = {
   burned: boolean;
   burnCause: BurnCause | null;
   crashKind: CrashKind | null;
+  lostCopy: LostCopy | null;
   muted: boolean;
   touching: boolean;
   gravityScale: number;

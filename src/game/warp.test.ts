@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { transitBeat, warpApproach, warpCharge, warpSpool } from "./world.ts";
+import {
+  headingVec,
+  lockedNearby,
+  transitBeat,
+  warpApproach,
+  warpCharge,
+  warpSpool,
+  WARP_AIM_DEG,
+} from "./world.ts";
 
 test("warp charge is empty below 1000 and full at 1500", () => {
   assert.equal(warpCharge(0), 0);
@@ -27,6 +35,15 @@ test("warp spool keeps rising through 1300 and peaks at the 1500 jump", () => {
   assert.ok(warpSpool(1300) < 0.75);
   assert.ok(warpSpool(1450) > warpSpool(1300));
   assert.equal(warpSpool(1500), 1);
+});
+
+test("warp heading lock is a tight cone", () => {
+  const pal: [string, string, string] = ["#fff", "#000", "rgba(0,0,0,0)"];
+  const n = { angle: 0, color: "#fff", pal };
+  const v = headingVec(0);
+  assert.ok(lockedNearby(v.x, v.y, [n], WARP_AIM_DEG));
+  const miss = headingVec((WARP_AIM_DEG + 2) * (Math.PI / 180));
+  assert.equal(lockedNearby(miss.x, miss.y, [n], WARP_AIM_DEG), null);
 });
 
 test("transit is tunnel, then a streak, then brake through the last boom", () => {
