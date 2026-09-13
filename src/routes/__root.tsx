@@ -1,6 +1,9 @@
+import type { ReactNode } from "react";
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
+import { AppErrorComponent } from "@/lib/error-component";
+import { AppNotFoundComponent } from "@/lib/not-found-component";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Lumen";
@@ -30,18 +33,29 @@ export const Route = createRootRoute({
       },
     ],
   }),
-  component: () => (
+  // Document shell stays mounted when the root match is a 404 or error, so
+  // <html> is not replaced by the not-found / error component.
+  shellComponent: RootShell,
+  component: RootComponent,
+  notFoundComponent: AppNotFoundComponent,
+  errorComponent: AppErrorComponent,
+});
+
+function RootShell({ children }: { children: ReactNode }) {
+  return (
     <html lang="en" className="antialiased" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
       <body className="font-sans bg-bg text-fg overflow-hidden">
         <PreviewHostBridge />
-        <AuthProvider>
-          <Outlet />
-        </AuthProvider>
+        <AuthProvider>{children}</AuthProvider>
         <Scripts />
       </body>
     </html>
-  ),
-});
+  );
+}
+
+function RootComponent() {
+  return <Outlet />;
+}
