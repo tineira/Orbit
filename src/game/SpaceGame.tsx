@@ -33,6 +33,7 @@ const INITIAL: HudSnapshot = {
   gravityGrid: false,
   verbose: false,
   verboseDiag: null,
+  warpCharge: 0,
 };
 
 export function SpaceGame() {

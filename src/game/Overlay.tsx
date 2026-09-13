@@ -96,6 +96,7 @@ export function Overlay({
   return (
     <div className="pointer-events-none absolute inset-0 text-fg">
       {hud.phase === "creating" ? <Creating /> : null}
+      {hud.phase === "transit" ? <Transit /> : null}
       {hud.phase === "title" ? (
         <Title
           onLaunch={onLaunch}
@@ -112,7 +113,7 @@ export function Overlay({
         />
       ) : null}
 
-      {hud.phase !== "title" && hud.phase !== "creating" ? (
+      {hud.phase !== "title" && hud.phase !== "creating" && hud.phase !== "transit" ? (
         <>
           <header className="absolute top-0 left-0 right-0 flex flex-col gap-3 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:p-6">
             <div className="flex items-start justify-between gap-4">
@@ -217,7 +218,7 @@ export function Overlay({
                     hud.orbitHint === ORBIT_PERTURB_HINT ||
                     isOrbitLostHint(hud.orbitHint)
                     ? "text-warn"
-                    : hud.status === "orbit" || hud.status === "lagrange"
+                    : hud.status === "orbit" || hud.status === "lagrange" || hud.status === "warp"
                       ? "text-ok"
                       : "text-accent",
                 )}
@@ -286,6 +287,26 @@ function Creating() {
         aria-live="polite"
       >
         Creating world
+      </p>
+    </div>
+  );
+}
+
+function Transit() {
+  const star = getPlanets().find((p) => p.kind === "star");
+  return (
+    <div className="absolute inset-0 flex flex-col justify-between p-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-8">
+      <div>
+        <p className="font-mono text-xs tracking-[0.22em] uppercase text-muted">A small system</p>
+        <h1 className="mt-3 font-display text-5xl sm:text-6xl md:text-7xl leading-none tracking-tight font-semibold text-fg">
+          {star?.name ?? "Lumen"}
+        </h1>
+      </div>
+      <p
+        className="creating-world font-mono text-sm tracking-[0.2em] uppercase text-muted"
+        aria-live="polite"
+      >
+        Warp
       </p>
     </div>
   );
@@ -787,6 +808,8 @@ function statusLabel(hud: HudSnapshot) {
       return hud.orbitLocked ? (hud.orbitEcc >= 0.08 ? "ELLIPSE" : "LOCKED") : "ORBIT";
     case "lagrange":
       return hud.lagrangeLabel ?? "L-POINT";
+    case "warp":
+      return "WARP";
     case "too-fast":
       return "FAST";
     case "approach":

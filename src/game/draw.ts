@@ -54,7 +54,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
     ? 0
     : (hash(performance.now() * 0.09 + 9) - 0.5) * cam.shake * 18;
 
-  if (!sim.showGravityGrid) drawStars(ctx, cam, cssW, cssH, shakeX, shakeY);
+  if (!sim.showGravityGrid) drawStars(ctx, cam, cssW, cssH, shakeX, shakeY, sim);
   ctx.save();
   ctx.translate(cssW / 2 + shakeX, cssH / 2 + shakeY);
   ctx.scale(cam.zoom, cam.zoom);
@@ -80,7 +80,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   const shipUmbra = star ? pointUmbraMax(sim.ship.x, sim.ship.y, sim.planets, star, null) : 0;
   drawShip(ctx, sim, shipUmbra);
   if (particlesOver) drawParticles(ctx, sim.particles);
-  drawOrbitLockBars(ctx, sim, cam);
+  drawShipLockBars(ctx, sim, cam);
 
   ctx.restore();
   drawVignette(ctx, cssW, cssH);
@@ -246,6 +246,13 @@ function drawStarDot(
   ctx.fill();
 }
 
+function starStreak(sim: Sim | undefined) {
+  if (!sim || sim.reducedMotion) return 0;
+  if (sim.phase === "transit") return 48;
+  if (sim.status === "warp") return 6 + sim.warpCharge * 28;
+  return 0;
+}
+
 function drawStars(
   ctx: CanvasRenderingContext2D,
   cam: Camera,
@@ -253,9 +260,14 @@ function drawStars(
   cssH: number,
   sx: number,
   sy: number,
+  sim?: Sim,
 ) {
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
+  const streak = starStreak(sim);
+  const sp = sim ? Math.hypot(sim.ship.vx, sim.ship.vy) : 0;
+  const ux = sim && sp > 1e-6 ? sim.ship.vx / sp : 0;
+  const uy = sim && sp > 1e-6 ? sim.ship.vy / sp : 0;
 
   const layers = [
     { n: 1400, par: 0.018, size: 0.5, a: 0.28, span: 2400 },
@@ -276,7 +288,18 @@ function drawStars(
       const mag = hash(i * 11.9 + layer.par);
       const size = layer.size * (0.65 + mag * 0.7);
       const a = layer.a * (0.55 + mag * 0.45);
-      drawStarDot(ctx, x, y, size, starRgb(i), a);
+      const rgb = starRgb(i);
+      if (streak > 0.5) {
+        ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`;
+        ctx.lineWidth = Math.max(0.7, size);
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(x - ux * streak, y - uy * streak);
+        ctx.lineTo(x + ux * streak * 0.15, y + uy * streak * 0.15);
+        ctx.stroke();
+      } else {
+        drawStarDot(ctx, x, y, size, rgb, a);
+      }
     }
   }
 
@@ -531,7 +554,13 @@ function drawRelativePath(ctx: CanvasRenderingContext2D, sim: Sim) {
 }
 
 function drawPlanetPaths(ctx: CanvasRenderingContext2D, sim: Sim) {
-  if (sim.phase === "creating" || sim.phase === "crashed" || sim.phase === "title") return;
+  if (
+    sim.phase === "creating" ||
+    sim.phase === "crashed" ||
+    sim.phase === "title" ||
+    sim.phase === "transit"
+  )
+    return;
   ctx.save();
   ctx.lineWidth = 1.45;
   ctx.lineCap = "round";
@@ -590,6 +619,7 @@ function drawGravityArrows(ctx: CanvasRenderingContext2D, sim: Sim) {
     sim.phase === "landed" ||
     sim.phase === "crashed" ||
     sim.phase === "creating" ||
+    sim.phase === "transit" ||
     sim.landedId ||
     sim.lagrangeLockKey
   )
@@ -1134,13 +1164,23 @@ const LOCK_LABEL_GAP = 4;
 const LOCK_LABEL_PAD_X = 3;
 const LOCK_LABEL_IDLE = "rgba(138, 141, 150, 0.78)";
 
-function lockBarColor(remaining: number, healthy: string) {
+function lockBarColor(remaining: number, healthy: string, charge = false) {
+  if (charge) {
+    if (remaining < 0.34) return "#5c5f68";
+    if (remaining < 0.72) return "#b7c0cc";
+    return healthy;
+  }
   if (remaining > LOCK_BAR_CAUTION) return healthy;
   if (remaining > LOCK_BAR_WARN) return "#c4a05a";
   return "#c45c4a";
 }
 
-function lockLabelColor(remaining: number) {
+function lockLabelColor(remaining: number, charge = false) {
+  if (charge) {
+    if (remaining < 0.34) return LOCK_LABEL_IDLE;
+    if (remaining < 0.72) return "#b7c0cc";
+    return "#7d9b86";
+  }
   if (remaining > LOCK_BAR_CAUTION) return LOCK_LABEL_IDLE;
   if (remaining > LOCK_BAR_WARN) return "#c4a05a";
   return "#c45c4a";
@@ -1152,10 +1192,11 @@ function drawLockBar(
   y: number,
   remaining: number,
   healthy: string,
+  charge = false,
 ) {
   const t = Math.max(0, Math.min(1, remaining));
   const filled = Math.round(t * LOCK_PIPS);
-  const color = lockBarColor(t, healthy);
+  const color = lockBarColor(t, healthy, charge);
   ctx.fillStyle = "#07080c";
   ctx.fillRect(x, y, LOCK_BAR_W, LOCK_BAR_H);
   for (let i = 0; i < LOCK_PIPS; i++) {
@@ -1179,8 +1220,9 @@ function drawLockBarLabel(
   y: number,
   remaining: number,
   label: string,
+  charge = false,
 ) {
-  const color = lockLabelColor(remaining);
+  const color = lockLabelColor(remaining, charge);
   ctx.font = '500 10px "IBM Plex Mono", ui-monospace, monospace';
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
@@ -1197,16 +1239,27 @@ function drawLockBarLabel(
   ctx.fillText(label, textX, y + LOCK_BAR_H / 2);
 }
 
-function drawOrbitLockBars(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera) {
-  if (!sim.orbitLockId && !sim.lagrangeLockKey) return;
+function drawShipLockBars(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera) {
+  if (sim.phase === "creating" || sim.phase === "title" || sim.phase === "crashed") return;
   const zoom = Math.max(0.04, cam.zoom);
-  const dragLeft = 1 - Math.min(1, atmoDrag(sim) / ORBIT_DRAG_BREAK);
-  const gravLeft = 1 - Math.min(1, orbitPerturb(sim) / ORBIT_PERTURB_BREAK);
   ctx.save();
   ctx.translate(sim.ship.x, sim.ship.y);
   ctx.scale(1 / zoom, 1 / zoom);
   const x = -Math.round(LOCK_BAR_W / 2);
   const y = Math.round(13 * zoom + 10);
+  if (sim.status === "warp" || sim.phase === "transit") {
+    const t = sim.phase === "transit" ? 1 : sim.warpCharge;
+    drawLockBar(ctx, x, y, t, "#7d9b86", true);
+    drawLockBarLabel(ctx, x, y, t, "Warp", true);
+    ctx.restore();
+    return;
+  }
+  if (!sim.orbitLockId && !sim.lagrangeLockKey) {
+    ctx.restore();
+    return;
+  }
+  const dragLeft = 1 - Math.min(1, atmoDrag(sim) / ORBIT_DRAG_BREAK);
+  const gravLeft = 1 - Math.min(1, orbitPerturb(sim) / ORBIT_PERTURB_BREAK);
   const gravY = y + LOCK_BAR_H + 3;
   drawLockBar(ctx, x, y, dragLeft, "#7d9b86");
   drawLockBarLabel(ctx, x, y, dragLeft, "Atmo Lock");
@@ -1231,7 +1284,13 @@ function drawVignette(ctx: CanvasRenderingContext2D, cssW: number, cssH: number)
 }
 
 function drawLagrangePoints(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera) {
-  if (sim.phase === "creating" || sim.phase === "crashed" || sim.phase === "title") return;
+  if (
+    sim.phase === "creating" ||
+    sim.phase === "crashed" ||
+    sim.phase === "title" ||
+    sim.phase === "transit"
+  )
+    return;
   const showAll = sim.showLagrange;
   const locked = sim.lagrangeLockKey;
   if (!showAll && !locked) return;

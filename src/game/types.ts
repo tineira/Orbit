@@ -76,13 +76,21 @@ export type SolarFlare = {
   strands: number;
 };
 
-export type Phase = "creating" | "title" | "flight" | "landed" | "crashed";
+export type Phase = "creating" | "title" | "flight" | "landed" | "crashed" | "transit";
 
 export type BurnCause = "flare" | "star";
 
 export type CrashKind = "burn" | "wreck" | "sink";
 
-export type FlightStatus = "deep" | "approach" | "orbit" | "lagrange" | "too-fast" | "landed" | "crashed";
+export type FlightStatus =
+  | "deep"
+  | "approach"
+  | "orbit"
+  | "lagrange"
+  | "too-fast"
+  | "landed"
+  | "crashed"
+  | "warp";
 
 export type VerboseDiag = {
   gate: string;
@@ -139,6 +147,7 @@ export type HudSnapshot = {
   gravityGrid: boolean;
   verbose: boolean;
   verboseDiag: VerboseDiag | null;
+  warpCharge: number;
 };
 
 export type InputState = {

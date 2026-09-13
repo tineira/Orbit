@@ -30,6 +30,8 @@ import {
   FLARE_LONG_CHANCE,
   getStart,
   getSystem,
+  createSystem,
+  getMinimapWorldR,
   RETRO_FORCE,
   SHIP_HULL,
   SHIP_MASS,
@@ -37,6 +39,12 @@ import {
   TAKEOFF_SPEED,
   THRUST_FORCE,
   TURN_RATE,
+  WARP_BAR_SPEED,
+  WARP_INBOUND_SPEED,
+  WARP_JUMP_SPEED,
+  WARP_TRANSIT,
+  WARP_TRANSIT_REDUCED,
+  warpCharge,
 } from "./world";
 
 export type Sim = {
@@ -44,7 +52,7 @@ export type Sim = {
   planets: Planet[];
   particles: Particle[];
   camera: Camera;
-  phase: "creating" | "title" | "flight" | "landed" | "crashed";
+  phase: "creating" | "title" | "flight" | "landed" | "crashed" | "transit";
   landedId: string | null;
   crashedId: string | null;
   landedAngle: number;
@@ -82,6 +90,8 @@ export type Sim = {
   crashKind: CrashKind | null;
   crashAge: number;
   wreckSeed: number;
+  warpCharge: number;
+  transitAge: number;
 };
 
 export const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
@@ -155,6 +165,8 @@ export function createSim(): Sim {
     crashKind: null,
     crashAge: 0,
     wreckSeed: 0,
+    warpCharge: 0,
+    transitAge: 0,
   };
   landOnHome(sim);
   return sim;
@@ -236,6 +248,8 @@ export function rebootSim(sim: Sim) {
   sim.crashKind = null;
   sim.crashAge = 0;
   sim.wreckSeed = 0;
+  sim.warpCharge = 0;
+  sim.transitAge = 0;
   landOnHome(sim);
   sim.camera.zoomAuto = 0.96;
   sim.camera.zoom = 0.96 * sim.camera.userZoom;
@@ -246,6 +260,90 @@ export function rebootSim(sim: Sim) {
 
 export function forwardOf(yaw: number) {
   return { x: -Math.sin(yaw), y: -Math.cos(yaw) };
+}
+
+function shipTravelDir(ship: Ship) {
+  const sp = Math.hypot(ship.vx, ship.vy);
+  if (sp > 1e-6) return { x: ship.vx / sp, y: ship.vy / sp };
+  return forwardOf(ship.yaw);
+}
+
+function clearFlightLocks(sim: Sim) {
+  sim.orbitLockId = null;
+  sim.orbitDwell = 0;
+  sim.orbitLockCooldown = 0;
+  sim.lagrangeLockKey = null;
+  sim.lagrangeDwellKey = null;
+  sim.lagrangeDwell = 0;
+  sim.landedId = null;
+  sim.crashedId = null;
+  sim.burned = false;
+  sim.burnCause = null;
+  sim.crashKind = null;
+  sim.crashAge = 0;
+  sim.flares = [];
+  sim.flareWait = 5 + Math.random() * 6;
+  for (const p of sim.particles) p.alive = false;
+}
+
+/** Swap the chart and drop in from the rim, still flying. */
+export function enterWarp(sim: Sim) {
+  const prefs = simViewPrefs(sim);
+  const dir = shipTravelDir(sim.ship);
+  createSystem();
+  const sys = getSystem();
+  sim.planets = copyPlanets(sys.planets);
+  applySimViewPrefs(sim, prefs);
+  const star = sim.planets.find((p) => p.kind === "star") ?? sim.planets[0]!;
+  const rim = getMinimapWorldR() * 0.88;
+  sim.ship.x = star.x - dir.x * rim;
+  sim.ship.y = star.y - dir.y * rim;
+  sim.ship.vx = dir.x * WARP_INBOUND_SPEED;
+  sim.ship.vy = dir.y * WARP_INBOUND_SPEED;
+  sim.ship.yaw = Math.atan2(-dir.x, -dir.y);
+  sim.ship.thrusting = false;
+  sim.ship.reverse = false;
+  clearFlightLocks(sim);
+  sim.phase = "transit";
+  sim.transitAge = 0;
+  sim.warpCharge = 1;
+  sim.status = "warp";
+  sim.orbitHint = "Warp";
+  sim.nearest = star;
+  sim.altitude = rim - star.radius;
+  sim.camera.x = sim.ship.x;
+  sim.camera.y = sim.ship.y;
+  sim.camera.zoomAuto = 0.22;
+  sim.camera.zoom = 0.22 * sim.camera.userZoom;
+  sim.camera.trauma = sim.reducedMotion ? 0 : 0.35;
+}
+
+function stepTransit(sim: Sim, dt: number) {
+  const ship = sim.ship;
+  ship.thrusting = false;
+  ship.reverse = false;
+  ship.x += ship.vx * dt;
+  ship.y += ship.vy * dt;
+  const dir = shipTravelDir(ship);
+  ship.yaw = Math.atan2(-dir.x, -dir.y);
+  sim.transitAge += dt;
+  sim.warpCharge = 1;
+  sim.status = "warp";
+  sim.orbitHint = "Warp";
+  const star = sim.planets.find((p) => p.kind === "star");
+  if (star) {
+    sim.nearest = star;
+    sim.altitude = Math.hypot(ship.x - star.x, ship.y - star.y) - star.radius;
+  }
+  decayParticles(sim, dt);
+  updateCamera(sim, dt);
+  const dur = sim.reducedMotion ? WARP_TRANSIT_REDUCED : WARP_TRANSIT;
+  if (sim.transitAge < dur) return;
+  sim.phase = "flight";
+  sim.transitAge = 0;
+  sim.warpCharge = warpCharge(Math.hypot(ship.vx, ship.vy));
+  sim.orbitHint = null;
+  sim.status = "deep";
 }
 
 export function bodyMu(p: Planet, gravityScale: number) {
@@ -1422,6 +1520,19 @@ export function stepSim(
       faceRadial(sim);
       ship.thrusting = false;
     }
+    sim.warpCharge = 0;
+    decayParticles(sim, dt);
+    updateCamera(sim, dt);
+    return;
+  }
+
+  if (sim.phase === "transit") {
+    stepTransit(sim, dt);
+    return;
+  }
+
+  if (Math.hypot(ship.vx, ship.vy) >= WARP_JUMP_SPEED) {
+    enterWarp(sim);
     decayParticles(sim, dt);
     updateCamera(sim, dt);
     return;
@@ -1540,6 +1651,7 @@ function crashInto(sim: Sim, p: Planet, nx: number, ny: number, rel: number) {
   sim.lagrangeDwell = 0;
   sim.status = "crashed";
   sim.orbitHint = null;
+  sim.warpCharge = 0;
   stickToPlanet(sim, p);
   s.thrusting = false;
   s.reverse = false;
@@ -1883,7 +1995,10 @@ export function verboseDiag(sim: Sim): VerboseDiag {
   if (sim.phase === "landed") gate = "LANDED";
   else if (sim.phase === "crashed") gate = "CRASH";
   else if (sim.phase === "title") gate = "TITLE";
-  else if (sim.lagrangeLockKey) {
+  else if (sim.phase === "transit" || Math.hypot(ship.vx, ship.vy) >= WARP_BAR_SPEED) {
+    gate = `WARP ${fmtDiag(Math.hypot(ship.vx, ship.vy), 0)} / ${WARP_JUMP_SPEED}`;
+    ok = sim.warpCharge >= 1;
+  } else if (sim.lagrangeLockKey) {
     const kind = sim.lagrangeLockKey.split(":")[1] ?? "L";
     gate = `${kind} LOCKED`;
     ok = true;
@@ -1939,15 +2054,28 @@ export function verboseDiag(sim: Sim): VerboseDiag {
 function classify(sim: Sim, nearest: Planet, dist: number) {
   if (sim.orbitDragHintT > 0) sim.orbitDragHintT = Math.max(0, sim.orbitDragHintT - STEP);
 
+  const speed = Math.hypot(sim.ship.vx, sim.ship.vy);
+  sim.warpCharge = warpCharge(speed);
+
   if (sim.phase === "landed") {
     sim.status = "landed";
     sim.orbitHint = null;
     sim.orbitDwell = 0;
+    sim.warpCharge = 0;
     return;
   }
   if (sim.phase === "crashed") {
     sim.status = "crashed";
     sim.orbitHint = null;
+    sim.warpCharge = 0;
+    return;
+  }
+  if (speed >= WARP_BAR_SPEED) {
+    sim.status = "warp";
+    sim.orbitHint = "Warp";
+    sim.orbitDwell = 0;
+    sim.lagrangeDwell = 0;
+    sim.lagrangeDwellKey = null;
     return;
   }
   if (sim.lagrangeLockKey) {
@@ -2037,15 +2165,26 @@ export function setUserZoom(sim: Sim, value: number) {
 
 function updateCamera(sim: Sim, dt: number) {
   const s = sim.ship;
-  const look = 0.28;
+  const speed = Math.hypot(s.vx, s.vy);
+  const look = speed > 400 ? 0.42 : 0.28;
   const targetX = s.x + s.vx * look;
   const targetY = s.y + s.vy * look;
   const k = sim.phase === "title" ? 1.8 : 3.4;
   const a = 1 - Math.exp(-k * dt);
   sim.camera.x += (targetX - sim.camera.x) * a;
   sim.camera.y += (targetY - sim.camera.y) * a;
-  const speed = Math.hypot(s.vx, s.vy);
-  const zWant = speed > 42 ? 0.76 : speed > 24 ? 0.88 : 0.98;
+  const zWant =
+    sim.phase === "transit"
+      ? 0.22
+      : speed > WARP_BAR_SPEED
+        ? 0.32
+        : speed > 400
+          ? 0.48
+          : speed > 42
+            ? 0.76
+            : speed > 24
+              ? 0.88
+              : 0.98;
   sim.camera.zoomAuto += (zWant - sim.camera.zoomAuto) * (1 - Math.exp(-1.6 * dt));
   sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
   sim.camera.trauma = Math.max(0, sim.camera.trauma - dt * 1.6);

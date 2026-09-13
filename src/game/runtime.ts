@@ -99,6 +99,7 @@ declare global {
       getGravityGrid?: () => boolean;
       getVerbose?: () => boolean;
       getSeed?: () => number | null;
+      getWarpCharge?: () => number;
       newWorld?: () => void;
       adjustGravity?: (dir: number) => void;
       adjustAtmo?: (dir: number) => void;
@@ -136,6 +137,7 @@ const CREATING_HUD: HudSnapshot = {
   gravityGrid: false,
   verbose: false,
   verboseDiag: null,
+  warpCharge: 0,
 };
 
 export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameHandle {
@@ -164,6 +166,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let prevLanded: string | null = null;
   let prevCrashed: string | null = null;
   let prevTrauma = 0;
+  let prevPhase: string | null = null;
   let enterWasDown = false;
   let enterNeedsUp = false;
   let oWasDown = false;
@@ -241,6 +244,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       gravityGrid: sim.showGravityGrid,
       verbose: sim.showVerbose,
       verboseDiag: sim.showVerbose ? verboseDiag(sim) : null,
+      warpCharge: sim.warpCharge,
     };
     onUi(hud);
   };
@@ -253,7 +257,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       sim.phase === "title" ||
       sim.phase === "crashed" ||
       sim.phase === "landed" ||
-      sim.phase === "creating"
+      sim.phase === "creating" ||
+      sim.phase === "transit"
     )
       return null;
     const world = screenToWorld(sim, p.x, p.y, cssW, cssH);
@@ -416,6 +421,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getGravityGrid: () => s.showGravityGrid,
       getVerbose: () => s.showVerbose,
       getSeed: () => getSystem().seed,
+      getWarpCharge: () => s.warpCharge,
       newWorld: () => chartNewWorld(),
       getLagrangePoints: () =>
         listLagrangePoints(s).map((p) => ({
@@ -511,6 +517,13 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       sim.ship.thrusting && playing(),
       Math.min(1, Math.hypot(sim.ship.vx, sim.ship.vy) / 120),
     );
+    audio.setWarp(
+      sim.phase === "transit" || sim.status === "warp",
+      sim.phase === "transit" ? 1 : sim.warpCharge,
+    );
+    if (sim.phase === "transit" && prevPhase !== "transit") audio.warpJump();
+    if (sim.phase === "transit") publish();
+    prevPhase = sim.phase;
 
     if (sim.landedId && sim.landedId !== prevLanded && sim.phase !== "title") audio.land();
     prevLanded = sim.landedId;
@@ -610,6 +623,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getVerbose: () => false,
       getPlanetPaths: () => [],
       getSeed: () => null,
+      getWarpCharge: () => 0,
       newWorld: () => {},
       adjustGravity: () => {},
       adjustAtmo: () => {},

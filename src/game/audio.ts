@@ -1,6 +1,8 @@
 type AudioApi = {
   unlock: () => void;
   setThrust: (on: boolean, intensity: number) => void;
+  setWarp: (on: boolean, intensity: number) => void;
+  warpJump: () => void;
   bump: (amount: number) => void;
   land: () => void;
   crash: () => void;
@@ -16,6 +18,8 @@ export function createAudio(): AudioApi {
   let thrustGain: GainNode | null = null;
   let thrustFilter: BiquadFilterNode | null = null;
   let noiseSrc: AudioBufferSourceNode | null = null;
+  let warpGain: GainNode | null = null;
+  let warpOsc: OscillatorNode | null = null;
   let muted = false;
   let thrustOn = false;
 
@@ -52,6 +56,15 @@ export function createAudio(): AudioApi {
     thrustFilter.connect(thrustGain);
     thrustGain.connect(sfx);
     noiseSrc.start();
+
+    warpOsc = ctx.createOscillator();
+    warpOsc.type = "sine";
+    warpOsc.frequency.value = 48;
+    warpGain = ctx.createGain();
+    warpGain.gain.value = 0;
+    warpOsc.connect(warpGain);
+    warpGain.connect(sfx);
+    warpOsc.start();
   };
 
   const unlock = () => {
@@ -79,6 +92,32 @@ export function createAudio(): AudioApi {
       thrustGain.gain.setTargetAtTime(g, ctx.currentTime, 0.05);
       thrustFilter.frequency.setTargetAtTime(on ? 380 + intensity * 420 : 220, ctx.currentTime, 0.08);
       void thrustOn;
+    },
+    setWarp(on, intensity) {
+      if (!ctx || !warpGain || !warpOsc) return;
+      const t = ctx.currentTime;
+      const g = on ? 0.02 + intensity * 0.05 : 0;
+      warpGain.gain.setTargetAtTime(g, t, 0.08);
+      warpOsc.frequency.setTargetAtTime(on ? 42 + intensity * 90 : 48, t, 0.12);
+    },
+    warpJump() {
+      if (!ctx || !sfx) return;
+      const t = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(90, t);
+      osc.frequency.exponentialRampToValueAtTime(38, t + 0.55);
+      g.gain.setValueAtTime(0.12, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+      osc.connect(g);
+      g.connect(sfx);
+      osc.start(t);
+      osc.stop(t + 0.62);
+      osc.onended = () => {
+        osc.disconnect();
+        g.disconnect();
+      };
     },
     bump(amount) {
       if (!ctx || !sfx) return;
@@ -167,6 +206,11 @@ export function createAudio(): AudioApi {
       document.removeEventListener("visibilitychange", onVis);
       try {
         noiseSrc?.stop();
+      } catch {
+        /* ignore */
+      }
+      try {
+        warpOsc?.stop();
       } catch {
         /* ignore */
       }
