@@ -446,8 +446,12 @@ function punchWarp(sim: Sim, settle = false) {
   const near = gravityAt(sim.ship.x, sim.ship.y, sim.planets, sim.gravityScale);
   sim.nearest = near.nearest;
   sim.altitude = near.dist - near.nearest.radius;
+  const oldCamX = sim.camera.x;
+  const oldCamY = sim.camera.y;
   sim.camera.x = sim.ship.x;
   sim.camera.y = sim.ship.y;
+  sim.camera.starDriftX += oldCamX - sim.camera.x;
+  sim.camera.starDriftY += oldCamY - sim.camera.y;
   sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
 }
 
