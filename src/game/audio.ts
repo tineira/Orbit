@@ -1,3 +1,5 @@
+import { WARP_BOOM_TIMES } from "./world";
+
 type AudioApi = {
   unlock: () => void;
   setThrust: (on: boolean, intensity: number) => void;
@@ -277,9 +279,9 @@ export function createAudio(): AudioApi {
           rg.disconnect();
         };
       };
-      boom(0, 0.78, 820, 118);
-      boom(0.48, 0.64, 1100, 96);
-      boom(1.02, 0.88, 700, 132);
+      boom(WARP_BOOM_TIMES[0], 0.78, 820, 118);
+      boom(WARP_BOOM_TIMES[1], 0.64, 1100, 96);
+      boom(WARP_BOOM_TIMES[2], 0.88, 700, 132);
     },
     bump(amount) {
       if (!ctx || !sfx) return;

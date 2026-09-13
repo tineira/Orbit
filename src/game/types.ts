@@ -66,6 +66,13 @@ export type Camera = {
   starDriftY: number;
 };
 
+export type WarpRing = {
+  x: number;
+  y: number;
+  age: number;
+  life: number;
+};
+
 export type SolarFlare = {
   angle: number;
   span: number;

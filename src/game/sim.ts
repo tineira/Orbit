@@ -8,6 +8,7 @@ import type {
   Ship,
   SolarFlare,
   VerboseDiag,
+  WarpRing,
 } from "./types";
 import {
   G,
@@ -40,6 +41,7 @@ import {
   THRUST_FORCE,
   TURN_RATE,
   WARP_BAR_SPEED,
+  WARP_BOOM_TIMES,
   WARP_BRAKE,
   WARP_BRAKE_SPEED,
   WARP_FLASH,
@@ -111,6 +113,8 @@ export type Sim = {
   transitStreakSpeed: number;
   viewCssW: number;
   viewCssH: number;
+  warpRings: WarpRing[];
+  transitBoomN: number;
 };
 
 export const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
@@ -198,6 +202,8 @@ export function createSim(): Sim {
     transitStreakSpeed: 0,
     viewCssW: 1280,
     viewCssH: 800,
+    warpRings: [],
+    transitBoomN: 0,
   };
   landOnHome(sim);
   return sim;
@@ -284,6 +290,8 @@ export function rebootSim(sim: Sim) {
   sim.transitAge = 0;
   sim.transitPunched = false;
   sim.transitBoomed = false;
+  sim.transitBoomN = 0;
+  sim.warpRings = [];
   landOnHome(sim);
   sim.camera.zoomAuto = 0.96;
   sim.camera.zoom = 0.96 * sim.camera.userZoom;
@@ -340,6 +348,7 @@ export function enterWarp(sim: Sim) {
   sim.orbitHint = null;
   sim.nearest = null;
   sim.transitBoomed = false;
+  sim.transitBoomN = 0;
   if (sim.reducedMotion) {
     punchWarp(sim, true);
     sim.phase = "flight";
@@ -412,14 +421,25 @@ function stepTransit(sim: Sim, dt: number) {
     ship.x = sim.transitAimX;
     ship.y = sim.transitAimY;
   }
+  if (sim.transitBoomed && !sim.reducedMotion) {
+    const since = sim.transitAge + dt - boomAt;
+    while (
+      sim.transitBoomN < WARP_BOOM_TIMES.length &&
+      since >= WARP_BOOM_TIMES[sim.transitBoomN]!
+    ) {
+      sim.warpRings.push({ x: ship.x, y: ship.y, age: 0, life: 1.7 });
+      sim.camera.trauma = Math.max(sim.camera.trauma, 0.5);
+      sim.transitBoomN += 1;
+    }
+  }
   const beat = transitBeat(sim.transitAge + dt, sim.reducedMotion);
   const dirx = sim.transitDirX;
   const diry = sim.transitDirY;
   if (beat === "flash" && sim.transitPunched) {
-    ship.x = sim.transitAimX;
-    ship.y = sim.transitAimY;
-    ship.vx = dirx * sim.transitStreakSpeed;
-    ship.vy = diry * sim.transitStreakSpeed;
+    ship.vx = dirx * 240;
+    ship.vy = diry * 240;
+    ship.x += ship.vx * dt;
+    ship.y += ship.vy * dt;
   } else if (beat === "brake" && sim.transitPunched) {
     const u = Math.min(1, Math.max(0, (sim.transitAge + dt - boomAt - WARP_FLASH) / WARP_BRAKE));
     const ease = 1 - (1 - u) * (1 - u) * (1 - u);
@@ -1585,6 +1605,8 @@ export function stepSim(
   updateMoons(sim, dt);
   invalidateLagrange(sim);
   stepFlares(sim, dt);
+  for (const ring of sim.warpRings) ring.age += dt;
+  sim.warpRings = sim.warpRings.filter((ring) => ring.age < ring.life);
 
   const ship = sim.ship;
   if (sim.phase === "title") {

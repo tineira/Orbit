@@ -101,6 +101,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   if (fade > 0.04) drawGravityArrows(ctx, sim);
   const star = sim.planets.find((b) => b.kind === "star") ?? null;
   const shipUmbra = star ? pointUmbraMax(sim.ship.x, sim.ship.y, sim.planets, star, null) : 0;
+  drawWarpRings(ctx, sim);
   drawShip(ctx, sim, shipUmbra);
   if (particlesOver) drawParticles(ctx, sim.particles);
   drawShipLockBars(ctx, sim, cam);
@@ -1136,6 +1137,43 @@ function drawWreck(ctx: CanvasRenderingContext2D, seed: number, umbra: number) {
     ctx.stroke();
     ctx.restore();
   }
+}
+
+function drawWarpRings(ctx: CanvasRenderingContext2D, sim: Sim) {
+  if (sim.warpRings.length === 0) return;
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineCap = "round";
+  for (const ring of sim.warpRings) {
+    const u = Math.min(1, ring.age / ring.life);
+    const fade = (1 - u) * (1 - u);
+    const hot = Math.max(0, 1 - u / 0.28);
+    const r = Math.round(255 * hot + 70 * (1 - hot));
+    const gch = Math.round(252 * hot + 160 * (1 - hot));
+    const b = Math.round(245 * hot + 255 * (1 - hot));
+    const flash = 0.55 * hot;
+    const rad = 22 + u * 560;
+    const grad = ctx.createRadialGradient(ring.x, ring.y, rad * 0.15, ring.x, ring.y, rad);
+    grad.addColorStop(0, `rgba(${r}, ${gch}, ${b}, ${(0.06 + flash) * fade})`);
+    grad.addColorStop(0.55, `rgba(${r}, ${gch}, ${b}, ${(0.1 + flash * 0.4) * fade})`);
+    grad.addColorStop(0.82, `rgba(${r}, ${gch}, ${b}, ${(0.48 + flash) * fade})`);
+    grad.addColorStop(1, `rgba(${r}, ${gch}, ${b}, 0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(ring.x, ring.y, rad, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${r}, ${gch}, ${b}, ${(0.75 + flash) * fade})`;
+    ctx.lineWidth = 7 + 14 * (1 - u);
+    ctx.beginPath();
+    ctx.arc(ring.x, ring.y, rad * 0.92, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(255, 252, 248, ${(0.2 + flash * 0.5) * fade})`;
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.arc(ring.x, ring.y, rad * 0.7, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawShipLightRay(ctx: CanvasRenderingContext2D, sim: Sim) {
