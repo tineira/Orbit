@@ -556,6 +556,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       sim.ship.thrusting && playing(),
       Math.min(1, Math.hypot(sim.ship.vx, sim.ship.vy) / 120),
     );
+    audio.setAtmo(playing() ? atmoDrag(sim) : 0);
     const beat = sim.phase === "transit" ? transitBeat(sim.transitAge, sim.reducedMotion) : "off";
     const lostFade = sim.reducedMotion ? WARP_LOST_FADE_REDUCED : WARP_LOST_FADE;
     if (sim.warpLost) {

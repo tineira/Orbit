@@ -60,6 +60,7 @@ function startLoop(ctx: AudioContext, buffer: AudioBuffer) {
 type AudioApi = {
   unlock: () => void;
   setThrust: (on: boolean, intensity: number) => void;
+  setAtmo: (drag: number) => void;
   setWarp: (on: boolean, intensity: number, pitch?: number) => void;
   warpJump: () => void;
   sonicBooms: (times?: readonly number[]) => void;
@@ -91,6 +92,11 @@ export function createAudio(): AudioApi {
   let sprayGain: GainNode | null = null;
   let pebbleFilter: BiquadFilterNode | null = null;
   let pebbleGain: GainNode | null = null;
+  let atmoHp: BiquadFilterNode | null = null;
+  let atmoLp: BiquadFilterNode | null = null;
+  let atmoGain: GainNode | null = null;
+  let atmoSprayLp: BiquadFilterNode | null = null;
+  let atmoSprayGain: GainNode | null = null;
   let whiteBuf: AudioBuffer | null = null;
   let voidIR: AudioBuffer | null = null;
   let muted = false;
@@ -213,6 +219,38 @@ export function createAudio(): AudioApi {
     pebbleFilter.connect(pebbleDull);
     pebbleDull.connect(pebbleGain);
     pebbleGain.connect(sfx);
+
+    // Hull wind: mid hiss + buffeting. Starts ~drag 0.1, dense near 0.4.
+    // Highpass keeps it out of the warp bass swell.
+    atmoHp = ctx.createBiquadFilter();
+    atmoHp.type = "highpass";
+    atmoHp.frequency.value = 320;
+    atmoHp.Q.value = 0.5;
+    atmoLp = ctx.createBiquadFilter();
+    atmoLp.type = "lowpass";
+    atmoLp.frequency.value = 1680;
+    atmoLp.Q.value = 0.5;
+    atmoGain = ctx.createGain();
+    atmoGain.gain.value = 0;
+    pinkSrc.connect(atmoHp);
+    atmoHp.connect(atmoLp);
+    atmoLp.connect(atmoGain);
+    atmoGain.connect(sfx);
+
+    const atmoSprayHp = ctx.createBiquadFilter();
+    atmoSprayHp.type = "highpass";
+    atmoSprayHp.frequency.value = 1800;
+    atmoSprayHp.Q.value = 0.5;
+    atmoSprayLp = ctx.createBiquadFilter();
+    atmoSprayLp.type = "lowpass";
+    atmoSprayLp.frequency.value = 3400;
+    atmoSprayLp.Q.value = 0.45;
+    atmoSprayGain = ctx.createGain();
+    atmoSprayGain.gain.value = 0;
+    spraySrc.connect(atmoSprayHp);
+    atmoSprayHp.connect(atmoSprayLp);
+    atmoSprayLp.connect(atmoSprayGain);
+    atmoSprayGain.connect(sfx);
   };
 
   const unlock = () => {
@@ -243,6 +281,27 @@ export function createAudio(): AudioApi {
       thrustGain.gain.setTargetAtTime(g, ctx.currentTime, 0.05);
       thrustFilter.frequency.setTargetAtTime(on ? 380 + intensity * 420 : 220, ctx.currentTime, 0.08);
       void thrustOn;
+    },
+    setAtmo(drag) {
+      if (!ctx || !atmoHp || !atmoLp || !atmoGain || !atmoSprayLp || !atmoSprayGain) return;
+      const t = ctx.currentTime;
+      const d = Math.max(0, drag);
+      const u = d <= 0.1 ? 0 : Math.min(1, (d - 0.1) / 0.32);
+      if (u <= 0.001) {
+        atmoGain.gain.setTargetAtTime(0, t, 0.08);
+        atmoSprayGain.gain.setTargetAtTime(0, t, 0.08);
+        return;
+      }
+      const buffetAmt = 0.08 + u * 0.16;
+      const b1 = 0.5 + 0.5 * Math.sin(t * 22.4);
+      const b2 = 0.5 + 0.5 * Math.sin(t * 41.7 + 1.3);
+      const buffet = 1 - buffetAmt + buffetAmt * (0.35 + 0.65 * b1 * b2);
+      const spray = Math.max(0, (u - 0.45) / 0.55);
+      atmoGain.gain.setTargetAtTime((0.027 + u * 0.066) * buffet, t, 0.06);
+      atmoSprayGain.gain.setTargetAtTime(spray * spray * 0.023 * buffet, t, 0.08);
+      atmoHp.frequency.setTargetAtTime(320 - u * 140, t, 0.12);
+      atmoLp.frequency.setTargetAtTime(1680 - u * 1080, t, 0.1);
+      atmoSprayLp.frequency.setTargetAtTime(3200 - spray * 1400, t, 0.12);
     },
     setWarp(on, intensity, pitch) {
       if (
