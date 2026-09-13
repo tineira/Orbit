@@ -32,12 +32,17 @@ import {
   STAR_ATMO_FACTOR,
   transitBeat,
   transitBoomAt,
+  transitLaunchU,
   warpApproach,
   warpCharge,
+  flightStarStreak,
   WARP_FLASH,
+  WARP_FLIGHT_STREAK,
+  WARP_LAUNCH,
   WARP_FX_SPEED,
   WARP_JUMP_SPEED,
   WARP_RUMBLE_REF_SPEED,
+  WARP_TUNNEL_STREAK,
 } from "./world";
 
 type DrawOpts = {
@@ -343,7 +348,7 @@ const BRIGHT_LAYER = makeStarLayer(36, 0.06, 1.45, 0.82, 2000, 90);
 function chartFade(sim: Sim) {
   if (sim.warpLost) return 0;
   if (sim.phase !== "transit" || sim.transitPunched) return 1;
-  const t = Math.min(1, sim.transitAge / 0.38);
+  const t = Math.min(1, sim.transitAge / WARP_LAUNCH);
   return (1 - t) * (1 - t);
 }
 
@@ -365,15 +370,13 @@ function warpRumbleStrength(sim: Sim) {
 function starStreak(sim: Sim | undefined) {
   if (!sim || sim.reducedMotion) return 0;
   if (sim.warpLost || (sim.phase === "transit" && !sim.transitPunched)) {
-    return 90 + Math.min(1, sim.transitAge / 0.4) * 80;
+    const u = sim.warpLost ? 1 : transitLaunchU(sim.transitAge);
+    return WARP_FLIGHT_STREAK + u * (WARP_TUNNEL_STREAK - WARP_FLIGHT_STREAK);
   }
   if (sim.phase === "transit" && transitBeat(sim.transitAge, sim.reducedMotion) === "streak") {
     return 28;
   }
-  const a = sim.warpApproach;
-  const c = sim.warpCharge;
-  if (a <= 0 && c <= 0) return 0;
-  return a * 8 + c * 36 + c * c * 70;
+  return flightStarStreak(Math.hypot(sim.ship.vx, sim.ship.vy));
 }
 
 const STAR_PAR_NEAR = 0.06;
@@ -1409,29 +1412,41 @@ function drawWarpRings(ctx: CanvasRenderingContext2D, sim: Sim) {
     const u = Math.min(1, ring.age / ring.life);
     const fade = (1 - u) * (1 - u);
     const hot = Math.max(0, 1 - u / 0.28);
-    const r = Math.round(255 * hot + 70 * (1 - hot));
-    const gch = Math.round(252 * hot + 160 * (1 - hot));
-    const b = Math.round(245 * hot + 255 * (1 - hot));
-    const flash = 0.55 * hot;
-    const rad = 22 + u * 560;
+    const launch = ring.kind === "launch";
+    const r = launch
+      ? Math.round(255 * hot + 214 * (1 - hot))
+      : Math.round(255 * hot + 70 * (1 - hot));
+    const gch = launch
+      ? Math.round(196 * hot + 52 * (1 - hot))
+      : Math.round(252 * hot + 160 * (1 - hot));
+    const b = launch
+      ? Math.round(72 * hot + 16 * (1 - hot))
+      : Math.round(245 * hot + 255 * (1 - hot));
+    const flash = launch ? 0.22 * hot : 0.55 * hot;
+    const rad = launch ? 14 + u * 250 : 22 + u * 560;
     const ox = (hash(ring.seed * 1.3) - 0.5) * rad * 0.08;
     const oy = (hash(ring.seed * 2.1) - 0.5) * rad * 0.08;
     const cx = ring.x + ox;
     const cy = ring.y + oy;
+    const core = launch ? 0.04 + flash * 0.22 : 0.05 + flash * 0.7;
+    const mid = launch ? 0.06 + flash * 0.14 : 0.08 + flash * 0.25;
+    const rim = launch ? 0.38 + flash * 0.55 : 0.4 + flash;
     const grad = ctx.createRadialGradient(cx, cy, rad * 0.12, cx, cy, rad * 1.12);
-    grad.addColorStop(0, `rgba(${r}, ${gch}, ${b}, ${(0.05 + flash * 0.7) * fade})`);
-    grad.addColorStop(0.58, `rgba(${r}, ${gch}, ${b}, ${(0.08 + flash * 0.25) * fade})`);
-    grad.addColorStop(0.84, `rgba(${r}, ${gch}, ${b}, ${(0.4 + flash) * fade})`);
+    grad.addColorStop(0, `rgba(${r}, ${gch}, ${b}, ${core * fade})`);
+    grad.addColorStop(0.58, `rgba(${r}, ${gch}, ${b}, ${mid * fade})`);
+    grad.addColorStop(0.84, `rgba(${r}, ${gch}, ${b}, ${rim * fade})`);
     grad.addColorStop(1, `rgba(${r}, ${gch}, ${b}, 0)`);
     ctx.fillStyle = grad;
     warpGasPath(ctx, cx, cy, rad, ring.seed, ring.age, 1);
     ctx.fill();
-    ctx.strokeStyle = `rgba(${r}, ${gch}, ${b}, ${(0.72 + flash) * fade})`;
-    ctx.lineWidth = 6 + 16 * (1 - u);
+    ctx.strokeStyle = `rgba(${r}, ${gch}, ${b}, ${(launch ? 0.82 : 0.72 + flash) * fade})`;
+    ctx.lineWidth = launch ? 3.5 + 8 * (1 - u) : 6 + 16 * (1 - u);
     warpGasPath(ctx, cx, cy, rad, ring.seed, ring.age, 0.94);
     ctx.stroke();
-    ctx.strokeStyle = `rgba(255, 252, 248, ${(0.18 + flash * 0.45) * fade})`;
-    ctx.lineWidth = 2 + 3 * hot;
+    ctx.strokeStyle = launch
+      ? `rgba(255, 214, 120, ${(0.22 + flash * 0.35) * fade})`
+      : `rgba(255, 252, 248, ${(0.18 + flash * 0.45) * fade})`;
+    ctx.lineWidth = launch ? 1.4 + 2 * hot : 2 + 3 * hot;
     warpGasPath(ctx, cx, cy, rad, ring.seed + 2.2, ring.age * 1.15, 0.68);
     ctx.stroke();
   }

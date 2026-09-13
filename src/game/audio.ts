@@ -5,7 +5,7 @@ type AudioApi = {
   setThrust: (on: boolean, intensity: number) => void;
   setWarp: (on: boolean, intensity: number, pitch?: number) => void;
   warpJump: () => void;
-  sonicBooms: () => void;
+  sonicBooms: (times?: readonly number[]) => void;
   bump: (amount: number) => void;
   land: () => void;
   crash: () => void;
@@ -30,6 +30,7 @@ export function createAudio(): AudioApi {
   let warpAirFilter: BiquadFilterNode | null = null;
   let warpAirGain: GainNode | null = null;
   let whiteBuf: AudioBuffer | null = null;
+  let voidIR: AudioBuffer | null = null;
   let muted = false;
   let thrustOn = false;
 
@@ -119,7 +120,10 @@ export function createAudio(): AudioApi {
   const onVis = () => {
     if (!document.hidden) unlock();
   };
+  const onGesture = () => unlock();
   document.addEventListener("visibilitychange", onVis);
+  window.addEventListener("pointerdown", onGesture);
+  window.addEventListener("keydown", onGesture);
 
   return {
     unlock,
@@ -166,62 +170,102 @@ export function createAudio(): AudioApi {
       }
     },
     warpJump() {
-      if (!ctx || !sfx || !noiseSrc) return;
+      ensure();
+      if (!ctx || !sfx || !whiteBuf) return;
+      void ctx.resume();
       const t = ctx.currentTime;
-      const rise = ctx.createOscillator();
-      const riseG = ctx.createGain();
-      rise.type = "sine";
-      rise.frequency.setValueAtTime(240, t);
-      rise.frequency.exponentialRampToValueAtTime(1680, t + 0.2);
-      riseG.gain.setValueAtTime(0.1, t);
-      riseG.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
-      rise.connect(riseG);
-      riseG.connect(sfx);
-      rise.start(t);
-      rise.stop(t + 0.34);
-
-      const bp = ctx.createBiquadFilter();
-      bp.type = "bandpass";
-      bp.Q.value = 0.7;
-      bp.frequency.setValueAtTime(500, t);
-      bp.frequency.exponentialRampToValueAtTime(3200, t + 0.22);
-      const airG = ctx.createGain();
-      airG.gain.setValueAtTime(0.16, t);
-      airG.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
-      noiseSrc.connect(bp);
-      bp.connect(airG);
-      airG.connect(sfx);
-
-      const thump = ctx.createOscillator();
-      const thumpG = ctx.createGain();
-      thump.type = "sine";
-      thump.frequency.setValueAtTime(78, t);
-      thump.frequency.exponentialRampToValueAtTime(28, t + 0.3);
-      thumpG.gain.setValueAtTime(0.14, t);
-      thumpG.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
-      thump.connect(thumpG);
-      thumpG.connect(sfx);
-      thump.start(t);
-      thump.stop(t + 0.36);
-
-      const stopAt = t + 0.45;
+      const nodes: AudioNode[] = [];
       const tidy = () => {
-        try {
-          noiseSrc?.disconnect(bp);
-        } catch {
-          /* already gone */
+        for (const n of nodes) {
+          try {
+            n.disconnect();
+          } catch {
+            /* already gone */
+          }
         }
-        bp.disconnect();
-        airG.disconnect();
-        rise.disconnect();
-        riseG.disconnect();
-        thump.disconnect();
-        thumpG.disconnect();
       };
-      rise.onended = tidy;
-      window.setTimeout(tidy, (stopAt - t) * 1000 + 40);
+
+      if (!voidIR) {
+        const sec = 2.7;
+        const len = Math.floor(ctx.sampleRate * sec);
+        voidIR = ctx.createBuffer(2, len, ctx.sampleRate);
+        for (let ch = 0; ch < 2; ch++) {
+          const d = voidIR.getChannelData(ch);
+          for (let i = 0; i < len; i++) {
+            const u = i / len;
+            d[i] = (Math.random() * 2 - 1) * Math.pow(1 - u, 2.6) * (ch === 0 ? 1 : 0.88);
+          }
+        }
+      }
+
+      const hit = ctx.createGain();
+      hit.gain.value = 1;
+      const dry = ctx.createGain();
+      dry.gain.value = 0.95;
+      hit.connect(dry);
+      dry.connect(sfx);
+      nodes.push(hit, dry);
+
+      const conv = ctx.createConvolver();
+      conv.buffer = voidIR;
+      const wetLp = ctx.createBiquadFilter();
+      wetLp.type = "lowpass";
+      wetLp.frequency.value = 1700;
+      wetLp.Q.value = 0.5;
+      const wet = ctx.createGain();
+      wet.gain.value = 0.82;
+      hit.connect(conv);
+      conv.connect(wetLp);
+      wetLp.connect(wet);
+      wet.connect(sfx);
+      nodes.push(conv, wetLp, wet);
+
+      const sub = ctx.createOscillator();
+      const subG = ctx.createGain();
+      sub.type = "sine";
+      sub.frequency.setValueAtTime(46, t);
+      sub.frequency.exponentialRampToValueAtTime(16, t + 0.7);
+      subG.gain.setValueAtTime(0.48, t);
+      subG.gain.exponentialRampToValueAtTime(0.0001, t + 0.78);
+      sub.connect(subG);
+      subG.connect(hit);
+      sub.start(t);
+      sub.stop(t + 0.8);
+      nodes.push(sub, subG);
+
+      const crack = ctx.createBufferSource();
+      crack.buffer = whiteBuf;
+      const crackBp = ctx.createBiquadFilter();
+      crackBp.type = "bandpass";
+      crackBp.frequency.value = 780;
+      crackBp.Q.value = 0.55;
+      const crackG = ctx.createGain();
+      crackG.gain.setValueAtTime(0.0001, t);
+      crackG.gain.exponentialRampToValueAtTime(0.62, t + 0.008);
+      crackG.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+      crack.connect(crackBp);
+      crackBp.connect(crackG);
+      crackG.connect(hit);
+      crack.start(t);
+      crack.stop(t + 0.24);
+      nodes.push(crack, crackBp, crackG);
+
+      const snap = ctx.createOscillator();
+      const snapG = ctx.createGain();
+      snap.type = "triangle";
+      snap.frequency.setValueAtTime(520, t);
+      snap.frequency.exponentialRampToValueAtTime(90, t + 0.35);
+      snapG.gain.setValueAtTime(0.16, t);
+      snapG.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+      snap.connect(snapG);
+      snapG.connect(hit);
+      snap.start(t);
+      snap.stop(t + 0.42);
+      nodes.push(snap, snapG);
+
+      window.setTimeout(tidy, 2900);
     },
-    sonicBooms() {
+    sonicBooms(times: readonly number[] = WARP_BOOM_TIMES) {
       ensure();
       if (!ctx || !sfx || !whiteBuf) return;
       void ctx.resume();
@@ -282,9 +326,15 @@ export function createAudio(): AudioApi {
           rg.disconnect();
         };
       };
-      boom(WARP_BOOM_TIMES[0], 0.78, 820, 118);
-      boom(WARP_BOOM_TIMES[1], 0.64, 1100, 96);
-      boom(WARP_BOOM_TIMES[2], 0.88, 700, 132);
+      const hits: [number, number, number][] = [
+        [0.78, 820, 118],
+        [0.64, 1100, 96],
+        [0.88, 700, 132],
+      ];
+      for (let i = 0; i < times.length; i++) {
+        const spec = hits[i] ?? hits[hits.length - 1]!;
+        boom(times[i]!, spec[0], spec[1], spec[2]);
+      }
     },
     bump(amount) {
       if (!ctx || !sfx) return;
@@ -371,6 +421,8 @@ export function createAudio(): AudioApi {
     },
     destroy() {
       document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pointerdown", onGesture);
+      window.removeEventListener("keydown", onGesture);
       try {
         noiseSrc?.stop();
       } catch {

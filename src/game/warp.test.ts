@@ -5,9 +5,12 @@ import {
   headingVec,
   isGhostBody,
   lockedNearby,
+  playFlagsFromSearch,
+  debugWarpDir,
   pickWarpArrival,
   SHIP_HULL,
   transitBeat,
+  flightStarStreak,
   warpApproach,
   warpBrakeTravel,
   warpCharge,
@@ -15,6 +18,10 @@ import {
   WARP_AIM_DEG,
   WARP_BRAKE,
   WARP_BRAKE_SPEED,
+  WARP_FLIGHT_STREAK,
+  WARP_LAUNCH,
+  WARP_STREAK,
+  WARP_TUNNEL,
 } from "./world.ts";
 
 function rngFrom(seed: number) {
@@ -52,6 +59,25 @@ test("warp spool keeps rising through 1300 and peaks at the 1500 jump", () => {
   assert.equal(warpSpool(1500), 1);
 });
 
+test("play flags parse warp speed and target lock from the query", () => {
+  assert.equal(playFlagsFromSearch("").warp, undefined);
+  assert.equal(playFlagsFromSearch("?twins=on").warp, undefined);
+  assert.equal(playFlagsFromSearch("?warp=1300").warp, 1300);
+  assert.equal(playFlagsFromSearch("?warp=1300").target, true);
+  assert.equal(playFlagsFromSearch("?warp=1300&target=on").target, true);
+  assert.equal(playFlagsFromSearch("?warp=1450&target=off").target, false);
+  assert.equal(playFlagsFromSearch("?warp=nope").warp, undefined);
+});
+
+test("debug warp dir locks a nearby chart or misses them", () => {
+  const n = { angle: 0.4, color: "#fff", pal: ["#fff", "#fff", "#fff"] as [string, string, string], name: "Aim" };
+  const on = debugWarpDir([n], true);
+  const lock = headingVec(n.angle);
+  assert.ok(on.x * lock.x + on.y * lock.y > 0.999);
+  const off = debugWarpDir([n], false);
+  assert.equal(lockedNearby(off.x, off.y, [n], WARP_AIM_DEG + 6), null);
+});
+
 test("warp heading lock is a tight cone", () => {
   const pal: [string, string, string] = ["#fff", "#000", "rgba(0,0,0,0)"];
   const n = { angle: 0, color: "#fff", pal, name: "Ember" };
@@ -63,9 +89,21 @@ test("warp heading lock is a tight cone", () => {
 
 test("transit is tunnel, then a streak, then brake through the last boom", () => {
   assert.equal(transitBeat(0, false), "tunnel");
-  assert.equal(transitBeat(1.0, false), "tunnel");
-  assert.equal(transitBeat(1.2, false), "streak");
-  assert.equal(transitBeat(1.8, false), "brake");
+  assert.equal(transitBeat(WARP_TUNNEL - 0.05, false), "tunnel");
+  assert.equal(transitBeat(WARP_TUNNEL + 0.05, false), "streak");
+  assert.equal(transitBeat(WARP_TUNNEL + WARP_STREAK + 0.05, false), "brake");
+});
+
+test("transit launch ramps then holds full warp a few seconds before punch", () => {
+  assert.ok(WARP_LAUNCH > 1.1);
+  assert.ok(WARP_TUNNEL - WARP_LAUNCH >= 2.8);
+});
+
+test("in-flight star streaks at jump match the old 1050 look", () => {
+  assert.equal(flightStarStreak(800), 0);
+  assert.equal(flightStarStreak(1500), WARP_FLIGHT_STREAK);
+  assert.ok(flightStarStreak(1150) > 0 && flightStarStreak(1150) < WARP_FLIGHT_STREAK);
+  assert.ok(flightStarStreak(1450) < WARP_FLIGHT_STREAK * 1.01);
 });
 
 test("warp brake travel matches the cubic ease integral", () => {

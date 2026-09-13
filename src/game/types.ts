@@ -86,6 +86,7 @@ export type WarpRing = {
   age: number;
   life: number;
   seed: number;
+  kind: "launch" | "arrive";
 };
 
 export type SolarFlare = {

@@ -50,7 +50,17 @@ export const WARP_AIM_DEG = 0.5;
 export const WARP_BRAKE_SPEED = 88;
 export const WARP_STREAK_ZOOM = 0.3;
 export const WARP_STREAK_SPEED_CAP = 2400;
-export const WARP_TUNNEL = 1.05;
+/** In-flight star lines at jump speed match the old ~1050 look. The tunnel does the rest. */
+export const WARP_FLIGHT_STREAK = 12.3;
+/** Extra starfield rush at jump, same old-1050 feel (mul = 1 + spool × this). */
+export const WARP_FLIGHT_RUSH = 0.95;
+export const WARP_TUNNEL_STREAK = 170;
+/** Launch ramp: flight look → full tunnel. Rapid, but long enough to read. */
+export const WARP_LAUNCH = 1.35;
+/** One ignition shock at commit. Arrival still uses the three brake booms. */
+export const WARP_LAUNCH_BOOMS = [0] as const;
+/** Punch after the launch plus a few seconds of full warp. */
+export const WARP_TUNNEL = 4.5;
 export const WARP_STREAK = 0.7;
 /** Delays from the first boom; last entry is the arrival (final speed + control). */
 export const WARP_BOOM_TIMES = [0, 0.48, 1.02] as const;
@@ -100,6 +110,17 @@ export function warpSpool(speed: number) {
   if (speed <= WARP_FX_SPEED) return 0;
   if (speed >= WARP_JUMP_SPEED) return 1;
   return (speed - WARP_FX_SPEED) / (WARP_JUMP_SPEED - WARP_FX_SPEED);
+}
+
+/** In-flight star line length. Peaks at jump looking like the old 1050 spool. */
+export function flightStarStreak(speed: number) {
+  return warpSpool(speed) * WARP_FLIGHT_STREAK;
+}
+
+/** 0→1 over the launch ramp. Smoothstep so the accel reads. */
+export function transitLaunchU(age: number) {
+  const t = Math.max(0, Math.min(1, age / WARP_LAUNCH));
+  return t * t * (3 - 2 * t);
 }
 
 /** Distance covered during the arrival brake, matching stepTransit's cubic ease. */
@@ -672,6 +693,37 @@ export function chartFlagsFromSearch(search = ""): ChartFlags {
   if (t === "0" || t === "off" || t === "false" || t === "no") return {};
   if (t === "tight" || t === "close") return { twins: "tight" };
   return { twins: "on" };
+}
+
+export type PlayFlags = {
+  warp?: number;
+  target: boolean;
+};
+
+/** `?warp=1300&target=on` starts in flight at that speed, locked or not. */
+export function playFlagsFromSearch(search = ""): PlayFlags {
+  const raw = search.startsWith("?") ? search.slice(1) : search;
+  const q = new URLSearchParams(raw);
+  const warpRaw = q.get("warp");
+  if (warpRaw == null || warpRaw.trim() === "") return { target: true };
+  const warp = Number(warpRaw);
+  if (!Number.isFinite(warp) || warp <= 0) return { target: true };
+  const t = (q.get("target") ?? "on").trim().toLowerCase();
+  const target = !(t === "0" || t === "off" || t === "false" || t === "no");
+  return { warp, target };
+}
+
+/** Travel dir for `?warp=` : lock the first nearby chart, or miss them all. */
+export function debugWarpDir(nearby: NearbyHeading[], target: boolean) {
+  if (target) {
+    const n = nearby[0];
+    return n ? headingVec(n.angle) : { x: 0, y: -1 };
+  }
+  for (let i = 0; i < 36; i++) {
+    const v = headingVec((i * Math.PI * 2) / 36);
+    if (!lockedNearby(v.x, v.y, nearby, WARP_AIM_DEG + 6)) return v;
+  }
+  return headingVec(Math.PI / 5);
 }
 
 function makeSystem(

@@ -10,6 +10,7 @@ import {
   listLagrangePoints,
   predictPlanetPaths,
   launchSim,
+  applyDebugWarp,
   rebootSim,
   setUserZoom,
   simViewPrefs,
@@ -567,6 +568,9 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
             : warpSpool(Math.hypot(sim.ship.vx, sim.ship.vy));
       audio.setWarp(spool > 0.02, spool);
     }
+    if (sim.phase === "transit" && prevPhase !== "transit") {
+      audio.warpJump();
+    }
     prevPunched = sim.transitPunched;
     if (sim.transitBoomed && !prevBoomed) audio.sonicBooms();
     prevBoomed = sim.transitBoomed;
@@ -614,6 +618,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       pendingPrefs = null;
     }
     attachProbe(sim);
+    applyDebugWarp(sim);
     last = performance.now();
     acc = 0;
     prevLanded = sim.landedId;

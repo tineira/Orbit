@@ -38,6 +38,8 @@ import {
   getMinimapWorldR,
   getNearbyHeadings,
   lockedNearby,
+  playFlagsFromSearch,
+  debugWarpDir,
   pickLostCopy,
   WARP_AIM_DEG,
   RETRO_FORCE,
@@ -49,6 +51,7 @@ import {
   TURN_RATE,
   WARP_BAR_SPEED,
   WARP_BOOM_TIMES,
+  WARP_LAUNCH_BOOMS,
   WARP_BRAKE,
   WARP_BRAKE_SPEED,
   WARP_JUMP_SPEED,
@@ -64,8 +67,11 @@ import {
   transitPunchAt,
   warpCharge,
   warpApproach,
+  warpSpool,
   warpBrakeTravel,
   pickWarpArrival,
+  transitLaunchU,
+  WARP_FLIGHT_RUSH,
 } from "./world";
 
 export type Sim = {
@@ -422,6 +428,7 @@ function punchWarp(sim: Sim, settle = false) {
     sim.ship.vx = dirx * WARP_BRAKE_SPEED;
     sim.ship.vy = diry * WARP_BRAKE_SPEED;
     sim.transitBoomed = true;
+    sim.transitBoomN = 0;
     sim.camera.zoomAuto = 0.86;
   } else {
     sim.ship.x = ax - dirx * span;
@@ -434,6 +441,7 @@ function punchWarp(sim: Sim, settle = false) {
   sim.ship.thrusting = false;
   sim.ship.reverse = false;
   sim.transitPunched = true;
+  sim.transitBoomN = 0;
   const near = gravityAt(sim.ship.x, sim.ship.y, sim.planets, sim.gravityScale);
   sim.nearest = near.nearest;
   sim.altitude = near.dist - near.nearest.radius;
@@ -452,6 +460,16 @@ function stepTransit(sim: Sim, dt: number) {
   }
   const punchAt = transitPunchAt(sim.reducedMotion);
   const boomAt = transitBoomAt(sim.reducedMotion);
+  if (!sim.transitPunched && !sim.reducedMotion) {
+    const nextAge = sim.transitAge + dt;
+    while (
+      sim.transitBoomN < WARP_LAUNCH_BOOMS.length &&
+      nextAge >= WARP_LAUNCH_BOOMS[sim.transitBoomN]!
+    ) {
+      pushWarpRing(sim, 0.4, "launch");
+      sim.transitBoomN += 1;
+    }
+  }
   if (!sim.transitPunched && sim.transitAge + dt >= punchAt) punchWarp(sim);
   if (sim.transitPunched && !sim.transitBoomed && sim.transitAge + dt >= boomAt) {
     sim.transitBoomed = true;
@@ -465,14 +483,7 @@ function stepTransit(sim: Sim, dt: number) {
       sim.transitBoomN < WARP_BOOM_TIMES.length &&
       since >= WARP_BOOM_TIMES[sim.transitBoomN]!
     ) {
-      sim.warpRings.push({
-        x: ship.x,
-        y: ship.y,
-        age: 0,
-        life: 1.7,
-        seed: Math.random() * 64,
-      });
-      sim.camera.trauma = Math.max(sim.camera.trauma, 0.5);
+      pushWarpRing(sim, 0.5, "arrive");
       sim.transitBoomN += 1;
     }
   }
@@ -1128,6 +1139,27 @@ export function launchSim(sim: Sim) {
   if (sim.phase !== "title") return;
   if (sim.landedId) takeoff(sim);
   else sim.phase = "flight";
+}
+
+/** QA: `?warp=1300&target=on|off` dumps the ship into flight at that speed. */
+export function applyDebugWarp(sim: Sim, search = typeof window !== "undefined" ? window.location.search : "") {
+  const flags = playFlagsFromSearch(search);
+  if (flags.warp == null) return;
+  const dir = debugWarpDir(sim.nearby, flags.target);
+  const r = Math.max(getMinimapWorldR() * 1.4, 16000);
+  sim.ship.x = dir.x * r;
+  sim.ship.y = dir.y * r;
+  sim.ship.vx = dir.x * flags.warp;
+  sim.ship.vy = dir.y * flags.warp;
+  sim.ship.yaw = Math.atan2(-dir.x, -dir.y);
+  sim.ship.thrusting = false;
+  sim.ship.reverse = false;
+  sim.landedId = null;
+  sim.phase = "flight";
+  sim.camera.x = sim.ship.x;
+  sim.camera.y = sim.ship.y;
+  sim.warpCharge = warpCharge(flags.warp);
+  sim.warpApproach = warpApproach(flags.warp);
 }
 
 export function takeoff(sim: Sim) {
@@ -2482,6 +2514,18 @@ export function setUserZoom(sim: Sim, value: number) {
   sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
 }
 
+function pushWarpRing(sim: Sim, trauma = 0.5, kind: WarpRing["kind"] = "arrive") {
+  sim.warpRings.push({
+    x: sim.ship.x,
+    y: sim.ship.y,
+    age: 0,
+    life: kind === "launch" ? 1.15 : 1.7,
+    seed: Math.random() * 64,
+    kind,
+  });
+  sim.camera.trauma = Math.max(sim.camera.trauma, trauma);
+}
+
 /** Apparent starfield velocity: real ship motion plus a warp rush that ramps hard toward jump. */
 function starfieldRush(sim: Sim): { x: number; y: number } {
   const s = sim.ship;
@@ -2491,14 +2535,13 @@ function starfieldRush(sim: Sim): { x: number; y: number } {
   const uy = s.vy / sp;
   if (sim.reducedMotion) return { x: s.vx, y: s.vy };
   if (sim.warpLost || (sim.phase === "transit" && !sim.transitPunched)) {
-    const t = sim.warpLost ? 1 : Math.min(1, sim.transitAge / 0.5);
-    const rush = 2800 + t * t * 6400;
+    const u = sim.warpLost ? 1 : transitLaunchU(sim.transitAge);
+    const rush = 1600 + u * u * 7600;
     return { x: ux * rush, y: uy * rush };
   }
   if (sim.warpApproach > 0 || sim.warpCharge > 0) {
-    const a = sim.warpApproach;
-    const c = sim.warpCharge;
-    const mul = 1 + a * 0.6 + c * 3.4 + c * c * 14;
+    const t = warpSpool(sp);
+    const mul = 1 + t * WARP_FLIGHT_RUSH;
     return { x: s.vx * mul, y: s.vy * mul };
   }
   return { x: s.vx, y: s.vy };
