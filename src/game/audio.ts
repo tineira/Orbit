@@ -1,5 +1,62 @@
 import { WARP_BOOM_TIMES } from "./world";
 
+function fillPink(data: Float32Array) {
+  let b0 = 0;
+  let b1 = 0;
+  let b2 = 0;
+  let b3 = 0;
+  let b4 = 0;
+  let b5 = 0;
+  let b6 = 0;
+  for (let i = 0; i < data.length; i++) {
+    const white = Math.random() * 2 - 1;
+    b0 = 0.99886 * b0 + white * 0.0555179;
+    b1 = 0.99332 * b1 + white * 0.0750759;
+    b2 = 0.969 * b2 + white * 0.153852;
+    b3 = 0.8665 * b3 + white * 0.3104856;
+    b4 = 0.55 * b4 + white * 0.5329522;
+    b5 = -0.7616 * b5 - white * 0.016898;
+    data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
+    b6 = white * 0.115926;
+  }
+}
+
+function makePinkBuffer(ctx: AudioContext, seconds: number) {
+  const length = Math.floor(ctx.sampleRate * seconds);
+  const buf = ctx.createBuffer(2, length, ctx.sampleRate);
+  fillPink(buf.getChannelData(0));
+  fillPink(buf.getChannelData(1));
+  return buf;
+}
+
+/** Soft wet clacks — river stones, not a shaker. */
+function makePebbleBuffer(ctx: AudioContext, seconds: number) {
+  const sr = ctx.sampleRate;
+  const length = Math.floor(sr * seconds);
+  const buf = ctx.createBuffer(2, length, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = buf.getChannelData(ch);
+    let stone = 0;
+    let grit = 0;
+    for (let i = 0; i < length; i++) {
+      if (Math.random() < 5 / sr) stone = 0.28 + Math.random() * 0.38;
+      if (Math.random() < 8 / sr) grit = 0.04 + Math.random() * 0.08;
+      stone *= 0.9995;
+      grit *= 0.9988;
+      data[i] = (Math.random() * 2 - 1) * (stone + grit);
+    }
+  }
+  return buf;
+}
+
+function startLoop(ctx: AudioContext, buffer: AudioBuffer) {
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.loop = true;
+  src.start();
+  return src;
+}
+
 type AudioApi = {
   unlock: () => void;
   setThrust: (on: boolean, intensity: number) => void;
@@ -23,12 +80,17 @@ export function createAudio(): AudioApi {
   let noiseSrc: AudioBufferSourceNode | null = null;
   let warpSub: OscillatorNode | null = null;
   let warpSubGain: GainNode | null = null;
-  let warpSpool: OscillatorNode | null = null;
-  let warpSpoolGain: GainNode | null = null;
-  let warpScream: OscillatorNode | null = null;
-  let warpScreamGain: GainNode | null = null;
-  let warpAirFilter: BiquadFilterNode | null = null;
-  let warpAirGain: GainNode | null = null;
+  let pinkSrc: AudioBufferSourceNode | null = null;
+  let pebbleSrc: AudioBufferSourceNode | null = null;
+  let spraySrc: AudioBufferSourceNode | null = null;
+  let swellLp: BiquadFilterNode | null = null;
+  let swellGain: GainNode | null = null;
+  let swellLp2: BiquadFilterNode | null = null;
+  let swellGain2: GainNode | null = null;
+  let sprayLp: BiquadFilterNode | null = null;
+  let sprayGain: GainNode | null = null;
+  let pebbleFilter: BiquadFilterNode | null = null;
+  let pebbleGain: GainNode | null = null;
   let whiteBuf: AudioBuffer | null = null;
   let voidIR: AudioBuffer | null = null;
   let muted = false;
@@ -72,44 +134,85 @@ export function createAudio(): AudioApi {
     const white = whiteBuf.getChannelData(0);
     for (let i = 0; i < white.length; i++) white[i] = Math.random() * 2 - 1;
 
-    // Film hyperspace spool: sub pressure, rising tone, airy tunnel whoosh.
-    // No hull-rattle LFO — that reads as a car, not a jump.
+    // High-speed rush: ocean swell + river stones. No bandpass sweep, no
+    // rising tone — those two were the vacuum / hair-dryer.
     warpSub = ctx.createOscillator();
     warpSub.type = "sine";
-    warpSub.frequency.value = 32;
+    warpSub.frequency.value = 36;
     warpSubGain = ctx.createGain();
     warpSubGain.gain.value = 0;
     warpSub.connect(warpSubGain);
     warpSubGain.connect(sfx);
     warpSub.start();
 
-    warpSpool = ctx.createOscillator();
-    warpSpool.type = "sine";
-    warpSpool.frequency.value = 78;
-    warpSpoolGain = ctx.createGain();
-    warpSpoolGain.gain.value = 0;
-    warpSpool.connect(warpSpoolGain);
-    warpSpoolGain.connect(sfx);
-    warpSpool.start();
+    pinkSrc = startLoop(ctx, makePinkBuffer(ctx, 2.8));
+    pebbleSrc = startLoop(ctx, makePebbleBuffer(ctx, 3.6));
+    spraySrc = startLoop(ctx, whiteBuf);
 
-    warpScream = ctx.createOscillator();
-    warpScream.type = "triangle";
-    warpScream.frequency.value = 420;
-    warpScreamGain = ctx.createGain();
-    warpScreamGain.gain.value = 0;
-    warpScream.connect(warpScreamGain);
-    warpScreamGain.connect(sfx);
-    warpScream.start();
+    const swellHp = ctx.createBiquadFilter();
+    swellHp.type = "highpass";
+    swellHp.frequency.value = 55;
+    swellHp.Q.value = 0.5;
+    swellLp = ctx.createBiquadFilter();
+    swellLp.type = "lowpass";
+    swellLp.frequency.value = 260;
+    swellLp.Q.value = 0.5;
+    const swellGate = ctx.createBiquadFilter();
+    swellGate.type = "lowpass";
+    swellGate.frequency.value = 520;
+    swellGate.Q.value = 0.55;
+    swellGain = ctx.createGain();
+    swellGain.gain.value = 0;
+    pinkSrc.connect(swellHp);
+    swellHp.connect(swellLp);
+    swellLp.connect(swellGate);
+    swellGate.connect(swellGain);
+    swellGain.connect(sfx);
 
-    warpAirFilter = ctx.createBiquadFilter();
-    warpAirFilter.type = "bandpass";
-    warpAirFilter.frequency.value = 480;
-    warpAirFilter.Q.value = 0.85;
-    warpAirGain = ctx.createGain();
-    warpAirGain.gain.value = 0;
-    noiseSrc.connect(warpAirFilter);
-    warpAirFilter.connect(warpAirGain);
-    warpAirGain.connect(sfx);
+    const swellHp2 = ctx.createBiquadFilter();
+    swellHp2.type = "highpass";
+    swellHp2.frequency.value = 48;
+    swellHp2.Q.value = 0.5;
+    swellLp2 = ctx.createBiquadFilter();
+    swellLp2.type = "lowpass";
+    swellLp2.frequency.value = 200;
+    swellLp2.Q.value = 0.5;
+    swellGain2 = ctx.createGain();
+    swellGain2.gain.value = 0;
+    pinkSrc.connect(swellHp2);
+    swellHp2.connect(swellLp2);
+    swellLp2.connect(swellGain2);
+    swellGain2.connect(sfx);
+
+    const sprayHp = ctx.createBiquadFilter();
+    sprayHp.type = "highpass";
+    sprayHp.frequency.value = 420;
+    sprayHp.Q.value = 0.5;
+    sprayLp = ctx.createBiquadFilter();
+    sprayLp.type = "lowpass";
+    sprayLp.frequency.value = 900;
+    sprayLp.Q.value = 0.5;
+    sprayGain = ctx.createGain();
+    sprayGain.gain.value = 0;
+    spraySrc.connect(sprayHp);
+    sprayHp.connect(sprayLp);
+    sprayLp.connect(sprayGain);
+    sprayGain.connect(sfx);
+
+    pebbleFilter = ctx.createBiquadFilter();
+    pebbleFilter.type = "bandpass";
+    pebbleFilter.frequency.value = 420;
+    pebbleFilter.Q.value = 0.4;
+    const pebbleDull = ctx.createBiquadFilter();
+    pebbleDull.type = "lowpass";
+    pebbleDull.frequency.value = 800;
+    pebbleDull.Q.value = 0.5;
+    pebbleGain = ctx.createGain();
+    pebbleGain.gain.value = 0;
+    pebbleSrc.connect(pebbleFilter);
+    pebbleFilter.connect(pebbleDull);
+    pebbleDull.connect(pebbleGain);
+    pebbleGain.connect(sfx);
   };
 
   const unlock = () => {
@@ -146,27 +249,39 @@ export function createAudio(): AudioApi {
         !ctx ||
         !warpSub ||
         !warpSubGain ||
-        !warpSpool ||
-        !warpSpoolGain ||
-        !warpScream ||
-        !warpScreamGain ||
-        !warpAirFilter ||
-        !warpAirGain
+        !swellLp ||
+        !swellGain ||
+        !swellLp2 ||
+        !swellGain2 ||
+        !sprayLp ||
+        !sprayGain ||
+        !pebbleFilter ||
+        !pebbleGain
       )
         return;
       const t = ctx.currentTime;
       const vol = on ? Math.max(0, Math.min(1, intensity)) : 0;
       const c = Math.max(0, Math.min(1, pitch ?? intensity));
-      const late = Math.max(0, (c - 0.62) / 0.38);
-      warpSubGain.gain.setTargetAtTime(vol > 0 ? (0.028 + c * 0.055) * vol : 0, t, 0.07);
-      warpSpoolGain.gain.setTargetAtTime(vol > 0 ? (0.014 + c * 0.042) * vol : 0, t, 0.07);
-      warpScreamGain.gain.setTargetAtTime(vol > 0 ? late * late * 0.034 * vol : 0, t, 0.06);
-      warpAirGain.gain.setTargetAtTime(vol > 0 ? (0.01 + c * 0.08) * vol : 0, t, 0.07);
+      // Slow overlapping swells. Depth falls with speed so a full rush
+      // reads as a river, not a pulsing beach.
+      const motion = 0.36 * (1 - c * 0.55);
+      const w1 = 0.5 + 0.5 * Math.sin(t * (0.82 + c * 0.28));
+      const w2 = 0.5 + 0.5 * Math.sin(t * (0.53 + c * 0.18) + 2.05);
+      const w3 = 0.5 + 0.5 * Math.sin(t * (1.14 + c * 0.22) + 0.7);
+      const swellA = 1 - motion + motion * (0.45 + 0.55 * w1 * w2);
+      const swellB = 1 - motion + motion * (0.42 + 0.58 * w3 * (0.35 + 0.65 * w1));
+      const foam = Math.max(0.15, swellA * 1.12 - 0.12);
+      warpSubGain.gain.setTargetAtTime(vol > 0 ? (0.028 + c * 0.04) * vol : 0, t, 0.08);
+      swellGain.gain.setTargetAtTime(vol > 0 ? (0.18 + c * 0.22) * vol * swellA : 0, t, 0.1);
+      swellGain2.gain.setTargetAtTime(vol > 0 ? (0.12 + c * 0.16) * vol * swellB : 0, t, 0.11);
+      sprayGain.gain.setTargetAtTime(vol > 0 ? (0.012 + c * 0.028) * vol * foam : 0, t, 0.12);
+      pebbleGain.gain.setTargetAtTime(vol > 0 ? (0.01 + c * c * 0.028) * vol : 0, t, 0.1);
       if (vol > 0.001) {
-        warpSub.frequency.setTargetAtTime(28 + c * 22, t, 0.08);
-        warpSpool.frequency.setTargetAtTime(72 * Math.pow(2, c * 3.15), t, 0.08);
-        warpScream.frequency.setTargetAtTime(420 + late * 1280, t, 0.07);
-        warpAirFilter.frequency.setTargetAtTime(380 + c * 3200, t, 0.08);
+        warpSub.frequency.setTargetAtTime(34 + c * 12, t, 0.1);
+        swellLp.frequency.setTargetAtTime(180 + c * 120 + w1 * (40 + c * 50), t, 0.14);
+        swellLp2.frequency.setTargetAtTime(140 + c * 90 + w3 * (30 + c * 40), t, 0.16);
+        sprayLp.frequency.setTargetAtTime(720 + c * 220 + foam * 80, t, 0.14);
+        pebbleFilter.frequency.setTargetAtTime(360 + c * 220, t, 0.16);
       }
     },
     warpJump() {
@@ -425,13 +540,14 @@ export function createAudio(): AudioApi {
       window.removeEventListener("keydown", onGesture);
       try {
         noiseSrc?.stop();
+        pinkSrc?.stop();
+        pebbleSrc?.stop();
+        spraySrc?.stop();
       } catch {
         /* ignore */
       }
       try {
         warpSub?.stop();
-        warpSpool?.stop();
-        warpScream?.stop();
       } catch {
         /* ignore */
       }
