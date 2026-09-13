@@ -49,10 +49,22 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   ctx.fillRect(0, 0, cssW, cssH);
 
   const cam = sim.camera;
-  const shakeX = sim.reducedMotion ? 0 : (hash(performance.now() * 0.08) - 0.5) * cam.shake * 18;
+  const now = performance.now();
+  const warpRumble =
+    sim.reducedMotion || (sim.status !== "warp" && sim.phase !== "transit")
+      ? 0
+      : (sim.phase === "transit" ? 1 : sim.warpCharge);
+  const rumble = warpRumble * warpRumble;
+  const shakeX = sim.reducedMotion
+    ? 0
+    : (hash(now * 0.08) - 0.5) * cam.shake * 18 +
+      (hash(now * 0.62) - 0.5) * rumble * 5.5 +
+      (hash(now * 1.85) - 0.5) * rumble * 2.4;
   const shakeY = sim.reducedMotion
     ? 0
-    : (hash(performance.now() * 0.09 + 9) - 0.5) * cam.shake * 18;
+    : (hash(now * 0.09 + 9) - 0.5) * cam.shake * 18 +
+      (hash(now * 0.71 + 3) - 0.5) * rumble * 4.8 +
+      (hash(now * 1.6 + 5) - 0.5) * rumble * 2.1;
 
   if (!sim.showGravityGrid) drawStars(ctx, cam, cssW, cssH, shakeX, shakeY, sim);
   ctx.save();
@@ -248,8 +260,11 @@ function drawStarDot(
 
 function starStreak(sim: Sim | undefined) {
   if (!sim || sim.reducedMotion) return 0;
-  if (sim.phase === "transit") return 48;
-  if (sim.status === "warp") return 6 + sim.warpCharge * 28;
+  if (sim.phase === "transit") return 90 + Math.min(1, sim.transitAge / 0.4) * 70;
+  if (sim.status === "warp") {
+    const c = sim.warpCharge;
+    return 8 + c * 36 + c * c * 70;
+  }
   return 0;
 }
 
@@ -268,6 +283,8 @@ function drawStars(
   const sp = sim ? Math.hypot(sim.ship.vx, sim.ship.vy) : 0;
   const ux = sim && sp > 1e-6 ? sim.ship.vx / sp : 0;
   const uy = sim && sp > 1e-6 ? sim.ship.vy / sp : 0;
+  const driftX = cam.starDriftX ?? 0;
+  const driftY = cam.starDriftY ?? 0;
 
   const layers = [
     { n: 1400, par: 0.018, size: 0.5, a: 0.28, span: 2400 },
@@ -278,8 +295,8 @@ function drawStars(
 
   for (const layer of layers) {
     const { span } = layer;
-    const ox = cam.x * layer.par + sx * layer.par;
-    const oy = cam.y * layer.par + sy * layer.par;
+    const ox = (cam.x + driftX) * layer.par + sx * layer.par;
+    const oy = (cam.y + driftY) * layer.par + sy * layer.par;
     for (let i = 0; i < layer.n; i++) {
       const gx = hash(i * 19.17 + layer.par * 8) * span;
       const gy = hash(i * 47.3 + layer.par * 3) * span;
@@ -304,8 +321,8 @@ function drawStars(
   }
 
   const milky = { n: 1600, par: 0.022, span: 2600 };
-  const oxm = cam.x * milky.par + sx * milky.par;
-  const oym = cam.y * milky.par + sy * milky.par;
+  const oxm = (cam.x + driftX) * milky.par + sx * milky.par;
+  const oym = (cam.y + driftY) * milky.par + sy * milky.par;
   const ca = Math.cos(-0.48);
   const sa = Math.sin(-0.48);
   for (let i = 0; i < milky.n; i++) {
@@ -317,14 +334,27 @@ function drawStars(
     const x = wrapSpan(gx - oxm, milky.span) + cssW / 2 - milky.span / 2;
     const y = wrapSpan(gy - oym, milky.span) + cssH / 2 - milky.span / 2;
     const mag = hash(i * 4.6);
-    drawStarDot(ctx, x, y, 0.4 + mag * 0.55, starRgb(i + 400), 0.14 + mag * 0.24);
+    const rgb = starRgb(i + 400);
+    const a = 0.14 + mag * 0.24;
+    const size = 0.4 + mag * 0.55;
+    if (streak > 0.5) {
+      ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`;
+      ctx.lineWidth = Math.max(0.55, size);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(x - ux * streak * 0.55, y - uy * streak * 0.55);
+      ctx.lineTo(x + ux * streak * 0.08, y + uy * streak * 0.08);
+      ctx.stroke();
+    } else {
+      drawStarDot(ctx, x, y, size, rgb, a);
+    }
   }
 
   const brights = 36;
   const spanB = 2000;
   const parB = 0.06;
-  const oxb = cam.x * parB + sx * parB;
-  const oyb = cam.y * parB + sy * parB;
+  const oxb = (cam.x + driftX) * parB + sx * parB;
+  const oyb = (cam.y + driftY) * parB + sy * parB;
   for (let i = 0; i < brights; i++) {
     const gx = hash(i * 13.7 + 2) * spanB;
     const gy = hash(i * 29.1 + 4) * spanB;
@@ -332,14 +362,24 @@ function drawStars(
     const y = wrapSpan(gy - oyb, spanB) + cssH / 2 - spanB / 2;
     const rgb = starRgb(i + 90);
     const size = 1.25 + hash(i * 6.2) * 0.55;
-    ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.08)`;
-    ctx.beginPath();
-    ctx.arc(x, y, size * 1.6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.82)`;
-    ctx.beginPath();
-    ctx.arc(x, y, size, 0, Math.PI * 2);
-    ctx.fill();
+    if (streak > 0.5) {
+      ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.7)`;
+      ctx.lineWidth = size;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(x - ux * streak * 1.15, y - uy * streak * 1.15);
+      ctx.lineTo(x + ux * streak * 0.2, y + uy * streak * 0.2);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.08)`;
+      ctx.beginPath();
+      ctx.arc(x, y, size * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.82)`;
+      ctx.beginPath();
+      ctx.arc(x, y, size, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   ctx.restore();
@@ -1164,12 +1204,7 @@ const LOCK_LABEL_GAP = 4;
 const LOCK_LABEL_PAD_X = 3;
 const LOCK_LABEL_IDLE = "rgba(138, 141, 150, 0.78)";
 
-function lockBarColor(remaining: number, healthy: string, charge = false) {
-  if (charge) {
-    if (remaining < 0.34) return "#5c5f68";
-    if (remaining < 0.72) return "#b7c0cc";
-    return healthy;
-  }
+function lockBarColor(remaining: number, healthy: string) {
   if (remaining > LOCK_BAR_CAUTION) return healthy;
   if (remaining > LOCK_BAR_WARN) return "#c4a05a";
   return "#c45c4a";
@@ -1177,12 +1212,19 @@ function lockBarColor(remaining: number, healthy: string, charge = false) {
 
 function lockLabelColor(remaining: number, charge = false) {
   if (charge) {
-    if (remaining < 0.34) return LOCK_LABEL_IDLE;
-    if (remaining < 0.72) return "#b7c0cc";
-    return "#7d9b86";
+    if (remaining < 0.45) return LOCK_LABEL_IDLE;
+    if (remaining < 0.72) return "#c4a05a";
+    return "#c45c4a";
   }
   if (remaining > LOCK_BAR_CAUTION) return LOCK_LABEL_IDLE;
   if (remaining > LOCK_BAR_WARN) return "#c4a05a";
+  return "#c45c4a";
+}
+
+function warpPipColor(index: number, pips: number) {
+  const t = (index + 1) / pips;
+  if (t < 0.45) return "#8a8d96";
+  if (t < 0.72) return "#c4a05a";
   return "#c45c4a";
 }
 
@@ -1196,14 +1238,14 @@ function drawLockBar(
 ) {
   const t = Math.max(0, Math.min(1, remaining));
   const filled = Math.round(t * LOCK_PIPS);
-  const color = lockBarColor(t, healthy, charge);
+  const color = lockBarColor(t, healthy);
   ctx.fillStyle = "#07080c";
   ctx.fillRect(x, y, LOCK_BAR_W, LOCK_BAR_H);
   for (let i = 0; i < LOCK_PIPS; i++) {
     const px = x + LOCK_BAR_PAD + i * (LOCK_PIP_W + LOCK_PIP_GAP);
     const py = y + LOCK_BAR_PAD;
     if (i < filled) {
-      ctx.fillStyle = color;
+      ctx.fillStyle = charge ? warpPipColor(i, LOCK_PIPS) : color;
       ctx.fillRect(px, py, LOCK_PIP_W, LOCK_PIP_H);
       ctx.fillStyle = "rgba(236, 234, 228, 0.45)";
       ctx.fillRect(px, py, LOCK_PIP_W, 2);
@@ -1367,7 +1409,9 @@ function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH
   const cy = y + size / 2;
   const scale = (size * 0.42) / worldR;
 
-  roundRect(ctx, x, y, size, size, 12);
+  const radius = 12;
+  ctx.save();
+  roundRect(ctx, x, y, size, size, radius);
   ctx.clip();
 
   const byId = new Map(sim.planets.map((p) => [p.id, p]));
@@ -1420,21 +1464,108 @@ function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH
     );
     ctx.fill();
   }
+  ctx.restore();
 
   const pip = sinkAlpha(sim);
-  if (pip > 0.05) {
-    const sx = cx + sim.ship.x * scale;
-    const sy = cy + sim.ship.y * scale;
-    const f = forwardOf(sim.ship.yaw);
-    ctx.globalAlpha *= pip;
-    ctx.fillStyle = "#eceae4";
-    ctx.beginPath();
-    ctx.moveTo(sx + f.x * 6, sy + f.y * 6);
-    ctx.lineTo(sx - f.x * 4 + f.y * 3, sy - f.y * 4 - f.x * 3);
-    ctx.lineTo(sx - f.x * 4 - f.y * 3, sy - f.y * 4 + f.x * 3);
-    ctx.closePath();
-    ctx.fill();
+  if (pip > 0.05) drawMinimapShip(ctx, sim, cx, cy, scale, x, y, size, radius, pip);
+  ctx.restore();
+}
+
+function roundedRectContains(
+  px: number,
+  py: number,
+  left: number,
+  top: number,
+  w: number,
+  h: number,
+  r: number,
+) {
+  const x = px - left;
+  const y = py - top;
+  if (x < 0 || y < 0 || x > w || y > h) return false;
+  const rr = Math.max(0, r);
+  if (x >= rr && x <= w - rr) return true;
+  if (y >= rr && y <= h - rr) return true;
+  const cx = x < rr ? rr : w - rr;
+  const cy = y < rr ? rr : h - rr;
+  return (x - cx) * (x - cx) + (y - cy) * (y - cy) <= rr * rr;
+}
+
+/** Intersection of a ray from the rect center with the rounded-rect boundary. */
+function rayHitRoundedRect(dx: number, dy: number, halfW: number, halfH: number, r: number) {
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const tx = Math.abs(ux) < 1e-8 ? Infinity : halfW / Math.abs(ux);
+  const ty = Math.abs(uy) < 1e-8 ? Infinity : halfH / Math.abs(uy);
+  const tBox = Math.min(tx, ty);
+  const hx = ux * tBox;
+  const hy = uy * tBox;
+  const innerW = Math.max(0, halfW - r);
+  const innerH = Math.max(0, halfH - r);
+  if (Math.abs(hx) <= innerW + 1e-6 || Math.abs(hy) <= innerH + 1e-6) {
+    return { x: hx, y: hy, ux, uy };
   }
+  const ccx = (ux < 0 ? -1 : 1) * innerW;
+  const ccy = (uy < 0 ? -1 : 1) * innerH;
+  const dot = ux * ccx + uy * ccy;
+  const disc = Math.max(0, dot * dot - (ccx * ccx + ccy * ccy) + r * r);
+  const t = dot - Math.sqrt(disc);
+  if (!Number.isFinite(t) || t <= 0) return { x: hx, y: hy, ux, uy };
+  return { x: ux * t, y: uy * t, ux, uy };
+}
+
+function drawMinimapShipPip(
+  ctx: CanvasRenderingContext2D,
+  sx: number,
+  sy: number,
+  yaw: number,
+  scale: number,
+) {
+  const f = forwardOf(yaw);
+  ctx.beginPath();
+  ctx.moveTo(sx + f.x * 6 * scale, sy + f.y * 6 * scale);
+  ctx.lineTo(sx - f.x * 4 * scale + f.y * 3 * scale, sy - f.y * 4 * scale - f.x * 3 * scale);
+  ctx.lineTo(sx - f.x * 4 * scale - f.y * 3 * scale, sy - f.y * 4 * scale + f.x * 3 * scale);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawMinimapShip(
+  ctx: CanvasRenderingContext2D,
+  sim: Sim,
+  cx: number,
+  cy: number,
+  scale: number,
+  x: number,
+  y: number,
+  size: number,
+  radius: number,
+  pip: number,
+) {
+  const inset = 8;
+  const mx = cx + sim.ship.x * scale;
+  const my = cy + sim.ship.y * scale;
+  const inside = roundedRectContains(mx, my, x + inset, y + inset, size - inset * 2, size - inset * 2, Math.max(0, radius - inset));
+  ctx.save();
+  ctx.globalAlpha *= pip;
+  ctx.fillStyle = "#eceae4";
+  if (inside) {
+    drawMinimapShipPip(ctx, mx, my, sim.ship.yaw, 1);
+    ctx.restore();
+    return;
+  }
+  const hit = rayHitRoundedRect(sim.ship.x * scale, sim.ship.y * scale, size / 2 - inset, size / 2 - inset, Math.max(1, radius - inset));
+  const sx = cx + hit.x;
+  const sy = cy + hit.y;
+  ctx.strokeStyle = "rgba(236, 234, 228, 0.55)";
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(sx + hit.ux * 5, sy + hit.uy * 5);
+  ctx.stroke();
+  drawMinimapShipPip(ctx, sx, sy, sim.ship.yaw, 0.85);
   ctx.restore();
 }
 

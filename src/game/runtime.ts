@@ -100,6 +100,7 @@ declare global {
       getVerbose?: () => boolean;
       getSeed?: () => number | null;
       getWarpCharge?: () => number;
+      getStarDrift?: () => { x: number; y: number };
       newWorld?: () => void;
       adjustGravity?: (dir: number) => void;
       adjustAtmo?: (dir: number) => void;
@@ -422,6 +423,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getVerbose: () => s.showVerbose,
       getSeed: () => getSystem().seed,
       getWarpCharge: () => s.warpCharge,
+      getStarDrift: () => ({ x: s.camera.starDriftX, y: s.camera.starDriftY }),
       newWorld: () => chartNewWorld(),
       getLagrangePoints: () =>
         listLagrangePoints(s).map((p) => ({
@@ -624,6 +626,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getPlanetPaths: () => [],
       getSeed: () => null,
       getWarpCharge: () => 0,
+      getStarDrift: () => ({ x: 0, y: 0 }),
       newWorld: () => {},
       adjustGravity: () => {},
       adjustAtmo: () => {},

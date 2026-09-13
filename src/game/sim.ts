@@ -125,6 +125,8 @@ export function createSim(): Sim {
       zoomAuto: 0.96,
       userZoom: 1,
       shake: 0,
+      starDriftX: 0,
+      starDriftY: 0,
       trauma: 0,
     },
     phase: "title",
@@ -255,6 +257,8 @@ export function rebootSim(sim: Sim) {
   sim.camera.zoom = 0.96 * sim.camera.userZoom;
   sim.camera.trauma = 0;
   sim.camera.shake = 0;
+  sim.camera.starDriftX = 0;
+  sim.camera.starDriftY = 0;
   for (const p of sim.particles) p.alive = false;
 }
 
@@ -2163,9 +2167,33 @@ export function setUserZoom(sim: Sim, value: number) {
   sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
 }
 
+/** Apparent starfield velocity: real ship motion plus a warp rush that ramps hard toward jump. */
+function starfieldRush(sim: Sim): { x: number; y: number } {
+  const s = sim.ship;
+  const sp = Math.hypot(s.vx, s.vy);
+  if (sp < 1e-6) return { x: 0, y: 0 };
+  const ux = s.vx / sp;
+  const uy = s.vy / sp;
+  if (sim.reducedMotion) return { x: s.vx, y: s.vy };
+  if (sim.phase === "transit") {
+    const t = Math.min(1, sim.transitAge / 0.55);
+    const rush = 2400 + t * t * 5200;
+    return { x: ux * rush, y: uy * rush };
+  }
+  if (sim.status === "warp" || sp >= WARP_BAR_SPEED) {
+    const c = sim.warpCharge;
+    const mul = 1.6 + c * 3.4 + c * c * 14;
+    return { x: s.vx * mul, y: s.vy * mul };
+  }
+  return { x: s.vx, y: s.vy };
+}
+
 function updateCamera(sim: Sim, dt: number) {
   const s = sim.ship;
   const speed = Math.hypot(s.vx, s.vy);
+  const rush = starfieldRush(sim);
+  sim.camera.starDriftX += (rush.x - s.vx) * dt;
+  sim.camera.starDriftY += (rush.y - s.vy) * dt;
   const look = speed > 400 ? 0.42 : 0.28;
   const targetX = s.x + s.vx * look;
   const targetY = s.y + s.vy * look;

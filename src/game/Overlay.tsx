@@ -216,9 +216,10 @@ export function Overlay({
                     hud.status === "crashed" ||
                     hud.orbitHint === ORBIT_DRAG_HINT ||
                     hud.orbitHint === ORBIT_PERTURB_HINT ||
-                    isOrbitLostHint(hud.orbitHint)
+                    isOrbitLostHint(hud.orbitHint) ||
+                    (hud.status === "warp" && hud.warpCharge >= 0.7)
                     ? "text-warn"
-                    : hud.status === "orbit" || hud.status === "lagrange" || hud.status === "warp"
+                    : hud.status === "orbit" || hud.status === "lagrange"
                       ? "text-ok"
                       : "text-accent",
                 )}

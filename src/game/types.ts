@@ -62,6 +62,8 @@ export type Camera = {
   userZoom: number;
   shake: number;
   trauma: number;
+  starDriftX: number;
+  starDriftY: number;
 };
 
 export type SolarFlare = {

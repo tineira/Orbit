@@ -18,8 +18,14 @@ export function createAudio(): AudioApi {
   let thrustGain: GainNode | null = null;
   let thrustFilter: BiquadFilterNode | null = null;
   let noiseSrc: AudioBufferSourceNode | null = null;
-  let warpGain: GainNode | null = null;
-  let warpOsc: OscillatorNode | null = null;
+  let warpSub: OscillatorNode | null = null;
+  let warpSubGain: GainNode | null = null;
+  let warpSpool: OscillatorNode | null = null;
+  let warpSpoolGain: GainNode | null = null;
+  let warpScream: OscillatorNode | null = null;
+  let warpScreamGain: GainNode | null = null;
+  let warpAirFilter: BiquadFilterNode | null = null;
+  let warpAirGain: GainNode | null = null;
   let muted = false;
   let thrustOn = false;
 
@@ -57,14 +63,44 @@ export function createAudio(): AudioApi {
     thrustGain.connect(sfx);
     noiseSrc.start();
 
-    warpOsc = ctx.createOscillator();
-    warpOsc.type = "sine";
-    warpOsc.frequency.value = 48;
-    warpGain = ctx.createGain();
-    warpGain.gain.value = 0;
-    warpOsc.connect(warpGain);
-    warpGain.connect(sfx);
-    warpOsc.start();
+    // Film hyperspace spool: sub pressure, rising tone, airy tunnel whoosh.
+    // No hull-rattle LFO — that reads as a car, not a jump.
+    warpSub = ctx.createOscillator();
+    warpSub.type = "sine";
+    warpSub.frequency.value = 32;
+    warpSubGain = ctx.createGain();
+    warpSubGain.gain.value = 0;
+    warpSub.connect(warpSubGain);
+    warpSubGain.connect(sfx);
+    warpSub.start();
+
+    warpSpool = ctx.createOscillator();
+    warpSpool.type = "sine";
+    warpSpool.frequency.value = 78;
+    warpSpoolGain = ctx.createGain();
+    warpSpoolGain.gain.value = 0;
+    warpSpool.connect(warpSpoolGain);
+    warpSpoolGain.connect(sfx);
+    warpSpool.start();
+
+    warpScream = ctx.createOscillator();
+    warpScream.type = "triangle";
+    warpScream.frequency.value = 420;
+    warpScreamGain = ctx.createGain();
+    warpScreamGain.gain.value = 0;
+    warpScream.connect(warpScreamGain);
+    warpScreamGain.connect(sfx);
+    warpScream.start();
+
+    warpAirFilter = ctx.createBiquadFilter();
+    warpAirFilter.type = "bandpass";
+    warpAirFilter.frequency.value = 480;
+    warpAirFilter.Q.value = 0.85;
+    warpAirGain = ctx.createGain();
+    warpAirGain.gain.value = 0;
+    noiseSrc.connect(warpAirFilter);
+    warpAirFilter.connect(warpAirGain);
+    warpAirGain.connect(sfx);
   };
 
   const unlock = () => {
@@ -94,30 +130,85 @@ export function createAudio(): AudioApi {
       void thrustOn;
     },
     setWarp(on, intensity) {
-      if (!ctx || !warpGain || !warpOsc) return;
+      if (
+        !ctx ||
+        !warpSub ||
+        !warpSubGain ||
+        !warpSpool ||
+        !warpSpoolGain ||
+        !warpScream ||
+        !warpScreamGain ||
+        !warpAirFilter ||
+        !warpAirGain
+      )
+        return;
       const t = ctx.currentTime;
-      const g = on ? 0.02 + intensity * 0.05 : 0;
-      warpGain.gain.setTargetAtTime(g, t, 0.08);
-      warpOsc.frequency.setTargetAtTime(on ? 42 + intensity * 90 : 48, t, 0.12);
+      const c = on ? Math.max(0, Math.min(1, intensity)) : 0;
+      const late = Math.max(0, c - 0.55) / 0.45;
+      warpSubGain.gain.setTargetAtTime(c > 0 ? 0.03 + c * c * 0.05 : 0, t, 0.1);
+      warpSub.frequency.setTargetAtTime(30 + c * 16, t, 0.16);
+      warpSpoolGain.gain.setTargetAtTime(c > 0 ? 0.016 + c * 0.034 : 0, t, 0.1);
+      warpSpool.frequency.setTargetAtTime(78 * Math.pow(2, c * 2.85), t, 0.12);
+      warpScreamGain.gain.setTargetAtTime(late * late * 0.028, t, 0.1);
+      warpScream.frequency.setTargetAtTime(380 + late * 980, t, 0.12);
+      warpAirGain.gain.setTargetAtTime(c > 0 ? 0.012 + c * c * 0.07 : 0, t, 0.1);
+      warpAirFilter.frequency.setTargetAtTime(420 + c * 1600 + c * c * 2400, t, 0.14);
     },
     warpJump() {
-      if (!ctx || !sfx) return;
+      if (!ctx || !sfx || !noiseSrc) return;
       const t = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const g = ctx.createGain();
-      osc.type = "sawtooth";
-      osc.frequency.setValueAtTime(90, t);
-      osc.frequency.exponentialRampToValueAtTime(38, t + 0.55);
-      g.gain.setValueAtTime(0.12, t);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
-      osc.connect(g);
-      g.connect(sfx);
-      osc.start(t);
-      osc.stop(t + 0.62);
-      osc.onended = () => {
-        osc.disconnect();
-        g.disconnect();
+      const rise = ctx.createOscillator();
+      const riseG = ctx.createGain();
+      rise.type = "sine";
+      rise.frequency.setValueAtTime(240, t);
+      rise.frequency.exponentialRampToValueAtTime(1680, t + 0.2);
+      riseG.gain.setValueAtTime(0.1, t);
+      riseG.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+      rise.connect(riseG);
+      riseG.connect(sfx);
+      rise.start(t);
+      rise.stop(t + 0.34);
+
+      const bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.Q.value = 0.7;
+      bp.frequency.setValueAtTime(500, t);
+      bp.frequency.exponentialRampToValueAtTime(3200, t + 0.22);
+      const airG = ctx.createGain();
+      airG.gain.setValueAtTime(0.16, t);
+      airG.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+      noiseSrc.connect(bp);
+      bp.connect(airG);
+      airG.connect(sfx);
+
+      const thump = ctx.createOscillator();
+      const thumpG = ctx.createGain();
+      thump.type = "sine";
+      thump.frequency.setValueAtTime(78, t);
+      thump.frequency.exponentialRampToValueAtTime(28, t + 0.3);
+      thumpG.gain.setValueAtTime(0.14, t);
+      thumpG.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+      thump.connect(thumpG);
+      thumpG.connect(sfx);
+      thump.start(t);
+      thump.stop(t + 0.36);
+
+      const stopAt = t + 0.45;
+      const tidy = () => {
+        try {
+          noiseSrc?.disconnect(bp);
+        } catch {
+          /* already gone */
+        }
+        bp.disconnect();
+        airG.disconnect();
+        rise.disconnect();
+        riseG.disconnect();
+        thump.disconnect();
+        thumpG.disconnect();
       };
+      rise.onended = tidy;
+      window.setTimeout(tidy, (stopAt - t) * 1000 + 40);
     },
     bump(amount) {
       if (!ctx || !sfx) return;
@@ -210,7 +301,9 @@ export function createAudio(): AudioApi {
         /* ignore */
       }
       try {
-        warpOsc?.stop();
+        warpSub?.stop();
+        warpSpool?.stop();
+        warpScream?.stop();
       } catch {
         /* ignore */
       }
