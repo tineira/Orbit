@@ -9,6 +9,7 @@ import type {
   SolarFlare,
   VerboseDiag,
   WarpRing,
+  IonWisp,
 } from "./types";
 import {
   G,
@@ -61,6 +62,7 @@ export type Sim = {
   ship: Ship;
   planets: Planet[];
   particles: Particle[];
+  ionTrail: IonWisp[];
   camera: Camera;
   phase: "creating" | "title" | "flight" | "landed" | "crashed" | "transit";
   landedId: string | null;
@@ -121,6 +123,8 @@ export const ORBIT_PERTURB_HINT = "Perturbed — orbit lost";
 export { ATMO_STEPS, GRAVITY_STEPS };
 
 const PARTICLE_CAP = 220;
+const ION_TRAIL_CAP = 280;
+const ION_DRAG_MIN = 0.3;
 const SOFT = 18;
 
 export function createSim(): Sim {
@@ -129,6 +133,7 @@ export function createSim(): Sim {
   const sim: Sim = {
     ship: freshShip(),
     planets,
+    ionTrail: [],
     particles: Array.from({ length: PARTICLE_CAP }, () => ({
       x: 0,
       y: 0,
@@ -299,6 +304,7 @@ export function rebootSim(sim: Sim) {
   sim.camera.starDriftX = 0;
   sim.camera.starDriftY = 0;
   for (const p of sim.particles) p.alive = false;
+  sim.ionTrail = [];
 }
 
 export function forwardOf(yaw: number) {
@@ -327,6 +333,7 @@ function clearFlightLocks(sim: Sim) {
   sim.flares = [];
   sim.flareWait = 5 + Math.random() * 6;
   for (const p of sim.particles) p.alive = false;
+  sim.ionTrail = [];
 }
 
 /** Drop into the tunnel. The new chart is generated on the punch, not here. */
@@ -953,6 +960,7 @@ function stepLockedLagrange(
   sim.altitude = host ? Math.hypot(ship.x - host.x, ship.y - host.y) - host.radius : null;
   sim.status = "lagrange";
   sim.orbitHint = lagrangeHint(pt, true);
+  emitIonTrail(sim);
   return true;
 }
 
@@ -993,6 +1001,74 @@ function dragNear(
 export function atmoDrag(sim: Sim) {
   const d = dragNear(sim.ship.x, sim.ship.y, sim.ship.vx, sim.ship.vy, sim.planets, sim.atmoScale);
   return Math.hypot(d.ax, d.ay);
+}
+
+function bodyRgb(p: Planet): [number, number, number] {
+  const hex = p.colorA.replace("#", "");
+  if (hex.length < 6) return [180, 210, 255];
+  return [
+    Number.parseInt(hex.slice(0, 2), 16),
+    Number.parseInt(hex.slice(2, 4), 16),
+    Number.parseInt(hex.slice(4, 6), 16),
+  ];
+}
+
+function atmoHost(sim: Sim): Planet | null {
+  const { x, y, vx, vy } = sim.ship;
+  let best: Planet | null = null;
+  let bestMag = 0;
+  for (const p of sim.planets) {
+    if (isGhostBody(p) || p.radius <= 0) continue;
+    const d = Math.hypot(x - p.x, y - p.y);
+    const outer = atmoRadius(p);
+    if (d >= outer || d < p.radius) continue;
+    const t = 1 - (d - p.radius) / (outer - p.radius);
+    const density = t * t * (p.kind === "gas" ? 0.48 : p.kind === "star" ? 0.12 : 0.5);
+    const mag = density * Math.hypot(vx - p.vx, vy - p.vy) * sim.atmoScale;
+    if (mag > bestMag) {
+      bestMag = mag;
+      best = p;
+    }
+  }
+  return best;
+}
+
+function emitIonTrail(sim: Sim) {
+  if (sim.reducedMotion || sim.phase !== "flight") return;
+  const drag = atmoDrag(sim);
+  if (drag <= ION_DRAG_MIN) return;
+  const host = atmoHost(sim);
+  if (!host) return;
+  const glow = Math.min(1, (drag - ION_DRAG_MIN) / 0.85);
+  if (Math.random() > 0.12 + glow * 0.5) return;
+  const n = glow > 0.85 ? 2 : 1;
+  const rvx = sim.ship.vx - host.vx;
+  const rvy = sim.ship.vy - host.vy;
+  const sp = Math.hypot(rvx, rvy) || 1;
+  const ux = rvx / sp;
+  const uy = rvy / sp;
+  const [cr, cg, cb] = bodyRgb(host);
+  const ion = glow * glow;
+  const r = Math.round(cr + (255 - cr) * ion * 0.28);
+  const g = Math.round(cg + (255 - cg) * ion * 0.28);
+  const b = Math.round(cb + (255 - cb) * ion * 0.18);
+  for (let i = 0; i < n; i++) {
+    if (sim.ionTrail.length >= ION_TRAIL_CAP) sim.ionTrail.shift();
+    const back = 16 + Math.random() * 14 + i * 8;
+    sim.ionTrail.push({
+      hostId: host.id,
+      ox: sim.ship.x - host.x - ux * back + (Math.random() - 0.5) * 4,
+      oy: sim.ship.y - host.y - uy * back + (Math.random() - 0.5) * 4,
+      ux,
+      uy,
+      age: 0,
+      life: 1.35 + glow * 1.4 + Math.random() * 0.45,
+      glow,
+      r,
+      g,
+      b,
+    });
+  }
 }
 
 function spawn(
@@ -1589,6 +1665,7 @@ function stepLockedOrbit(
   sim.altitude = sim.orbitLockR - p.radius;
   sim.status = "orbit";
   sim.orbitHint = lockHint(p.name, k.e);
+  emitIonTrail(sim);
   return true;
 }
 
@@ -1608,6 +1685,8 @@ export function stepSim(
   stepFlares(sim, dt);
   for (const ring of sim.warpRings) ring.age += dt;
   sim.warpRings = sim.warpRings.filter((ring) => ring.age < ring.life);
+  for (const wisp of sim.ionTrail) wisp.age += dt;
+  sim.ionTrail = sim.ionTrail.filter((wisp) => wisp.age < wisp.life);
 
   const ship = sim.ship;
   if (sim.phase === "title") {
@@ -1734,6 +1813,7 @@ export function stepSim(
   ship.vy += (gy + drag.ay + ty) * dt;
   ship.x += ship.vx * dt;
   ship.y += ship.vy * dt;
+  emitIonTrail(sim);
 
   collidePlanets(sim);
   if (sim.phase === "flight" && shipHitsFlare(sim)) burnInFlare(sim);

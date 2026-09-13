@@ -20,6 +20,7 @@ import {
 } from "./sim";
 import {
   getMinimapWorldR,
+  getSystemName,
   isGhostBody,
   ORBIT_DRAG_BREAK,
   ORBIT_PERTURB_BREAK,
@@ -97,6 +98,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
     ctx.restore();
   }
   const particlesOver = sim.burned || sim.crashKind === "sink";
+  drawIonTrail(ctx, sim);
   if (!particlesOver) drawParticles(ctx, sim.particles);
   if (fade > 0.04) drawGravityArrows(ctx, sim);
   const star = sim.planets.find((b) => b.kind === "star") ?? null;
@@ -1166,6 +1168,32 @@ function warpGasPath(
   ctx.closePath();
 }
 
+function drawIonTrail(ctx: CanvasRenderingContext2D, sim: Sim) {
+  if (sim.ionTrail.length === 0) return;
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineCap = "round";
+  const byId = new Map(sim.planets.map((p) => [p.id, p]));
+  for (const w of sim.ionTrail) {
+    const host = byId.get(w.hostId);
+    if (!host) continue;
+    const u = Math.min(1, w.age / w.life);
+    const fade = (1 - u) * (1 - u);
+    const a = fade * (0.035 * w.glow + 0.16 * w.glow * w.glow);
+    if (a < 0.01) continue;
+    const x = host.x + w.ox;
+    const y = host.y + w.oy;
+    const len = 5.5 + w.glow * 11;
+    ctx.strokeStyle = `rgba(${w.r}, ${w.g}, ${w.b}, ${a})`;
+    ctx.lineWidth = 0.5 + w.glow * 1.35;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x - w.ux * len, y - w.uy * len);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawWarpRings(ctx: CanvasRenderingContext2D, sim: Sim) {
   if (sim.warpRings.length === 0) return;
   ctx.save();
@@ -1660,6 +1688,13 @@ function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH
 
   const pip = sinkAlpha(sim);
   if (pip > 0.05) drawMinimapShip(ctx, sim, cx, cy, scale, x, y, size, radius, pip);
+
+  const name = getSystemName();
+  ctx.font = '500 10px "IBM Plex Mono", ui-monospace, monospace';
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(236, 234, 228, 0.62)";
+  ctx.fillText(name, x + 10, y + 8);
   ctx.restore();
 }
 

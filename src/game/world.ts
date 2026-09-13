@@ -649,6 +649,7 @@ function makeSystem(seed: number, flags: ChartFlags = {}): Planet[] {
 
 export type ChartedSystem = {
   seed: number;
+  name: string;
   planets: Planet[];
   home: Planet;
   start: { x: number; y: number; vx: number; vy: number; yaw: number };
@@ -673,9 +674,11 @@ export function createSystem(
   const fromUrl = typeof window !== "undefined" ? chartFlagsFromSearch(window.location.search) : {};
   const planets = makeSystem(seed, { ...fromUrl, ...flags });
   const home = planets.find((p) => p.kicker === "Home") ?? planets.find((p) => p.kind === "rocky")!;
+  const star = planets.find((p) => p.kind === "star");
   const pad = home.radius + SHIP_HULL * 0.85;
   system = {
     seed,
+    name: star?.name ?? "Lumen",
     planets,
     home,
     start: {
@@ -721,4 +724,8 @@ export function getStart() {
 
 export function getMinimapWorldR() {
   return system?.minimapWorldR ?? 10800;
+}
+
+export function getSystemName() {
+  return system?.name ?? "Lumen";
 }

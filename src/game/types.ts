@@ -42,6 +42,20 @@ export type Ship = {
   reverse: boolean;
 };
 
+export type IonWisp = {
+  hostId: string;
+  ox: number;
+  oy: number;
+  ux: number;
+  uy: number;
+  age: number;
+  life: number;
+  glow: number;
+  r: number;
+  g: number;
+  b: number;
+};
+
 export type Particle = {
   x: number;
   y: number;
