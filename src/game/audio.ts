@@ -144,15 +144,15 @@ export function createAudio(): AudioApi {
         return;
       const t = ctx.currentTime;
       const c = on ? Math.max(0, Math.min(1, intensity)) : 0;
-      const late = Math.max(0, c - 0.55) / 0.45;
-      warpSubGain.gain.setTargetAtTime(c > 0 ? 0.03 + c * c * 0.05 : 0, t, 0.1);
-      warpSub.frequency.setTargetAtTime(30 + c * 16, t, 0.16);
-      warpSpoolGain.gain.setTargetAtTime(c > 0 ? 0.016 + c * 0.034 : 0, t, 0.1);
-      warpSpool.frequency.setTargetAtTime(78 * Math.pow(2, c * 2.85), t, 0.12);
-      warpScreamGain.gain.setTargetAtTime(late * late * 0.028, t, 0.1);
-      warpScream.frequency.setTargetAtTime(380 + late * 980, t, 0.12);
-      warpAirGain.gain.setTargetAtTime(c > 0 ? 0.012 + c * c * 0.07 : 0, t, 0.1);
-      warpAirFilter.frequency.setTargetAtTime(420 + c * 1600 + c * c * 2400, t, 0.14);
+      const late = Math.max(0, (c - 0.62) / 0.38);
+      warpSubGain.gain.setTargetAtTime(c > 0 ? 0.028 + c * 0.055 : 0, t, 0.07);
+      warpSub.frequency.setTargetAtTime(28 + c * 22, t, 0.08);
+      warpSpoolGain.gain.setTargetAtTime(c > 0 ? 0.014 + c * 0.042 : 0, t, 0.07);
+      warpSpool.frequency.setTargetAtTime(72 * Math.pow(2, c * 3.15), t, 0.08);
+      warpScreamGain.gain.setTargetAtTime(late * late * 0.034, t, 0.06);
+      warpScream.frequency.setTargetAtTime(420 + late * 1280, t, 0.07);
+      warpAirGain.gain.setTargetAtTime(c > 0 ? 0.01 + c * 0.08 : 0, t, 0.07);
+      warpAirFilter.frequency.setTargetAtTime(380 + c * 3200, t, 0.08);
     },
     warpJump() {
       if (!ctx || !sfx || !noiseSrc) return;

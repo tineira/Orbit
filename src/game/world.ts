@@ -38,6 +38,8 @@ export const ORBIT_DRAG_BREAK = 0.4;
 export const ORBIT_PERTURB_BREAK = 0.4;
 /** Warp charge bar appears at this speed (world u/s). */
 export const WARP_BAR_SPEED = 1000;
+/** Visual spool (streaks, rush, rumble) eases in from here so 1000 is not a pop. */
+export const WARP_FX_SPEED = 800;
 /** Crossing this speed commits the jump to a new chart. */
 export const WARP_JUMP_SPEED = 1500;
 /** Inbound speed after the warp cinematic, still too fast to land. */
@@ -45,10 +47,29 @@ export const WARP_INBOUND_SPEED = 180;
 export const WARP_TRANSIT = 1.85;
 export const WARP_TRANSIT_REDUCED = 0.12;
 
+function smoothstep(t: number) {
+  const x = Math.max(0, Math.min(1, t));
+  return x * x * (3 - 2 * x);
+}
+
 /** 0 below the bar, 1 at jump speed. */
 export function warpCharge(speed: number) {
   if (speed < WARP_BAR_SPEED) return 0;
   return Math.min(1, (speed - WARP_BAR_SPEED) / (WARP_JUMP_SPEED - WARP_BAR_SPEED));
+}
+
+/** 0 below FX start, 1 at bar speed. */
+export function warpApproach(speed: number) {
+  if (speed <= WARP_FX_SPEED) return 0;
+  if (speed >= WARP_BAR_SPEED) return 1;
+  return smoothstep((speed - WARP_FX_SPEED) / (WARP_BAR_SPEED - WARP_FX_SPEED));
+}
+
+/** 0 at FX start, 1 at jump. Audio follows this so the spool does not peak before 1500. */
+export function warpSpool(speed: number) {
+  if (speed <= WARP_FX_SPEED) return 0;
+  if (speed >= WARP_JUMP_SPEED) return 1;
+  return (speed - WARP_FX_SPEED) / (WARP_JUMP_SPEED - WARP_FX_SPEED);
 }
 
 export const GRAVITY_STEPS = [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 8] as const;

@@ -45,6 +45,7 @@ import {
   WARP_TRANSIT,
   WARP_TRANSIT_REDUCED,
   warpCharge,
+  warpApproach,
 } from "./world";
 
 export type Sim = {
@@ -91,6 +92,7 @@ export type Sim = {
   crashAge: number;
   wreckSeed: number;
   warpCharge: number;
+  warpApproach: number;
   transitAge: number;
 };
 
@@ -168,6 +170,7 @@ export function createSim(): Sim {
     crashAge: 0,
     wreckSeed: 0,
     warpCharge: 0,
+    warpApproach: 0,
     transitAge: 0,
   };
   landOnHome(sim);
@@ -251,6 +254,7 @@ export function rebootSim(sim: Sim) {
   sim.crashAge = 0;
   sim.wreckSeed = 0;
   sim.warpCharge = 0;
+  sim.warpApproach = 0;
   sim.transitAge = 0;
   landOnHome(sim);
   sim.camera.zoomAuto = 0.96;
@@ -311,6 +315,7 @@ export function enterWarp(sim: Sim) {
   sim.phase = "transit";
   sim.transitAge = 0;
   sim.warpCharge = 1;
+  sim.warpApproach = 1;
   sim.status = "warp";
   sim.orbitHint = "Warp";
   sim.nearest = star;
@@ -332,6 +337,7 @@ function stepTransit(sim: Sim, dt: number) {
   ship.yaw = Math.atan2(-dir.x, -dir.y);
   sim.transitAge += dt;
   sim.warpCharge = 1;
+  sim.warpApproach = 1;
   sim.status = "warp";
   sim.orbitHint = "Warp";
   const star = sim.planets.find((p) => p.kind === "star");
@@ -345,7 +351,9 @@ function stepTransit(sim: Sim, dt: number) {
   if (sim.transitAge < dur) return;
   sim.phase = "flight";
   sim.transitAge = 0;
-  sim.warpCharge = warpCharge(Math.hypot(ship.vx, ship.vy));
+  const sp = Math.hypot(ship.vx, ship.vy);
+  sim.warpCharge = warpCharge(sp);
+  sim.warpApproach = warpApproach(sp);
   sim.orbitHint = null;
   sim.status = "deep";
 }
@@ -1525,6 +1533,7 @@ export function stepSim(
       ship.thrusting = false;
     }
     sim.warpCharge = 0;
+    sim.warpApproach = 0;
     decayParticles(sim, dt);
     updateCamera(sim, dt);
     return;
@@ -1656,6 +1665,7 @@ function crashInto(sim: Sim, p: Planet, nx: number, ny: number, rel: number) {
   sim.status = "crashed";
   sim.orbitHint = null;
   sim.warpCharge = 0;
+  sim.warpApproach = 0;
   stickToPlanet(sim, p);
   s.thrusting = false;
   s.reverse = false;
@@ -2060,18 +2070,21 @@ function classify(sim: Sim, nearest: Planet, dist: number) {
 
   const speed = Math.hypot(sim.ship.vx, sim.ship.vy);
   sim.warpCharge = warpCharge(speed);
+  sim.warpApproach = warpApproach(speed);
 
   if (sim.phase === "landed") {
     sim.status = "landed";
     sim.orbitHint = null;
     sim.orbitDwell = 0;
     sim.warpCharge = 0;
+    sim.warpApproach = 0;
     return;
   }
   if (sim.phase === "crashed") {
     sim.status = "crashed";
     sim.orbitHint = null;
     sim.warpCharge = 0;
+    sim.warpApproach = 0;
     return;
   }
   if (speed >= WARP_BAR_SPEED) {
@@ -2180,9 +2193,10 @@ function starfieldRush(sim: Sim): { x: number; y: number } {
     const rush = 2400 + t * t * 5200;
     return { x: ux * rush, y: uy * rush };
   }
-  if (sim.status === "warp" || sp >= WARP_BAR_SPEED) {
+  if (sim.warpApproach > 0 || sim.warpCharge > 0) {
+    const a = sim.warpApproach;
     const c = sim.warpCharge;
-    const mul = 1.6 + c * 3.4 + c * c * 14;
+    const mul = 1 + a * 0.6 + c * 3.4 + c * c * 14;
     return { x: s.vx * mul, y: s.vy * mul };
   }
   return { x: s.vx, y: s.vy };
@@ -2201,18 +2215,18 @@ function updateCamera(sim: Sim, dt: number) {
   const a = 1 - Math.exp(-k * dt);
   sim.camera.x += (targetX - sim.camera.x) * a;
   sim.camera.y += (targetY - sim.camera.y) * a;
+  const zoomT = Math.max(0, Math.min(1, (speed - 400) / (WARP_BAR_SPEED - 400)));
+  const warpZoom = zoomT * zoomT * (3 - 2 * zoomT);
   const zWant =
     sim.phase === "transit"
       ? 0.22
-      : speed > WARP_BAR_SPEED
-        ? 0.32
-        : speed > 400
-          ? 0.48
-          : speed > 42
-            ? 0.76
-            : speed > 24
-              ? 0.88
-              : 0.98;
+      : speed > 400
+        ? 0.48 - 0.16 * warpZoom
+        : speed > 42
+          ? 0.76
+          : speed > 24
+            ? 0.88
+            : 0.98;
   sim.camera.zoomAuto += (zWant - sim.camera.zoomAuto) * (1 - Math.exp(-1.6 * dt));
   sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
   sim.camera.trauma = Math.max(0, sim.camera.trauma - dt * 1.6);

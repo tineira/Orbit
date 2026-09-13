@@ -51,9 +51,11 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   const cam = sim.camera;
   const now = performance.now();
   const warpRumble =
-    sim.reducedMotion || (sim.status !== "warp" && sim.phase !== "transit")
+    sim.reducedMotion
       ? 0
-      : (sim.phase === "transit" ? 1 : sim.warpCharge);
+      : sim.phase === "transit"
+        ? 1
+        : sim.warpApproach * 0.35 + sim.warpCharge;
   const rumble = warpRumble * warpRumble;
   const shakeX = sim.reducedMotion
     ? 0
@@ -261,11 +263,10 @@ function drawStarDot(
 function starStreak(sim: Sim | undefined) {
   if (!sim || sim.reducedMotion) return 0;
   if (sim.phase === "transit") return 90 + Math.min(1, sim.transitAge / 0.4) * 70;
-  if (sim.status === "warp") {
-    const c = sim.warpCharge;
-    return 8 + c * 36 + c * c * 70;
-  }
-  return 0;
+  const a = sim.warpApproach;
+  const c = sim.warpCharge;
+  if (a <= 0 && c <= 0) return 0;
+  return a * 8 + c * 36 + c * c * 70;
 }
 
 function drawStars(
@@ -1289,8 +1290,11 @@ function drawShipLockBars(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera) 
   ctx.scale(1 / zoom, 1 / zoom);
   const x = -Math.round(LOCK_BAR_W / 2);
   const y = Math.round(13 * zoom + 10);
-  if (sim.status === "warp" || sim.phase === "transit") {
+  if (sim.status === "warp" || sim.phase === "transit" || sim.warpApproach > 0.04) {
     const t = sim.phase === "transit" ? 1 : sim.warpCharge;
+    const fade =
+      sim.phase === "transit" || sim.status === "warp" ? 1 : sim.warpApproach;
+    ctx.globalAlpha *= fade;
     drawLockBar(ctx, x, y, t, "#7d9b86", true);
     drawLockBarLabel(ctx, x, y, t, "Warp", true);
     ctx.restore();
@@ -1555,17 +1559,23 @@ function drawMinimapShip(
     ctx.restore();
     return;
   }
-  const hit = rayHitRoundedRect(sim.ship.x * scale, sim.ship.y * scale, size / 2 - inset, size / 2 - inset, Math.max(1, radius - inset));
+  const hit = rayHitRoundedRect(
+    sim.ship.x * scale,
+    sim.ship.y * scale,
+    size / 2 - inset,
+    size / 2 - inset,
+    Math.max(1, radius - inset),
+  );
   const sx = cx + hit.x;
   const sy = cy + hit.y;
-  ctx.strokeStyle = "rgba(236, 234, 228, 0.55)";
-  ctx.lineWidth = 1.5;
-  ctx.lineCap = "round";
+  const ux = hit.ux;
+  const uy = hit.uy;
   ctx.beginPath();
-  ctx.moveTo(sx, sy);
-  ctx.lineTo(sx + hit.ux * 5, sy + hit.uy * 5);
-  ctx.stroke();
-  drawMinimapShipPip(ctx, sx, sy, sim.ship.yaw, 0.85);
+  ctx.moveTo(sx + ux * 4.5, sy + uy * 4.5);
+  ctx.lineTo(sx - ux * 2.2 + uy * 3.1, sy - uy * 2.2 - ux * 3.1);
+  ctx.lineTo(sx - ux * 2.2 - uy * 3.1, sy - uy * 2.2 + ux * 3.1);
+  ctx.closePath();
+  ctx.fill();
   ctx.restore();
 }
 

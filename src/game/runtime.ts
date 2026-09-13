@@ -22,7 +22,7 @@ import {
   type SimViewPrefs,
 } from "./sim";
 import type { GameUiHandler, HudSnapshot } from "./types";
-import { createSystem, getSystem } from "./world";
+import { createSystem, getSystem, warpSpool } from "./world";
 
 export type GameHandle = {
   launch: () => void;
@@ -519,10 +519,11 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       sim.ship.thrusting && playing(),
       Math.min(1, Math.hypot(sim.ship.vx, sim.ship.vy) / 120),
     );
-    audio.setWarp(
-      sim.phase === "transit" || sim.status === "warp",
-      sim.phase === "transit" ? 1 : sim.warpCharge,
-    );
+    const spool =
+      sim.phase === "transit"
+        ? 1
+        : warpSpool(Math.hypot(sim.ship.vx, sim.ship.vy));
+    audio.setWarp(spool > 0.02, spool);
     if (sim.phase === "transit" && prevPhase !== "transit") audio.warpJump();
     if (sim.phase === "transit") publish();
     prevPhase = sim.phase;
