@@ -87,6 +87,7 @@ declare global {
         mass?: number;
       }[];
       getPos?: () => { x: number; y: number; vx: number; vy: number };
+      getCamera?: () => { x: number; y: number; zoom: number };
       getGravityScale?: () => number;
       getAtmoScale?: () => number;
       getDrag?: () => number;
@@ -430,6 +431,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
           mass: p.mass,
         })),
       getPos: () => ({ x: s.ship.x, y: s.ship.y, vx: s.ship.vx, vy: s.ship.vy }),
+      getCamera: () => ({ x: s.camera.x, y: s.camera.y, zoom: s.camera.zoomAuto }),
       getGravityScale: () => s.gravityScale,
       getAtmoScale: () => s.atmoScale,
       getDrag: () => atmoDrag(s),

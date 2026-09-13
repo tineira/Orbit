@@ -58,6 +58,7 @@ import {
   WARP_LOST_FADE,
   WARP_LOST_FADE_REDUCED,
   WARP_STREAK,
+  WARP_TUNNEL,
   WARP_STREAK_SPEED_CAP,
   WARP_STREAK_ZOOM,
   WARP_TRANSIT,
@@ -2591,21 +2592,39 @@ function updateCamera(sim: Sim, dt: number) {
   sim.camera.starDriftX += (rush.x - s.vx) * dt;
   sim.camera.starDriftY += (rush.y - s.vy) * dt;
   const beat = sim.phase === "transit" ? transitBeat(sim.transitAge, sim.reducedMotion) : null;
-  const rideShip = beat === "streak" || beat === "brake";
   const lostCoast = sim.warpLost;
   const lookT = Math.max(0, Math.min(1, (speed - 80) / 320));
   const lookU = lookT * lookT * (3 - 2 * lookT);
-  const look = rideShip || lostCoast ? 0 : 0.28 + 0.14 * lookU;
+  const cruiseLook = 0.28 + 0.14 * lookU;
+  const launchU = beat === "tunnel" ? transitLaunchU(sim.transitAge) : 1;
+  /** Last stretch of the tunnel: settle on the ship before punch/brake. */
+  const preArrive =
+    beat === "tunnel" && sim.transitAge >= WARP_TUNNEL - Math.min(1.2, WARP_TUNNEL * 0.35);
+  const lockCam = lostCoast || sim.transitPunched || preArrive;
+  const look = lockCam
+    ? 0
+    : beat === "tunnel"
+      ? cruiseLook * (1 - launchU)
+      : cruiseLook;
   const targetX = s.x + s.vx * look;
   const targetY = s.y + s.vy * look;
   const k = sim.phase === "title" ? 1.8 : 3.4;
   const a = 1 - Math.exp(-k * dt);
-  if (rideShip || lostCoast) {
+  if (lockCam) {
     sim.camera.x = s.x;
     sim.camera.y = s.y;
   } else {
     sim.camera.x += (targetX - sim.camera.x) * a;
     sim.camera.y += (targetY - sim.camera.y) * a;
+    if (sim.phase === "transit" && !lostCoast && speed > 1e-6) {
+      const ux = s.vx / speed;
+      const uy = s.vy / speed;
+      const past = (s.x - sim.camera.x) * ux + (s.y - sim.camera.y) * uy;
+      if (past > 0) {
+        sim.camera.x += ux * past;
+        sim.camera.y += uy * past;
+      }
+    }
   }
   const zWant =
     beat === "tunnel" || lostCoast
