@@ -40,6 +40,8 @@ export const ORBIT_PERTURB_BREAK = 0.4;
 export const WARP_BAR_SPEED = 1000;
 /** Visual spool (streaks, rush, rumble) eases in from here so 1000 is not a pop. */
 export const WARP_FX_SPEED = 800;
+/** Camera rumble at jump matches how hard it used to shake at this speed. */
+export const WARP_RUMBLE_REF_SPEED = 1150;
 /** Crossing this speed commits the jump to a new chart. */
 export const WARP_JUMP_SPEED = 1500;
 /** Cruise speed after the arrival brake. */

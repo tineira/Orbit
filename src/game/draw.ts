@@ -27,7 +27,12 @@ import {
   STAR_ATMO_FACTOR,
   transitBeat,
   transitBoomAt,
+  warpApproach,
+  warpCharge,
   WARP_FLASH,
+  WARP_FX_SPEED,
+  WARP_JUMP_SPEED,
+  WARP_RUMBLE_REF_SPEED,
 } from "./world";
 
 type DrawOpts = {
@@ -53,13 +58,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
 
   const cam = sim.camera;
   const now = performance.now();
-  const warpRumble =
-    sim.reducedMotion
-      ? 0
-      : sim.phase === "transit" && !sim.transitPunched
-        ? 1
-        : sim.warpApproach * 0.35 + sim.warpCharge;
-  const rumble = warpRumble * warpRumble;
+  const rumble = warpRumbleStrength(sim);
   const shakeX = sim.reducedMotion
     ? 0
     : (hash(now * 0.08) - 0.5) * cam.shake * 18 +
@@ -277,6 +276,50 @@ function chartFade(sim: Sim) {
   return (1 - t) * (1 - t);
 }
 
+function rumbleFromSpeed(speed: number) {
+  const w = warpApproach(speed) * 0.35 + warpCharge(speed);
+  return w * w;
+}
+
+function warpRumbleStrength(sim: Sim) {
+  if (sim.reducedMotion) return 0;
+  const peak = rumbleFromSpeed(WARP_RUMBLE_REF_SPEED);
+  if (sim.phase === "transit" && !sim.transitPunched) return peak;
+  const sp = Math.hypot(sim.ship.vx, sim.ship.vy);
+  if (sp <= WARP_FX_SPEED) return 0;
+  const t = Math.min(1, (sp - WARP_FX_SPEED) / (WARP_JUMP_SPEED - WARP_FX_SPEED));
+  return rumbleFromSpeed(WARP_FX_SPEED + t * (WARP_RUMBLE_REF_SPEED - WARP_FX_SPEED));
+}
+
+function drawStarMark(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  rgb: [number, number, number],
+  a: number,
+  streak: number,
+  ux: number,
+  uy: number,
+  lenScale = 1,
+) {
+  const len = streak * lenScale;
+  if (len < 0.45) {
+    drawStarDot(ctx, x, y, size, rgb, a);
+    return;
+  }
+  const mix = Math.min(1, (len - 0.45) / 7.5);
+  if (mix < 0.98) drawStarDot(ctx, x, y, size, rgb, a * (1 - mix));
+  const lineA = a * (0.95 + 0.35 * mix);
+  ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${lineA})`;
+  ctx.lineWidth = Math.max(size, 0.85);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x - ux * len, y - uy * len);
+  ctx.lineTo(x + ux * len * 0.15, y + uy * len * 0.15);
+  ctx.stroke();
+}
+
 function starStreak(sim: Sim | undefined) {
   if (!sim || sim.reducedMotion) return 0;
   if (sim.phase === "transit" && !sim.transitPunched) {
@@ -328,18 +371,7 @@ function drawStars(
       const mag = hash(i * 11.9 + layer.par);
       const size = layer.size * (0.65 + mag * 0.7);
       const a = layer.a * (0.55 + mag * 0.45);
-      const rgb = starRgb(i);
-      if (streak > 0.5) {
-        ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`;
-        ctx.lineWidth = Math.max(0.7, size);
-        ctx.lineCap = "round";
-        ctx.beginPath();
-        ctx.moveTo(x - ux * streak, y - uy * streak);
-        ctx.lineTo(x + ux * streak * 0.15, y + uy * streak * 0.15);
-        ctx.stroke();
-      } else {
-        drawStarDot(ctx, x, y, size, rgb, a);
-      }
+      drawStarMark(ctx, x, y, size, starRgb(i), a, streak, ux, uy);
     }
   }
 
@@ -360,17 +392,7 @@ function drawStars(
     const rgb = starRgb(i + 400);
     const a = 0.14 + mag * 0.24;
     const size = 0.4 + mag * 0.55;
-    if (streak > 0.5) {
-      ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`;
-      ctx.lineWidth = Math.max(0.55, size);
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(x - ux * streak * 0.55, y - uy * streak * 0.55);
-      ctx.lineTo(x + ux * streak * 0.08, y + uy * streak * 0.08);
-      ctx.stroke();
-    } else {
-      drawStarDot(ctx, x, y, size, rgb, a);
-    }
+    drawStarMark(ctx, x, y, size, rgb, a, streak, ux, uy, 0.55);
   }
 
   const brights = 36;
@@ -385,24 +407,15 @@ function drawStars(
     const y = wrapSpan(gy - oyb, spanB) + cssH / 2 - spanB / 2;
     const rgb = starRgb(i + 90);
     const size = 1.25 + hash(i * 6.2) * 0.55;
-    if (streak > 0.5) {
-      ctx.strokeStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.7)`;
-      ctx.lineWidth = size;
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(x - ux * streak * 1.15, y - uy * streak * 1.15);
-      ctx.lineTo(x + ux * streak * 0.2, y + uy * streak * 0.2);
-      ctx.stroke();
-    } else {
-      ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.08)`;
+    const len = streak * 1.15;
+    const mix = len < 0.45 ? 0 : Math.min(1, (len - 0.45) / 7.5);
+    if (mix < 0.98) {
+      ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${0.08 * (1 - mix)})`;
       ctx.beginPath();
       ctx.arc(x, y, size * 1.6, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.82)`;
-      ctx.beginPath();
-      ctx.arc(x, y, size, 0, Math.PI * 2);
-      ctx.fill();
     }
+    drawStarMark(ctx, x, y, size, rgb, 0.82, streak, ux, uy, 1.15);
   }
 
   ctx.restore();
