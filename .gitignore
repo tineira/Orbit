@@ -6,6 +6,7 @@ dist/
 .grok/
 artifacts/
 screenshots/
+.playwright-mcp/
 *.log
 .env
 .env.*
