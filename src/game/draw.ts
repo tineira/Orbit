@@ -42,6 +42,8 @@ import {
   WARP_LAUNCH,
   WARP_FX_SPEED,
   WARP_JUMP_SPEED,
+  WARP_LOST_FADE,
+  WARP_LOST_FADE_REDUCED,
   WARP_RUMBLE_REF_SPEED,
   WARP_TUNNEL_STREAK,
 } from "./world";
@@ -374,7 +376,7 @@ function warpRumbleStrength(sim: Sim) {
 function starStreak(sim: Sim | undefined) {
   if (!sim || sim.reducedMotion) return 0;
   if (sim.warpLost || (sim.phase === "transit" && !sim.transitPunched)) {
-    const u = sim.warpLost ? 1 : transitLaunchU(sim.transitAge);
+    const u = transitLaunchU(sim.transitAge);
     return WARP_FLIGHT_STREAK + u * (WARP_TUNNEL_STREAK - WARP_FLIGHT_STREAK);
   }
   if (sim.phase === "transit" && sim.transitPunched) {
@@ -405,6 +407,14 @@ function layerStreakLen(base: number, par: number, full: boolean) {
   return Math.max(0, base - hold) * (0.2 + 0.8 * d);
 }
 
+function lostStarDim(sim?: Sim) {
+  if (!sim?.warpLost) return 1;
+  const dur = sim.reducedMotion ? WARP_LOST_FADE_REDUCED : WARP_LOST_FADE;
+  const t = Math.max(0, Math.min(1, sim.transitAge / dur));
+  const u = t * t * (3 - 2 * t);
+  return 1 - 0.93 * u;
+}
+
 function drawStarLayer(
   ctx: CanvasRenderingContext2D,
   layer: StarLayer,
@@ -416,12 +426,13 @@ function drawStarLayer(
   ux: number,
   uy: number,
   lenScale: number,
+  dim = 1,
 ) {
   const { span, stars, lineW } = layer;
   const cx = cssW / 2 - span / 2;
   const cy = cssH / 2 - span / 2;
   const len = streak * lenScale;
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = dim;
   if (len < 0.45) {
     let tint = -1;
     for (const s of stars) {
@@ -431,7 +442,7 @@ function drawStarLayer(
         tint = s.tint;
         ctx.fillStyle = STAR_TINT_CSS[tint]!;
       }
-      ctx.globalAlpha = s.a;
+      ctx.globalAlpha = s.a * dim;
       if (s.size <= 1.05) {
         const sz = Math.max(0.7, s.size);
         ctx.fillRect(x - sz * 0.5, y - sz * 0.5, sz, sz);
@@ -453,7 +464,7 @@ function drawStarLayer(
         tint = s.tint;
         ctx.fillStyle = STAR_TINT_CSS[tint]!;
       }
-      ctx.globalAlpha = s.a * (1 - mix);
+      ctx.globalAlpha = s.a * (1 - mix) * dim;
       if (s.size <= 1.05) {
         const sz = Math.max(0.7, s.size);
         ctx.fillRect(x - sz * 0.5, y - sz * 0.5, sz, sz);
@@ -478,7 +489,7 @@ function drawStarLayer(
       [i, mid, 0.5],
       [mid, end, 0.92],
     ] as const) {
-      ctx.globalAlpha = band * lineA;
+      ctx.globalAlpha = band * lineA * dim;
       ctx.beginPath();
       for (let k = from; k < to; k++) {
         const s = stars[k]!;
@@ -506,6 +517,7 @@ function drawStars(
   ctx.globalCompositeOperation = "lighter";
   const base = starStreak(sim);
   const full = starStreakFull(sim);
+  const dim = lostStarDim(sim);
   const sp = sim ? Math.hypot(sim.ship.vx, sim.ship.vy) : 0;
   const ux = sim && sp > 1e-6 ? sim.ship.vx / sp : 0;
   const uy = sim && sp > 1e-6 ? sim.ship.vy / sp : 0;
@@ -526,6 +538,7 @@ function drawStars(
       ux,
       uy,
       1,
+      dim,
     );
   }
   drawStarLayer(
@@ -539,6 +552,7 @@ function drawStars(
     ux,
     uy,
     1,
+    dim,
   );
 
   const len = layerStreakLen(base, BRIGHT_LAYER.par, full);
@@ -557,7 +571,7 @@ function drawStars(
         tint = s.tint;
         ctx.fillStyle = STAR_TINT_CSS[tint]!;
       }
-      ctx.globalAlpha = 0.08 * (1 - mix);
+      ctx.globalAlpha = 0.08 * (1 - mix) * dim;
       ctx.beginPath();
       ctx.arc(x, y, s.size * 1.6, 0, Math.PI * 2);
       ctx.fill();
@@ -574,6 +588,7 @@ function drawStars(
     ux,
     uy,
     1,
+    dim,
   );
 
   ctx.globalAlpha = 1;
