@@ -1570,12 +1570,23 @@ function drawMinimapShip(
   const sy = cy + hit.y;
   const ux = hit.ux;
   const uy = hit.uy;
+  const tipX = sx + ux * 4;
+  const tipY = sy + uy * 4;
+  const hx = ux * 4.8;
+  const hy = uy * 4.8;
+  const wx = uy * 3.6;
+  const wy = -ux * 3.6;
+  ctx.strokeStyle = "#eceae4";
+  ctx.lineWidth = 1.55;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
   ctx.beginPath();
-  ctx.moveTo(sx + ux * 4.5, sy + uy * 4.5);
-  ctx.lineTo(sx - ux * 2.2 + uy * 3.1, sy - uy * 2.2 - ux * 3.1);
-  ctx.lineTo(sx - ux * 2.2 - uy * 3.1, sy - uy * 2.2 + ux * 3.1);
-  ctx.closePath();
-  ctx.fill();
+  ctx.moveTo(sx - ux * 3.5, sy - uy * 3.5);
+  ctx.lineTo(tipX, tipY);
+  ctx.moveTo(tipX - hx + wx, tipY - hy + wy);
+  ctx.lineTo(tipX, tipY);
+  ctx.lineTo(tipX - hx - wx, tipY - hy - wy);
+  ctx.stroke();
   ctx.restore();
 }
 
