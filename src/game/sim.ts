@@ -28,6 +28,7 @@ import {
   isGhostBody,
   twinOf,
   STAR_ATMO_FACTOR,
+  STAR_DRAG_DENSITY,
   KEPLER_STAR_APO_FACTOR,
   KEPLER_STAR_APO_CAP,
   FLARE_CAP,
@@ -1015,6 +1016,12 @@ function atmoRadius(p: Planet) {
   return p.radius * (p.kind === "gas" ? 1.85 : p.kind === "star" ? STAR_ATMO_FACTOR : 1.72);
 }
 
+function atmoDensityK(p: Planet) {
+  if (p.kind === "gas") return 0.48;
+  if (p.kind === "star") return STAR_DRAG_DENSITY;
+  return 0.5;
+}
+
 function dragNear(
   x: number,
   y: number,
@@ -1034,7 +1041,7 @@ function dragNear(
     const outer = atmoRadius(p);
     if (d >= outer || d < p.radius) continue;
     const t = 1 - (d - p.radius) / (outer - p.radius);
-    const density = t * t * (p.kind === "gas" ? 0.48 : p.kind === "star" ? 0.12 : 0.5);
+    const density = t * t * atmoDensityK(p);
     const rvx = vx - p.vx;
     const rvy = vy - p.vy;
     const speed = Math.hypot(rvx, rvy);
@@ -1070,7 +1077,7 @@ function atmoHost(sim: Sim): Planet | null {
     const outer = atmoRadius(p);
     if (d >= outer || d < p.radius) continue;
     const t = 1 - (d - p.radius) / (outer - p.radius);
-    const density = t * t * (p.kind === "gas" ? 0.48 : p.kind === "star" ? 0.12 : 0.5);
+    const density = t * t * atmoDensityK(p);
     const mag = density * Math.hypot(vx - p.vx, vy - p.vy) * sim.atmoScale;
     if (mag > bestMag) {
       bestMag = mag;

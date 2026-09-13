@@ -22,6 +22,8 @@ export const ORBIT_SHELL_MOON_MIN_ALT = 90;
 export const ORBIT_SHELL_GAS_CLEAR = 72;
 /** Star corona outer radius / body radius. Keep in sync with parking: min shell sits just past this. */
 export const STAR_ATMO_FACTOR = 2.1;
+/** Corona drag vs gas 0.48 / rocky 0.5. Low so a fast dive still hits the disk. */
+export const STAR_DRAG_DENSITY = 0.04;
 /** Clearance past the corona before a star lock can hold. */
 export const ORBIT_SHELL_STAR_CLEAR = 40;
 /** Star lock outer altitude as a multiple of radius (~800–1100 for typical stars). */
