@@ -10,6 +10,7 @@ import {
   pickWarpArrival,
   SHIP_HULL,
   transitBeat,
+  transitArriveU,
   flightStarStreak,
   warpApproach,
   warpBrakeTravel,
@@ -99,6 +100,15 @@ test("transit launch ramps then holds full warp a few seconds before punch", () 
   assert.ok(WARP_TUNNEL - WARP_LAUNCH >= 2.8);
 });
 
+test("arrival star ease holds full warp then inverts the launch ramp", () => {
+  const start = WARP_TUNNEL + WARP_STREAK;
+  assert.equal(transitArriveU(start), 1);
+  assert.equal(transitArriveU(start + WARP_BRAKE), 0);
+  const mid = transitArriveU(start + WARP_BRAKE / 2);
+  assert.ok(mid > 0.4 && mid < 0.6);
+  assert.equal(transitArriveU(start - 0.1), 1);
+});
+
 test("in-flight star streaks at jump match the old 1050 look", () => {
   assert.equal(flightStarStreak(800), 0);
   assert.equal(flightStarStreak(1500), WARP_FLIGHT_STREAK);
@@ -110,7 +120,7 @@ test("warp brake travel matches the cubic ease integral", () => {
   assert.equal(warpBrakeTravel(0, 1), WARP_BRAKE_SPEED * 0.75);
   assert.equal(warpBrakeTravel(2000, 1), 2000 * 0.25 + WARP_BRAKE_SPEED * 0.75);
   const d = warpBrakeTravel(2400);
-  assert.ok(d > 600 && d < 720);
+  assert.ok(d > 850 && d < 960);
   assert.equal(warpBrakeTravel(1000, WARP_BRAKE), WARP_BRAKE * (250 + WARP_BRAKE_SPEED * 0.75));
 });
 

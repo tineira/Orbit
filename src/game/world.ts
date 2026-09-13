@@ -64,8 +64,9 @@ export const WARP_TUNNEL = 4.5;
 export const WARP_STREAK = 0.7;
 /** Delays from the first boom; last entry is the arrival (final speed + control). */
 export const WARP_BOOM_TIMES = [0, 0.48, 1.02] as const;
-export const WARP_BRAKE = WARP_BOOM_TIMES[WARP_BOOM_TIMES.length - 1];
-export const WARP_FLASH = WARP_BRAKE;
+/** Same window as the launch ramp so the starfield can invert it. */
+export const WARP_BRAKE = WARP_LAUNCH;
+export const WARP_FLASH = WARP_BOOM_TIMES[WARP_BOOM_TIMES.length - 1];
 export const WARP_TRANSIT = WARP_TUNNEL + WARP_STREAK + WARP_BRAKE;
 export const WARP_TRANSIT_REDUCED = 0.05;
 /** Missed heading: light-ray hold while the spool dies. */
@@ -121,6 +122,15 @@ export function flightStarStreak(speed: number) {
 export function transitLaunchU(age: number) {
   const t = Math.max(0, Math.min(1, age / WARP_LAUNCH));
   return t * t * (3 - 2 * t);
+}
+
+/** 1 through the drop-in, then 1→0 over the brake. Inverse of transitLaunchU. */
+export function transitArriveU(age: number, reduced = false) {
+  if (reduced) return 0;
+  const start = WARP_TUNNEL + WARP_STREAK;
+  if (age <= start) return 1;
+  const t = Math.max(0, Math.min(1, (age - start) / WARP_BRAKE));
+  return 1 - t * t * (3 - 2 * t);
 }
 
 /** Distance covered during the arrival brake, matching stepTransit's cubic ease. */

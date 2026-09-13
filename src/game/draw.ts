@@ -33,6 +33,7 @@ import {
   transitBeat,
   transitBoomAt,
   transitLaunchU,
+  transitArriveU,
   warpApproach,
   warpCharge,
   flightStarStreak,
@@ -361,6 +362,9 @@ function warpRumbleStrength(sim: Sim) {
   if (sim.reducedMotion) return 0;
   const peak = rumbleFromSpeed(WARP_RUMBLE_REF_SPEED);
   if (sim.phase === "transit" && !sim.transitPunched) return peak;
+  if (sim.phase === "transit" && sim.transitPunched) {
+    return peak * transitArriveU(sim.transitAge, sim.reducedMotion);
+  }
   const sp = Math.hypot(sim.ship.vx, sim.ship.vy);
   if (sp <= WARP_FX_SPEED) return 0;
   const t = Math.min(1, (sp - WARP_FX_SPEED) / (WARP_JUMP_SPEED - WARP_FX_SPEED));
@@ -373,8 +377,8 @@ function starStreak(sim: Sim | undefined) {
     const u = sim.warpLost ? 1 : transitLaunchU(sim.transitAge);
     return WARP_FLIGHT_STREAK + u * (WARP_TUNNEL_STREAK - WARP_FLIGHT_STREAK);
   }
-  if (sim.phase === "transit" && transitBeat(sim.transitAge, sim.reducedMotion) === "streak") {
-    return 28;
+  if (sim.phase === "transit" && sim.transitPunched) {
+    return transitArriveU(sim.transitAge, sim.reducedMotion) * WARP_TUNNEL_STREAK;
   }
   return flightStarStreak(Math.hypot(sim.ship.vx, sim.ship.vy));
 }
@@ -384,7 +388,12 @@ const STAR_PAR_FAR = 0.018;
 
 function starStreakFull(sim: Sim | undefined) {
   if (!sim || sim.reducedMotion) return false;
-  return sim.warpLost || (sim.phase === "transit" && !sim.transitPunched);
+  if (sim.warpLost || (sim.phase === "transit" && !sim.transitPunched)) return true;
+  return (
+    sim.phase === "transit" &&
+    sim.transitPunched &&
+    transitArriveU(sim.transitAge, sim.reducedMotion) > 0.04
+  );
 }
 
 /** Near field streaks first. Far layers stay as dots until the spool is much higher. */

@@ -27,6 +27,7 @@ import {
   createSystem,
   getSystem,
   transitBeat,
+  transitArriveU,
   warpSpool,
   WARP_LOST_FADE,
   WARP_LOST_FADE_REDUCED,
@@ -564,7 +565,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         beat === "tunnel" || beat === "streak"
           ? 1
           : beat === "brake"
-            ? 0
+            ? transitArriveU(sim.transitAge, sim.reducedMotion)
             : warpSpool(Math.hypot(sim.ship.vx, sim.ship.vy));
       audio.setWarp(spool > 0.02, spool);
     }

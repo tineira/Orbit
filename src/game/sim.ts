@@ -71,6 +71,7 @@ import {
   warpBrakeTravel,
   pickWarpArrival,
   transitLaunchU,
+  transitArriveU,
   WARP_FLIGHT_RUSH,
 } from "./world";
 
@@ -2537,6 +2538,11 @@ function starfieldRush(sim: Sim): { x: number; y: number } {
   if (sim.warpLost || (sim.phase === "transit" && !sim.transitPunched)) {
     const u = sim.warpLost ? 1 : transitLaunchU(sim.transitAge);
     const rush = 1600 + u * u * 7600;
+    return { x: ux * rush, y: uy * rush };
+  }
+  if (sim.phase === "transit" && sim.transitPunched) {
+    const u = transitArriveU(sim.transitAge, sim.reducedMotion);
+    const rush = sp + u * u * (9200 - sp);
     return { x: ux * rush, y: uy * rush };
   }
   if (sim.warpApproach > 0 || sim.warpCharge > 0) {
