@@ -2,15 +2,18 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import {
   APP_ENV_REL_PATH,
+  isBareCommand,
   mergeAppEnv,
   parseAppEnv,
   projectRoot,
+  quoteWin32Arg,
   readAppEnv,
+  withLocalBinPath,
 } from "./with-app-env.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -57,6 +60,35 @@ test("an explicit process-env override wins over the file", () => {
   );
   assert.equal(merged.VITE_AUTH_ENABLED, "true");
   assert.equal(merged.PATH, "/usr/bin");
+});
+
+test("prepends node_modules/.bin onto the existing PATH", () => {
+  const env = withLocalBinPath({ PATH: "/usr/bin" }, join("tmp", "proj"));
+  const key = Object.keys(env).find((k) => k.toUpperCase() === "PATH");
+  const bin = join("tmp", "proj", "node_modules", ".bin");
+  assert.equal(env[key], `${bin}${delimiter}/usr/bin`);
+});
+
+test("Windows PATH key casing is preserved when present", () => {
+  const env = withLocalBinPath({ Path: "C:\\Windows" }, "C:\\proj");
+  if (process.platform === "win32") {
+    assert.equal(env.Path.startsWith(join("C:\\proj", "node_modules", ".bin")), true);
+    assert.equal("PATH" in env, false);
+  } else {
+    assert.equal(env.PATH.startsWith(join("C:\\proj", "node_modules", ".bin")), true);
+  }
+});
+
+test("bare npm bins are distinguished from resolved executables", () => {
+  assert.equal(isBareCommand("vite"), true);
+  assert.equal(isBareCommand("C:\\Program Files\\nodejs\\node.exe"), false);
+  assert.equal(isBareCommand("/usr/bin/node"), false);
+});
+
+test("win32 quoting wraps values that cmd.exe would split", () => {
+  assert.equal(quoteWin32Arg("vite"), "vite");
+  assert.equal(quoteWin32Arg("0.0.0.0"), "0.0.0.0");
+  assert.equal(quoteWin32Arg("Program Files"), '"Program Files"');
 });
 
 test("the template ships auth off", () => {

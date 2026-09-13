@@ -22,7 +22,7 @@
 import { spawn } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
 import { constants as osConstants } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const APP_ENV_REL_PATH = ".grok/app-env.json";
@@ -63,6 +63,36 @@ export function readAppEnv(root) {
 /** File values under the process environment: an explicit override wins. */
 export function mergeAppEnv(appEnv, processEnv) {
   return { ...appEnv, ...processEnv };
+}
+
+/**
+ * Put `<root>/node_modules/.bin` first on PATH so a direct
+ * `node scripts/with-app-env.mjs vite` finds the local CLI, not only
+ * `npm run` (which already prepends it).
+ *
+ * Windows stores the variable as `Path` or `PATH`; writing the other key
+ * leaves the original in place and CreateProcess never sees the bin dir.
+ */
+export function withLocalBinPath(processEnv, root) {
+  const env = { ...processEnv };
+  const pathKey =
+    process.platform === "win32"
+      ? (Object.keys(env).find((key) => key.toUpperCase() === "PATH") ?? "Path")
+      : "PATH";
+  env[pathKey] = `${join(root, "node_modules", ".bin")}${delimiter}${env[pathKey] ?? ""}`;
+  return env;
+}
+
+/** A PATH lookup like `vite`, not an already-resolved `node.exe` / `.js` path. */
+export function isBareCommand(command) {
+  return !/[\\/:]/.test(command);
+}
+
+/** Quote one cmd.exe argument so a space in the value does not split it. */
+export function quoteWin32Arg(value) {
+  if (value.length === 0) return '""';
+  if (!/[\s&|<>^()"]/.test(value)) return value;
+  return `"${value.replace(/"/g, '""')}"`;
 }
 
 /**
@@ -110,8 +140,22 @@ function main(argv) {
     console.error("usage: node scripts/with-app-env.mjs <command> [args…]");
     process.exit(2);
   }
-  const env = mergeAppEnv(readAppEnv(projectRoot()), process.env);
-  const child = spawn(command, args, { stdio: "inherit", env });
+  const env = withLocalBinPath(
+    mergeAppEnv(readAppEnv(projectRoot()), process.env),
+    projectRoot(),
+  );
+  // Windows npm bins are `.cmd` shims; CreateProcess cannot run them without a
+  // shell. Absolute paths (`node.exe`, a `.js` entry) must stay unshell'd so a
+  // space in `Program Files` is not split, and so we do not hit DEP0190.
+  const child =
+    process.platform === "win32" && isBareCommand(command)
+      ? spawn([command, ...args].map(quoteWin32Arg).join(" "), {
+          stdio: "inherit",
+          env,
+          shell: true,
+          windowsHide: true,
+        })
+      : spawn(command, args, { stdio: "inherit", env, windowsHide: true });
   // The dev server is long-running and is stopped by signalling this wrapper.
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => child.kill(signal));
