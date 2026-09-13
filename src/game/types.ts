@@ -71,6 +71,7 @@ export type WarpRing = {
   y: number;
   age: number;
   life: number;
+  seed: number;
 };
 
 export type SolarFlare = {
@@ -87,7 +88,7 @@ export type SolarFlare = {
 
 export type Phase = "creating" | "title" | "flight" | "landed" | "crashed" | "transit";
 
-export type TransitBeat = "tunnel" | "streak" | "flash" | "brake";
+export type TransitBeat = "tunnel" | "streak" | "brake";
 
 export type BurnCause = "flare" | "star";
 

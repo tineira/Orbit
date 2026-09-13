@@ -537,7 +537,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     const spool =
       beat === "tunnel" || beat === "streak"
         ? 1
-        : beat === "flash" || beat === "brake"
+        : beat === "brake"
           ? 0
           : warpSpool(Math.hypot(sim.ship.vx, sim.ship.vy));
     audio.setWarp(spool > 0.02, spool);

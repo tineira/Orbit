@@ -29,10 +29,9 @@ test("warp spool keeps rising through 1300 and peaks at the 1500 jump", () => {
   assert.equal(warpSpool(1500), 1);
 });
 
-test("transit is tunnel, then a streak, then flash, then brake", () => {
+test("transit is tunnel, then a streak, then brake through the last boom", () => {
   assert.equal(transitBeat(0, false), "tunnel");
   assert.equal(transitBeat(1.0, false), "tunnel");
   assert.equal(transitBeat(1.2, false), "streak");
-  assert.equal(transitBeat(1.8, false), "flash");
-  assert.equal(transitBeat(3.1, false), "brake");
+  assert.equal(transitBeat(1.8, false), "brake");
 });

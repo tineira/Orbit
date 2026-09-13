@@ -50,11 +50,11 @@ export const WARP_STREAK_ZOOM = 0.3;
 export const WARP_STREAK_SPEED_CAP = 2400;
 export const WARP_TUNNEL = 1.05;
 export const WARP_STREAK = 0.7;
-export const WARP_FLASH = 1.15;
-/** Delays from the first boom; keep in sync with `sonicBooms()`. */
+/** Delays from the first boom; last entry is the arrival (final speed + control). */
 export const WARP_BOOM_TIMES = [0, 0.48, 1.02] as const;
-export const WARP_BRAKE = 0.55;
-export const WARP_TRANSIT = WARP_TUNNEL + WARP_STREAK + WARP_FLASH + WARP_BRAKE;
+export const WARP_BRAKE = WARP_BOOM_TIMES[WARP_BOOM_TIMES.length - 1];
+export const WARP_FLASH = WARP_BRAKE;
+export const WARP_TRANSIT = WARP_TUNNEL + WARP_STREAK + WARP_BRAKE;
 export const WARP_TRANSIT_REDUCED = 0.05;
 
 export function transitPunchAt(reduced: boolean) {
@@ -69,7 +69,6 @@ export function transitBeat(age: number, reduced: boolean): TransitBeat {
   if (reduced) return "brake";
   if (age < WARP_TUNNEL) return "tunnel";
   if (age < WARP_TUNNEL + WARP_STREAK) return "streak";
-  if (age < WARP_TUNNEL + WARP_STREAK + WARP_FLASH) return "flash";
   return "brake";
 }
 

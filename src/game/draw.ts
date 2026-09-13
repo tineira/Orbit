@@ -1139,11 +1139,39 @@ function drawWreck(ctx: CanvasRenderingContext2D, seed: number, umbra: number) {
   }
 }
 
+function warpGasPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  rad: number,
+  seed: number,
+  age: number,
+  scale = 1,
+) {
+  const n = 32;
+  ctx.beginPath();
+  for (let i = 0; i <= n; i++) {
+    const t = (i / n) * Math.PI * 2;
+    const wobble =
+      1 +
+      0.16 * Math.sin(t * 3 + seed + age * 1.4) +
+      0.1 * Math.sin(t * 5 - seed * 1.7 + age * 2.2) +
+      0.06 * Math.sin(t * 9 + seed * 0.5 - age * 0.8);
+    const rr = rad * scale * wobble;
+    const px = x + Math.cos(t) * rr;
+    const py = y + Math.sin(t) * rr;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+
 function drawWarpRings(ctx: CanvasRenderingContext2D, sim: Sim) {
   if (sim.warpRings.length === 0) return;
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
   ctx.lineCap = "round";
+  ctx.lineJoin = "round";
   for (const ring of sim.warpRings) {
     const u = Math.min(1, ring.age / ring.life);
     const fade = (1 - u) * (1 - u);
@@ -1153,24 +1181,25 @@ function drawWarpRings(ctx: CanvasRenderingContext2D, sim: Sim) {
     const b = Math.round(245 * hot + 255 * (1 - hot));
     const flash = 0.55 * hot;
     const rad = 22 + u * 560;
-    const grad = ctx.createRadialGradient(ring.x, ring.y, rad * 0.15, ring.x, ring.y, rad);
-    grad.addColorStop(0, `rgba(${r}, ${gch}, ${b}, ${(0.06 + flash) * fade})`);
-    grad.addColorStop(0.55, `rgba(${r}, ${gch}, ${b}, ${(0.1 + flash * 0.4) * fade})`);
-    grad.addColorStop(0.82, `rgba(${r}, ${gch}, ${b}, ${(0.48 + flash) * fade})`);
+    const ox = (hash(ring.seed * 1.3) - 0.5) * rad * 0.08;
+    const oy = (hash(ring.seed * 2.1) - 0.5) * rad * 0.08;
+    const cx = ring.x + ox;
+    const cy = ring.y + oy;
+    const grad = ctx.createRadialGradient(cx, cy, rad * 0.12, cx, cy, rad * 1.12);
+    grad.addColorStop(0, `rgba(${r}, ${gch}, ${b}, ${(0.05 + flash * 0.7) * fade})`);
+    grad.addColorStop(0.58, `rgba(${r}, ${gch}, ${b}, ${(0.08 + flash * 0.25) * fade})`);
+    grad.addColorStop(0.84, `rgba(${r}, ${gch}, ${b}, ${(0.4 + flash) * fade})`);
     grad.addColorStop(1, `rgba(${r}, ${gch}, ${b}, 0)`);
     ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(ring.x, ring.y, rad, 0, Math.PI * 2);
+    warpGasPath(ctx, cx, cy, rad, ring.seed, ring.age, 1);
     ctx.fill();
-    ctx.strokeStyle = `rgba(${r}, ${gch}, ${b}, ${(0.75 + flash) * fade})`;
-    ctx.lineWidth = 7 + 14 * (1 - u);
-    ctx.beginPath();
-    ctx.arc(ring.x, ring.y, rad * 0.92, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(${r}, ${gch}, ${b}, ${(0.72 + flash) * fade})`;
+    ctx.lineWidth = 6 + 16 * (1 - u);
+    warpGasPath(ctx, cx, cy, rad, ring.seed, ring.age, 0.94);
     ctx.stroke();
-    ctx.strokeStyle = `rgba(255, 252, 248, ${(0.2 + flash * 0.5) * fade})`;
-    ctx.lineWidth = 2.2;
-    ctx.beginPath();
-    ctx.arc(ring.x, ring.y, rad * 0.7, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255, 252, 248, ${(0.18 + flash * 0.45) * fade})`;
+    ctx.lineWidth = 2 + 3 * hot;
+    warpGasPath(ctx, cx, cy, rad, ring.seed + 2.2, ring.age * 1.15, 0.68);
     ctx.stroke();
   }
   ctx.restore();
@@ -1226,16 +1255,31 @@ function drawArrivalFlash(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number,
   const amt = arrivalFlashAmount(sim);
   if (amt < 0.02) return;
   const p = worldToScreen(sim.camera, sim.ship.x, sim.ship.y, cssW, cssH);
-  const r = Math.max(cssW, cssH) * (0.22 + amt * 0.55);
-  const g = ctx.createRadialGradient(p.x, p.y, 8, p.x, p.y, r);
-  g.addColorStop(0, `rgba(255, 252, 245, ${0.96 * amt})`);
-  g.addColorStop(0.18, `rgba(255, 236, 210, ${0.55 * amt})`);
-  g.addColorStop(0.5, `rgba(236, 234, 228, ${0.18 * amt})`);
-  g.addColorStop(1, "rgba(236, 234, 228, 0)");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, cssW, cssH);
-  ctx.fillStyle = `rgba(236, 234, 228, ${0.22 * amt})`;
-  ctx.fillRect(0, 0, cssW, cssH);
+  const r = Math.max(cssW, cssH) * (0.2 + amt * 0.5);
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (let i = 0; i < 7; i++) {
+    const hx = hash(i * 4.17 + sim.transitBoomN * 3.1);
+    const hy = hash(i * 7.9 + 1.4);
+    const cx = p.x + (hx - 0.5) * r * 0.42;
+    const cy = p.y + (hy - 0.5) * r * 0.42;
+    const rx = r * (0.18 + hash(i * 2.6) * 0.5);
+    const ry = rx * (0.45 + hash(i * 5.3) * 0.55);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate((hash(i * 9.2) - 0.5) * Math.PI);
+    ctx.scale(1, Math.max(0.35, ry / rx));
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+    g.addColorStop(0, `rgba(255, 252, 245, ${0.42 * amt})`);
+    g.addColorStop(0.35, `rgba(255, 236, 210, ${0.16 * amt})`);
+    g.addColorStop(1, "rgba(236, 234, 228, 0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, rx, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
 }
 
 function drawShip(ctx: CanvasRenderingContext2D, sim: Sim, umbra = 0) {

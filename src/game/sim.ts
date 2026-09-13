@@ -44,7 +44,6 @@ import {
   WARP_BOOM_TIMES,
   WARP_BRAKE,
   WARP_BRAKE_SPEED,
-  WARP_FLASH,
   WARP_JUMP_SPEED,
   WARP_STREAK,
   WARP_STREAK_SPEED_CAP,
@@ -427,7 +426,13 @@ function stepTransit(sim: Sim, dt: number) {
       sim.transitBoomN < WARP_BOOM_TIMES.length &&
       since >= WARP_BOOM_TIMES[sim.transitBoomN]!
     ) {
-      sim.warpRings.push({ x: ship.x, y: ship.y, age: 0, life: 1.7 });
+      sim.warpRings.push({
+        x: ship.x,
+        y: ship.y,
+        age: 0,
+        life: 1.7,
+        seed: Math.random() * 64,
+      });
       sim.camera.trauma = Math.max(sim.camera.trauma, 0.5);
       sim.transitBoomN += 1;
     }
@@ -435,13 +440,8 @@ function stepTransit(sim: Sim, dt: number) {
   const beat = transitBeat(sim.transitAge + dt, sim.reducedMotion);
   const dirx = sim.transitDirX;
   const diry = sim.transitDirY;
-  if (beat === "flash" && sim.transitPunched) {
-    ship.vx = dirx * 240;
-    ship.vy = diry * 240;
-    ship.x += ship.vx * dt;
-    ship.y += ship.vy * dt;
-  } else if (beat === "brake" && sim.transitPunched) {
-    const u = Math.min(1, Math.max(0, (sim.transitAge + dt - boomAt - WARP_FLASH) / WARP_BRAKE));
+  if (beat === "brake" && sim.transitPunched) {
+    const u = Math.min(1, Math.max(0, (sim.transitAge + dt - boomAt) / WARP_BRAKE));
     const ease = 1 - (1 - u) * (1 - u) * (1 - u);
     const sp = sim.transitStreakSpeed * (1 - ease) + WARP_BRAKE_SPEED * ease;
     ship.vx = dirx * sp;
@@ -477,11 +477,12 @@ function stepTransit(sim: Sim, dt: number) {
   updateCamera(sim, dt);
   const dur = sim.reducedMotion ? WARP_TRANSIT_REDUCED : WARP_TRANSIT;
   if (sim.transitAge < dur) return;
+  ship.vx = dirx * WARP_BRAKE_SPEED;
+  ship.vy = diry * WARP_BRAKE_SPEED;
   sim.phase = "flight";
   sim.transitAge = 0;
-  const sp = Math.hypot(ship.vx, ship.vy);
-  sim.warpCharge = warpCharge(sp);
-  sim.warpApproach = warpApproach(sp);
+  sim.warpCharge = warpCharge(WARP_BRAKE_SPEED);
+  sim.warpApproach = warpApproach(WARP_BRAKE_SPEED);
   sim.orbitHint = null;
   sim.status = "deep";
 }
@@ -2367,7 +2368,7 @@ function updateCamera(sim: Sim, dt: number) {
   sim.camera.starDriftX += (rush.x - s.vx) * dt;
   sim.camera.starDriftY += (rush.y - s.vy) * dt;
   const beat = sim.phase === "transit" ? transitBeat(sim.transitAge, sim.reducedMotion) : null;
-  const rideShip = beat === "streak" || beat === "flash" || beat === "brake";
+  const rideShip = beat === "streak" || beat === "brake";
   const look = rideShip ? 0 : speed > 400 ? 0.42 : 0.28;
   const targetX = s.x + s.vx * look;
   const targetY = s.y + s.vy * look;
