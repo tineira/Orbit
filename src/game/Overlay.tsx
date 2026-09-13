@@ -96,7 +96,9 @@ export function Overlay({
   return (
     <div className="pointer-events-none absolute inset-0 text-fg">
       {hud.phase === "creating" ? <Creating /> : null}
-      {hud.phase === "transit" ? <Transit /> : null}
+      {hud.phase === "transit" ? (
+        <Transit beat={hud.transitBeat} name={hud.nearestName} />
+      ) : null}
       {hud.phase === "title" ? (
         <Title
           onLaunch={onLaunch}
@@ -293,22 +295,16 @@ function Creating() {
   );
 }
 
-function Transit() {
-  const star = getPlanets().find((p) => p.kind === "star");
+function Transit({ beat, name }: { beat: HudSnapshot["transitBeat"]; name: string | null }) {
+  if (beat !== "brake") return null;
   return (
     <div className="absolute inset-0 flex flex-col justify-between p-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-8">
       <div>
         <p className="font-mono text-xs tracking-[0.22em] uppercase text-muted">A small system</p>
         <h1 className="mt-3 font-display text-5xl sm:text-6xl md:text-7xl leading-none tracking-tight font-semibold text-fg">
-          {star?.name ?? "Lumen"}
+          {name ?? "Lumen"}
         </h1>
       </div>
-      <p
-        className="creating-world font-mono text-sm tracking-[0.2em] uppercase text-muted"
-        aria-live="polite"
-      >
-        Warp
-      </p>
     </div>
   );
 }

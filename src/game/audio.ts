@@ -3,6 +3,7 @@ type AudioApi = {
   setThrust: (on: boolean, intensity: number) => void;
   setWarp: (on: boolean, intensity: number) => void;
   warpJump: () => void;
+  sonicBooms: () => void;
   bump: (amount: number) => void;
   land: () => void;
   crash: () => void;
@@ -26,6 +27,7 @@ export function createAudio(): AudioApi {
   let warpScreamGain: GainNode | null = null;
   let warpAirFilter: BiquadFilterNode | null = null;
   let warpAirGain: GainNode | null = null;
+  let whiteBuf: AudioBuffer | null = null;
   let muted = false;
   let thrustOn = false;
 
@@ -62,6 +64,10 @@ export function createAudio(): AudioApi {
     thrustFilter.connect(thrustGain);
     thrustGain.connect(sfx);
     noiseSrc.start();
+
+    whiteBuf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 1.2), ctx.sampleRate);
+    const white = whiteBuf.getChannelData(0);
+    for (let i = 0; i < white.length; i++) white[i] = Math.random() * 2 - 1;
 
     // Film hyperspace spool: sub pressure, rising tone, airy tunnel whoosh.
     // No hull-rattle LFO — that reads as a car, not a jump.
@@ -209,6 +215,71 @@ export function createAudio(): AudioApi {
       };
       rise.onended = tidy;
       window.setTimeout(tidy, (stopAt - t) * 1000 + 40);
+    },
+    sonicBooms() {
+      ensure();
+      if (!ctx || !sfx || !whiteBuf) return;
+      void ctx.resume();
+      const t = ctx.currentTime;
+      const boom = (at: number, crackGain: number, band: number, thump: number) => {
+        const src = ctx!.createBufferSource();
+        src.buffer = whiteBuf;
+        const bp = ctx!.createBiquadFilter();
+        bp.type = "bandpass";
+        bp.frequency.value = band;
+        bp.Q.value = 0.5;
+        const ng = ctx!.createGain();
+        ng.gain.setValueAtTime(0.0001, t + at);
+        ng.gain.exponentialRampToValueAtTime(crackGain, t + at + 0.008);
+        ng.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.28);
+        src.connect(bp);
+        bp.connect(ng);
+        ng.connect(sfx!);
+        src.start(t + at);
+        src.stop(t + at + 0.3);
+
+        const osc = ctx!.createOscillator();
+        const og = ctx!.createGain();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(thump, t + at);
+        osc.frequency.exponentialRampToValueAtTime(thump * 0.38, t + at + 0.45);
+        og.gain.setValueAtTime(crackGain * 1.05, t + at);
+        og.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.52);
+        osc.connect(og);
+        og.connect(sfx!);
+        osc.start(t + at);
+        osc.stop(t + at + 0.55);
+
+        const rumble = ctx!.createBufferSource();
+        rumble.buffer = whiteBuf;
+        const lp = ctx!.createBiquadFilter();
+        lp.type = "lowpass";
+        lp.frequency.value = 160;
+        lp.Q.value = 0.7;
+        const rg = ctx!.createGain();
+        rg.gain.setValueAtTime(0.0001, t + at);
+        rg.gain.exponentialRampToValueAtTime(crackGain * 0.7, t + at + 0.03);
+        rg.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.78);
+        rumble.connect(lp);
+        lp.connect(rg);
+        rg.connect(sfx!);
+        rumble.start(t + at);
+        rumble.stop(t + at + 0.82);
+
+        osc.onended = () => {
+          src.disconnect();
+          bp.disconnect();
+          ng.disconnect();
+          osc.disconnect();
+          og.disconnect();
+          rumble.disconnect();
+          lp.disconnect();
+          rg.disconnect();
+        };
+      };
+      boom(0, 0.78, 820, 118);
+      boom(0.48, 0.64, 1100, 96);
+      boom(1.02, 0.88, 700, 132);
     },
     bump(amount) {
       if (!ctx || !sfx) return;

@@ -40,10 +40,18 @@ import {
   THRUST_FORCE,
   TURN_RATE,
   WARP_BAR_SPEED,
-  WARP_INBOUND_SPEED,
+  WARP_BRAKE,
+  WARP_BRAKE_SPEED,
+  WARP_FLASH,
   WARP_JUMP_SPEED,
+  WARP_STREAK,
+  WARP_STREAK_SPEED_CAP,
+  WARP_STREAK_ZOOM,
   WARP_TRANSIT,
   WARP_TRANSIT_REDUCED,
+  transitBeat,
+  transitBoomAt,
+  transitPunchAt,
   warpCharge,
   warpApproach,
 } from "./world";
@@ -94,6 +102,15 @@ export type Sim = {
   warpCharge: number;
   warpApproach: number;
   transitAge: number;
+  transitPunched: boolean;
+  transitBoomed: boolean;
+  transitAimX: number;
+  transitAimY: number;
+  transitDirX: number;
+  transitDirY: number;
+  transitStreakSpeed: number;
+  viewCssW: number;
+  viewCssH: number;
 };
 
 export const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
@@ -172,6 +189,15 @@ export function createSim(): Sim {
     warpCharge: 0,
     warpApproach: 0,
     transitAge: 0,
+    transitPunched: false,
+    transitBoomed: false,
+    transitAimX: start.x,
+    transitAimY: start.y,
+    transitDirX: 0,
+    transitDirY: -1,
+    transitStreakSpeed: 0,
+    viewCssW: 1280,
+    viewCssH: 800,
   };
   landOnHome(sim);
   return sim;
@@ -256,6 +282,8 @@ export function rebootSim(sim: Sim) {
   sim.warpCharge = 0;
   sim.warpApproach = 0;
   sim.transitAge = 0;
+  sim.transitPunched = false;
+  sim.transitBoomed = false;
   landOnHome(sim);
   sim.camera.zoomAuto = 0.96;
   sim.camera.zoom = 0.96 * sim.camera.userZoom;
@@ -294,8 +322,38 @@ function clearFlightLocks(sim: Sim) {
   for (const p of sim.particles) p.alive = false;
 }
 
-/** Swap the chart and drop in from the rim, still flying. */
+/** Drop into the tunnel. The new chart is generated on the punch, not here. */
 export function enterWarp(sim: Sim) {
+  clearFlightLocks(sim);
+  sim.ship.thrusting = false;
+  sim.ship.reverse = false;
+  sim.phase = "transit";
+  sim.transitAge = 0;
+  sim.transitPunched = false;
+  sim.warpCharge = 1;
+  sim.warpApproach = 1;
+  sim.status = "warp";
+  sim.orbitHint = null;
+  sim.nearest = null;
+  sim.transitBoomed = false;
+  if (sim.reducedMotion) {
+    punchWarp(sim, true);
+    sim.phase = "flight";
+    sim.status = "deep";
+    const sp = Math.hypot(sim.ship.vx, sim.ship.vy);
+    sim.warpCharge = warpCharge(sp);
+    sim.warpApproach = warpApproach(sp);
+  }
+}
+
+function streakSpan(sim: Sim) {
+  const zoom = Math.max(0.12, WARP_STREAK_ZOOM * sim.camera.userZoom);
+  const half = Math.max(sim.viewCssW, sim.viewCssH) * 0.55;
+  return Math.max(1400, (half / zoom) * 1.2);
+}
+
+/** Open the new chart and put the ship just off the viewport edge, aimed at the arrival point. */
+function punchWarp(sim: Sim, settle = false) {
   const prefs = simViewPrefs(sim);
   const dir = shipTravelDir(sim.ship);
   createSystem();
@@ -303,47 +361,91 @@ export function enterWarp(sim: Sim) {
   sim.planets = copyPlanets(sys.planets);
   applySimViewPrefs(sim, prefs);
   const star = sim.planets.find((p) => p.kind === "star") ?? sim.planets[0]!;
-  const rim = getMinimapWorldR() * 0.88;
-  sim.ship.x = star.x - dir.x * rim;
-  sim.ship.y = star.y - dir.y * rim;
-  sim.ship.vx = dir.x * WARP_INBOUND_SPEED;
-  sim.ship.vy = dir.y * WARP_INBOUND_SPEED;
+  const aimR = Math.max(star.radius * 11, 2600);
+  const ax = star.x - dir.x * aimR;
+  const ay = star.y - dir.y * aimR;
+  const span = streakSpan(sim);
+  sim.transitDirX = dir.x;
+  sim.transitDirY = dir.y;
+  sim.transitAimX = ax;
+  sim.transitAimY = ay;
+  sim.transitStreakSpeed = Math.min(WARP_STREAK_SPEED_CAP, span / Math.max(0.35, WARP_STREAK));
+  if (settle) {
+    sim.ship.x = ax;
+    sim.ship.y = ay;
+    sim.ship.vx = dir.x * WARP_BRAKE_SPEED;
+    sim.ship.vy = dir.y * WARP_BRAKE_SPEED;
+    sim.transitBoomed = true;
+    sim.camera.zoomAuto = 0.86;
+  } else {
+    sim.ship.x = ax - dir.x * span;
+    sim.ship.y = ay - dir.y * span;
+    sim.ship.vx = dir.x * sim.transitStreakSpeed;
+    sim.ship.vy = dir.y * sim.transitStreakSpeed;
+    sim.camera.zoomAuto = WARP_STREAK_ZOOM;
+  }
   sim.ship.yaw = Math.atan2(-dir.x, -dir.y);
   sim.ship.thrusting = false;
   sim.ship.reverse = false;
-  clearFlightLocks(sim);
-  sim.phase = "transit";
-  sim.transitAge = 0;
-  sim.warpCharge = 1;
-  sim.warpApproach = 1;
-  sim.status = "warp";
-  sim.orbitHint = "Warp";
+  sim.transitPunched = true;
   sim.nearest = star;
-  sim.altitude = rim - star.radius;
-  sim.camera.x = sim.ship.x;
-  sim.camera.y = sim.ship.y;
-  sim.camera.zoomAuto = 0.22;
-  sim.camera.zoom = 0.22 * sim.camera.userZoom;
-  sim.camera.trauma = sim.reducedMotion ? 0 : 0.35;
+  sim.altitude = Math.hypot(sim.ship.x - star.x, sim.ship.y - star.y) - star.radius;
+  sim.camera.x = ax;
+  sim.camera.y = ay;
+  sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
 }
 
 function stepTransit(sim: Sim, dt: number) {
   const ship = sim.ship;
   ship.thrusting = false;
   ship.reverse = false;
-  ship.x += ship.vx * dt;
-  ship.y += ship.vy * dt;
-  const dir = shipTravelDir(ship);
-  ship.yaw = Math.atan2(-dir.x, -dir.y);
+  const punchAt = transitPunchAt(sim.reducedMotion);
+  const boomAt = transitBoomAt(sim.reducedMotion);
+  if (!sim.transitPunched && sim.transitAge + dt >= punchAt) punchWarp(sim);
+  if (sim.transitPunched && !sim.transitBoomed && sim.transitAge + dt >= boomAt) {
+    sim.transitBoomed = true;
+    sim.camera.trauma = sim.reducedMotion ? 0 : 0.85;
+    ship.x = sim.transitAimX;
+    ship.y = sim.transitAimY;
+  }
+  const beat = transitBeat(sim.transitAge + dt, sim.reducedMotion);
+  const dirx = sim.transitDirX;
+  const diry = sim.transitDirY;
+  if (beat === "flash" && sim.transitPunched) {
+    ship.x = sim.transitAimX;
+    ship.y = sim.transitAimY;
+    ship.vx = dirx * sim.transitStreakSpeed;
+    ship.vy = diry * sim.transitStreakSpeed;
+  } else if (beat === "brake" && sim.transitPunched) {
+    const u = Math.min(1, Math.max(0, (sim.transitAge + dt - boomAt - WARP_FLASH) / WARP_BRAKE));
+    const ease = 1 - (1 - u) * (1 - u) * (1 - u);
+    const sp = sim.transitStreakSpeed * (1 - ease) + WARP_BRAKE_SPEED * ease;
+    ship.vx = dirx * sp;
+    ship.vy = diry * sp;
+    ship.x += ship.vx * dt;
+    ship.y += ship.vy * dt;
+  } else {
+    ship.x += ship.vx * dt;
+    ship.y += ship.vy * dt;
+  }
+  if (dirx || diry) ship.yaw = Math.atan2(-dirx, -diry);
   sim.transitAge += dt;
-  sim.warpCharge = 1;
-  sim.warpApproach = 1;
   sim.status = "warp";
-  sim.orbitHint = "Warp";
-  const star = sim.planets.find((p) => p.kind === "star");
-  if (star) {
-    sim.nearest = star;
-    sim.altitude = Math.hypot(ship.x - star.x, ship.y - star.y) - star.radius;
+  sim.orbitHint = null;
+  if (sim.transitPunched) {
+    const star = sim.planets.find((p) => p.kind === "star");
+    if (star) {
+      sim.nearest = star;
+      sim.altitude = Math.hypot(ship.x - star.x, ship.y - star.y) - star.radius;
+    }
+    if (beat === "streak") {
+      sim.warpCharge = 1;
+      sim.warpApproach = 1;
+    }
+  } else {
+    sim.warpCharge = 1;
+    sim.warpApproach = 1;
+    sim.nearest = null;
   }
   decayParticles(sim, dt);
   updateCamera(sim, dt);
@@ -1534,6 +1636,8 @@ export function stepSim(
     }
     sim.warpCharge = 0;
     sim.warpApproach = 0;
+    sim.transitPunched = false;
+    sim.transitBoomed = false;
     decayParticles(sim, dt);
     updateCamera(sim, dt);
     return;
@@ -1666,6 +1770,8 @@ function crashInto(sim: Sim, p: Planet, nx: number, ny: number, rel: number) {
   sim.orbitHint = null;
   sim.warpCharge = 0;
   sim.warpApproach = 0;
+  sim.transitPunched = false;
+  sim.transitBoomed = false;
   stickToPlanet(sim, p);
   s.thrusting = false;
   s.reverse = false;
@@ -2188,9 +2294,9 @@ function starfieldRush(sim: Sim): { x: number; y: number } {
   const ux = s.vx / sp;
   const uy = s.vy / sp;
   if (sim.reducedMotion) return { x: s.vx, y: s.vy };
-  if (sim.phase === "transit") {
-    const t = Math.min(1, sim.transitAge / 0.55);
-    const rush = 2400 + t * t * 5200;
+  if (sim.phase === "transit" && !sim.transitPunched) {
+    const t = Math.min(1, sim.transitAge / 0.5);
+    const rush = 2800 + t * t * 6400;
     return { x: ux * rush, y: uy * rush };
   }
   if (sim.warpApproach > 0 || sim.warpCharge > 0) {
@@ -2217,16 +2323,29 @@ function updateCamera(sim: Sim, dt: number) {
   sim.camera.y += (targetY - sim.camera.y) * a;
   const zoomT = Math.max(0, Math.min(1, (speed - 400) / (WARP_BAR_SPEED - 400)));
   const warpZoom = zoomT * zoomT * (3 - 2 * zoomT);
+  const beat = sim.phase === "transit" ? transitBeat(sim.transitAge, sim.reducedMotion) : null;
+  if (beat === "streak" || beat === "flash") {
+    sim.camera.x = sim.transitAimX;
+    sim.camera.y = sim.transitAimY;
+  }
+  const brakeU =
+    beat === "brake"
+      ? Math.min(1, Math.max(0, (sim.transitAge - transitBoomAt(sim.reducedMotion) - WARP_FLASH) / WARP_BRAKE))
+      : 0;
   const zWant =
-    sim.phase === "transit"
-      ? 0.22
-      : speed > 400
-        ? 0.48 - 0.16 * warpZoom
-        : speed > 42
-          ? 0.76
-          : speed > 24
-            ? 0.88
-            : 0.98;
+    beat === "tunnel"
+      ? 0.15
+      : beat === "streak" || beat === "flash"
+        ? WARP_STREAK_ZOOM
+        : beat === "brake"
+          ? WARP_STREAK_ZOOM + (0.78 - WARP_STREAK_ZOOM) * (1 - (1 - brakeU) * (1 - brakeU))
+          : speed > 400
+            ? 0.48 - 0.16 * warpZoom
+            : speed > 42
+              ? 0.76
+              : speed > 24
+                ? 0.88
+                : 0.98;
   sim.camera.zoomAuto += (zWant - sim.camera.zoomAuto) * (1 - Math.exp(-1.6 * dt));
   sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
   sim.camera.trauma = Math.max(0, sim.camera.trauma - dt * 1.6);

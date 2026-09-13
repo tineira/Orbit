@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { warpApproach, warpCharge, warpSpool } from "./world.ts";
+import { transitBeat, warpApproach, warpCharge, warpSpool } from "./world.ts";
 
 test("warp charge is empty below 1000 and full at 1500", () => {
   assert.equal(warpCharge(0), 0);
@@ -27,4 +27,12 @@ test("warp spool keeps rising through 1300 and peaks at the 1500 jump", () => {
   assert.ok(warpSpool(1300) < 0.75);
   assert.ok(warpSpool(1450) > warpSpool(1300));
   assert.equal(warpSpool(1500), 1);
+});
+
+test("transit is tunnel, then a streak, then flash, then brake", () => {
+  assert.equal(transitBeat(0, false), "tunnel");
+  assert.equal(transitBeat(1.0, false), "tunnel");
+  assert.equal(transitBeat(1.2, false), "streak");
+  assert.equal(transitBeat(1.8, false), "flash");
+  assert.equal(transitBeat(3.1, false), "brake");
 });

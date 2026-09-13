@@ -34,6 +34,7 @@ const INITIAL: HudSnapshot = {
   verbose: false,
   verboseDiag: null,
   warpCharge: 0,
+  transitBeat: "off",
 };
 
 export function SpaceGame() {

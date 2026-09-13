@@ -1,4 +1,4 @@
-import type { Planet } from "./types";
+import type { Planet, TransitBeat } from "./types";
 
 /** Gravity constant in world units. a = G * GRAVITY_BASE * M / r² */
 export const G = 1;
@@ -42,10 +42,32 @@ export const WARP_BAR_SPEED = 1000;
 export const WARP_FX_SPEED = 800;
 /** Crossing this speed commits the jump to a new chart. */
 export const WARP_JUMP_SPEED = 1500;
-/** Inbound speed after the warp cinematic, still too fast to land. */
-export const WARP_INBOUND_SPEED = 180;
-export const WARP_TRANSIT = 1.85;
-export const WARP_TRANSIT_REDUCED = 0.12;
+/** Cruise speed after the arrival brake. */
+export const WARP_BRAKE_SPEED = 88;
+export const WARP_STREAK_ZOOM = 0.3;
+export const WARP_STREAK_SPEED_CAP = 2400;
+export const WARP_TUNNEL = 1.05;
+export const WARP_STREAK = 0.7;
+export const WARP_FLASH = 1.15;
+export const WARP_BRAKE = 0.55;
+export const WARP_TRANSIT = WARP_TUNNEL + WARP_STREAK + WARP_FLASH + WARP_BRAKE;
+export const WARP_TRANSIT_REDUCED = 0.05;
+
+export function transitPunchAt(reduced: boolean) {
+  return reduced ? 0 : WARP_TUNNEL;
+}
+
+export function transitBoomAt(reduced: boolean) {
+  return reduced ? 0 : WARP_TUNNEL + WARP_STREAK;
+}
+
+export function transitBeat(age: number, reduced: boolean): TransitBeat {
+  if (reduced) return "brake";
+  if (age < WARP_TUNNEL) return "tunnel";
+  if (age < WARP_TUNNEL + WARP_STREAK) return "streak";
+  if (age < WARP_TUNNEL + WARP_STREAK + WARP_FLASH) return "flash";
+  return "brake";
+}
 
 function smoothstep(t: number) {
   const x = Math.max(0, Math.min(1, t));

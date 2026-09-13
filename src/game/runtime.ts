@@ -22,7 +22,7 @@ import {
   type SimViewPrefs,
 } from "./sim";
 import type { GameUiHandler, HudSnapshot } from "./types";
-import { createSystem, getSystem, warpSpool } from "./world";
+import { createSystem, getSystem, transitBeat, warpSpool } from "./world";
 
 export type GameHandle = {
   launch: () => void;
@@ -101,6 +101,9 @@ declare global {
       getSeed?: () => number | null;
       getWarpCharge?: () => number;
       getStarDrift?: () => { x: number; y: number };
+      getTransitPunched?: () => boolean;
+      getTransitBoomed?: () => boolean;
+      getTransitAge?: () => number;
       newWorld?: () => void;
       adjustGravity?: (dir: number) => void;
       adjustAtmo?: (dir: number) => void;
@@ -139,9 +142,11 @@ const CREATING_HUD: HudSnapshot = {
   verbose: false,
   verboseDiag: null,
   warpCharge: 0,
+  transitBeat: "off",
 };
 
 export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameHandle {
+  // viewport size is copied onto sim each frame for off-screen streak placement
   const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
   if (!ctx) throw new Error("Canvas 2D is not available");
 
@@ -168,6 +173,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let prevCrashed: string | null = null;
   let prevTrauma = 0;
   let prevPhase: string | null = null;
+  let prevPunched = false;
+  let prevBoomed = false;
   let enterWasDown = false;
   let enterNeedsUp = false;
   let oWasDown = false;
@@ -246,6 +253,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       verbose: sim.showVerbose,
       verboseDiag: sim.showVerbose ? verboseDiag(sim) : null,
       warpCharge: sim.warpCharge,
+      transitBeat: sim.phase === "transit" ? transitBeat(sim.transitAge, sim.reducedMotion) : "off",
     };
     onUi(hud);
   };
@@ -424,6 +432,9 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getSeed: () => getSystem().seed,
       getWarpCharge: () => s.warpCharge,
       getStarDrift: () => ({ x: s.camera.starDriftX, y: s.camera.starDriftY }),
+      getTransitPunched: () => s.transitPunched,
+      getTransitBoomed: () => s.transitBoomed,
+      getTransitAge: () => s.transitAge,
       newWorld: () => chartNewWorld(),
       getLagrangePoints: () =>
         listLagrangePoints(s).map((p) => ({
@@ -498,6 +509,9 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       return;
     }
 
+    sim.viewCssW = canvas.clientWidth;
+    sim.viewCssH = canvas.clientHeight;
+
     while (acc >= STEP) {
       const steer = playing() ? steerFrom(input.state) : 0;
       const thr = playing()
@@ -519,12 +533,17 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       sim.ship.thrusting && playing(),
       Math.min(1, Math.hypot(sim.ship.vx, sim.ship.vy) / 120),
     );
+    const beat = sim.phase === "transit" ? transitBeat(sim.transitAge, sim.reducedMotion) : "off";
     const spool =
-      sim.phase === "transit"
+      beat === "tunnel" || beat === "streak"
         ? 1
-        : warpSpool(Math.hypot(sim.ship.vx, sim.ship.vy));
+        : beat === "flash" || beat === "brake"
+          ? 0
+          : warpSpool(Math.hypot(sim.ship.vx, sim.ship.vy));
     audio.setWarp(spool > 0.02, spool);
-    if (sim.phase === "transit" && prevPhase !== "transit") audio.warpJump();
+    prevPunched = sim.transitPunched;
+    if (sim.transitBoomed && !prevBoomed) audio.sonicBooms();
+    prevBoomed = sim.transitBoomed;
     if (sim.phase === "transit") publish();
     prevPhase = sim.phase;
 
@@ -628,6 +647,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getSeed: () => null,
       getWarpCharge: () => 0,
       getStarDrift: () => ({ x: 0, y: 0 }),
+      getTransitPunched: () => false,
+      getTransitBoomed: () => false,
       newWorld: () => {},
       adjustGravity: () => {},
       adjustAtmo: () => {},

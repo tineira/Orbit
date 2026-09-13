@@ -80,6 +80,8 @@ export type SolarFlare = {
 
 export type Phase = "creating" | "title" | "flight" | "landed" | "crashed" | "transit";
 
+export type TransitBeat = "tunnel" | "streak" | "flash" | "brake";
+
 export type BurnCause = "flare" | "star";
 
 export type CrashKind = "burn" | "wreck" | "sink";
@@ -150,6 +152,7 @@ export type HudSnapshot = {
   verbose: boolean;
   verboseDiag: VerboseDiag | null;
   warpCharge: number;
+  transitBeat: TransitBeat | "off";
 };
 
 export type InputState = {

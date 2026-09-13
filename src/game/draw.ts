@@ -25,6 +25,9 @@ import {
   ORBIT_PERTURB_BREAK,
   orbitShellAlts,
   STAR_ATMO_FACTOR,
+  transitBeat,
+  transitBoomAt,
+  WARP_FLASH,
 } from "./world";
 
 type DrawOpts = {
@@ -53,7 +56,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   const warpRumble =
     sim.reducedMotion
       ? 0
-      : sim.phase === "transit"
+      : sim.phase === "transit" && !sim.transitPunched
         ? 1
         : sim.warpApproach * 0.35 + sim.warpCharge;
   const rumble = warpRumble * warpRumble;
@@ -74,23 +77,30 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   ctx.scale(cam.zoom, cam.zoom);
   ctx.translate(-cam.x, -cam.y);
 
-  if (sim.showGravityGrid) drawGravityGrid(ctx, sim, cam, cssW, cssH);
-  drawSunBloom(ctx, sim);
-  drawStarCorona(ctx, sim);
-  drawLockRing(ctx, sim);
-  if (sim.phase === "flight") drawPath(ctx, predictPath(sim, 10), sim);
-  const star = sim.planets.find((b) => b.kind === "star") ?? null;
-  for (const p of sim.planets) {
-    if (!isGhostBody(p)) drawPlanet(ctx, p, cam, star, sim.planets);
+  const fade = chartFade(sim);
+  if (sim.showGravityGrid && fade > 0.05) drawGravityGrid(ctx, sim, cam, cssW, cssH);
+  if (fade > 0.04) {
+    ctx.save();
+    ctx.globalAlpha *= fade;
+    drawSunBloom(ctx, sim);
+    drawStarCorona(ctx, sim);
+    drawLockRing(ctx, sim);
+    if (sim.phase === "flight") drawPath(ctx, predictPath(sim, 10), sim);
+    const star = sim.planets.find((b) => b.kind === "star") ?? null;
+    for (const p of sim.planets) {
+      if (!isGhostBody(p)) drawPlanet(ctx, p, cam, star, sim.planets);
+    }
+    drawSolarFlares(ctx, sim);
+    drawOrbitShell(ctx, sim);
+    drawLagrangePoints(ctx, sim, cam);
+    drawRelativePath(ctx, sim);
+    drawPlanetPaths(ctx, sim);
+    ctx.restore();
   }
-  drawSolarFlares(ctx, sim);
-  drawOrbitShell(ctx, sim);
-  drawLagrangePoints(ctx, sim, cam);
-  drawRelativePath(ctx, sim);
-  drawPlanetPaths(ctx, sim);
   const particlesOver = sim.burned || sim.crashKind === "sink";
   if (!particlesOver) drawParticles(ctx, sim.particles);
-  drawGravityArrows(ctx, sim);
+  if (fade > 0.04) drawGravityArrows(ctx, sim);
+  const star = sim.planets.find((b) => b.kind === "star") ?? null;
   const shipUmbra = star ? pointUmbraMax(sim.ship.x, sim.ship.y, sim.planets, star, null) : 0;
   drawShip(ctx, sim, shipUmbra);
   if (particlesOver) drawParticles(ctx, sim.particles);
@@ -98,7 +108,8 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
 
   ctx.restore();
   drawVignette(ctx, cssW, cssH);
-  drawMinimap(ctx, sim, cssW, cssH);
+  drawArrivalFlash(ctx, sim, cssW, cssH);
+  if (sim.phase !== "transit") drawMinimap(ctx, sim, cssW, cssH);
   void w;
   void h;
 }
@@ -260,9 +271,20 @@ function drawStarDot(
   ctx.fill();
 }
 
+function chartFade(sim: Sim) {
+  if (sim.phase !== "transit" || sim.transitPunched) return 1;
+  const t = Math.min(1, sim.transitAge / 0.38);
+  return (1 - t) * (1 - t);
+}
+
 function starStreak(sim: Sim | undefined) {
   if (!sim || sim.reducedMotion) return 0;
-  if (sim.phase === "transit") return 90 + Math.min(1, sim.transitAge / 0.4) * 70;
+  if (sim.phase === "transit" && !sim.transitPunched) {
+    return 90 + Math.min(1, sim.transitAge / 0.4) * 80;
+  }
+  if (sim.phase === "transit" && transitBeat(sim.transitAge, sim.reducedMotion) === "streak") {
+    return 28;
+  }
   const a = sim.warpApproach;
   const c = sim.warpCharge;
   if (a <= 0 && c <= 0) return 0;
@@ -1103,7 +1125,70 @@ function drawWreck(ctx: CanvasRenderingContext2D, seed: number, umbra: number) {
   }
 }
 
+function drawShipLightRay(ctx: CanvasRenderingContext2D, sim: Sim) {
+  const ux = sim.transitDirX;
+  const uy = sim.transitDirY;
+  const x = sim.ship.x;
+  const y = sim.ship.y;
+  const len = Math.min(1100, Math.max(420, sim.transitStreakSpeed * 0.2));
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "rgba(255, 220, 170, 0.18)";
+  ctx.lineWidth = 28;
+  ctx.beginPath();
+  ctx.moveTo(x - ux * len, y - uy * len);
+  ctx.lineTo(x + ux * 24, y + uy * 24);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255, 244, 220, 0.55)";
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.moveTo(x - ux * len * 0.82, y - uy * len * 0.82);
+  ctx.lineTo(x + ux * 14, y + uy * 14);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255, 252, 245, 0.95)";
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.moveTo(x - ux * len * 0.5, y - uy * len * 0.5);
+  ctx.lineTo(x + ux * 8, y + uy * 8);
+  ctx.stroke();
+  ctx.fillStyle = "rgba(255, 252, 245, 0.98)";
+  ctx.beginPath();
+  ctx.arc(x, y, 6.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function arrivalFlashAmount(sim: Sim) {
+  if (sim.phase !== "transit" || !sim.transitBoomed) return 0;
+  const boomAt = transitBoomAt(sim.reducedMotion);
+  const t = sim.transitAge - boomAt;
+  if (t < 0) return 0;
+  if (t < WARP_FLASH) return 1 - t * 0.25;
+  return Math.max(0, 1 - (t - WARP_FLASH) / 0.2);
+}
+
+function drawArrivalFlash(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH: number) {
+  const amt = arrivalFlashAmount(sim);
+  if (amt < 0.02) return;
+  const p = worldToScreen(sim.camera, sim.ship.x, sim.ship.y, cssW, cssH);
+  const r = Math.max(cssW, cssH) * (0.22 + amt * 0.55);
+  const g = ctx.createRadialGradient(p.x, p.y, 8, p.x, p.y, r);
+  g.addColorStop(0, `rgba(255, 252, 245, ${0.96 * amt})`);
+  g.addColorStop(0.18, `rgba(255, 236, 210, ${0.55 * amt})`);
+  g.addColorStop(0.5, `rgba(236, 234, 228, ${0.18 * amt})`);
+  g.addColorStop(1, "rgba(236, 234, 228, 0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, cssW, cssH);
+  ctx.fillStyle = `rgba(236, 234, 228, ${0.22 * amt})`;
+  ctx.fillRect(0, 0, cssW, cssH);
+}
+
 function drawShip(ctx: CanvasRenderingContext2D, sim: Sim, umbra = 0) {
+  if (sim.phase === "transit" && sim.transitPunched && !sim.transitBoomed) {
+    drawShipLightRay(ctx, sim);
+    return;
+  }
   const ship = sim.ship;
   const crash = sim.phase === "crashed" ? sim.crashKind : null;
   const alpha = sinkAlpha(sim);
@@ -1283,17 +1368,22 @@ function drawLockBarLabel(
 }
 
 function drawShipLockBars(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera) {
-  if (sim.phase === "creating" || sim.phase === "title" || sim.phase === "crashed") return;
+  if (
+    sim.phase === "creating" ||
+    sim.phase === "title" ||
+    sim.phase === "crashed" ||
+    sim.phase === "transit"
+  )
+    return;
   const zoom = Math.max(0.04, cam.zoom);
   ctx.save();
   ctx.translate(sim.ship.x, sim.ship.y);
   ctx.scale(1 / zoom, 1 / zoom);
   const x = -Math.round(LOCK_BAR_W / 2);
   const y = Math.round(13 * zoom + 10);
-  if (sim.status === "warp" || sim.phase === "transit" || sim.warpApproach > 0.04) {
-    const t = sim.phase === "transit" ? 1 : sim.warpCharge;
-    const fade =
-      sim.phase === "transit" || sim.status === "warp" ? 1 : sim.warpApproach;
+  if (sim.status === "warp" || sim.warpApproach > 0.04) {
+    const t = sim.warpCharge;
+    const fade = sim.status === "warp" ? 1 : sim.warpApproach;
     ctx.globalAlpha *= fade;
     drawLockBar(ctx, x, y, t, "#7d9b86", true);
     drawLockBarLabel(ctx, x, y, t, "Warp", true);
