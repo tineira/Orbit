@@ -1,6 +1,8 @@
+import { bodyReadout, canScan, clonePlanetMatter, SCAN_SECONDS } from "./matter.ts";
 import type {
   BurnCause,
   Camera,
+  CompositionReadout,
   CrashKind,
   FlightStatus,
   Particle,
@@ -12,7 +14,7 @@ import type {
   IonWisp,
   LostCopy,
   NearbyHeading,
-} from "./types";
+} from "./types.ts";
 import {
   G,
   GRAVITY_BASE,
@@ -78,7 +80,7 @@ import {
   transitLaunchU,
   transitArriveU,
   WARP_FLIGHT_RUSH,
-} from "./world";
+} from "./world.ts";
 import {
   armedEngine,
   applyLoadout,
@@ -89,7 +91,7 @@ import {
   DEFAULT_ENGINE_KIND,
   DEFAULT_FUEL_KIND,
   DEFAULT_TANK_KIND,
-} from "./fuel";
+} from "./fuel.ts";
 
 export type Sim = {
   ship: Ship;
@@ -125,6 +127,10 @@ export type Sim = {
   showPhysics: boolean;
   showGravityGrid: boolean;
   showVerbose: boolean;
+  showSpectro: boolean;
+  scannedIds: Set<string>;
+  spectroScanId: string | null;
+  spectroScanT: number;
   lagrangeLockKey: string | null;
   lagrangeDwellKey: string | null;
   lagrangeDwell: number;
@@ -221,6 +227,10 @@ export function createSim(): Sim {
     showPhysics: false,
     showGravityGrid: false,
     showVerbose: false,
+    showSpectro: false,
+    scannedIds: new Set(),
+    spectroScanId: null,
+    spectroScanT: 0,
     lagrangeLockKey: null,
     lagrangeDwellKey: null,
     lagrangeDwell: 0,
@@ -286,6 +296,7 @@ export type SimViewPrefs = {
   showPhysics: boolean;
   showGravityGrid: boolean;
   showVerbose: boolean;
+  showSpectro: boolean;
   userZoom: number;
 };
 
@@ -298,6 +309,7 @@ export function simViewPrefs(sim: Sim): SimViewPrefs {
     showPhysics: sim.showPhysics,
     showGravityGrid: sim.showGravityGrid,
     showVerbose: sim.showVerbose,
+    showSpectro: sim.showSpectro,
     userZoom: sim.camera.userZoom,
   };
 }
@@ -310,6 +322,7 @@ export function applySimViewPrefs(sim: Sim, prefs: SimViewPrefs) {
   sim.showPhysics = prefs.showPhysics;
   sim.showGravityGrid = prefs.showGravityGrid;
   sim.showVerbose = prefs.showVerbose;
+  sim.showSpectro = !!prefs.showSpectro;
   sim.camera.userZoom = prefs.userZoom;
   sim.camera.zoom = sim.camera.zoomAuto * prefs.userZoom;
 }
@@ -437,6 +450,7 @@ function punchWarp(sim: Sim, settle = false) {
   sim.planets = copyPlanets(sys.planets);
   sim.nearby = sys.nearby.slice();
   sim.warpTarget = null;
+  clearSpectroChart(sim);
   applySimViewPrefs(sim, prefs);
   const mag = Math.hypot(sim.transitDirX, sim.transitDirY) || 1;
   const dirx = sim.transitDirX / mag;
@@ -1387,7 +1401,7 @@ function landOnHome(sim: Sim) {
 }
 
 function copyPlanets(planets: Planet[]): Planet[] {
-  return planets.map((p) => ({ ...p }));
+  return planets.map((p) => ({ ...p, ...clonePlanetMatter(p) }));
 }
 
 function isOrbiting(p: Planet) {
@@ -1789,6 +1803,82 @@ function sipWell(sim: Sim, dt: number) {
   sipField(sim.ship, dt, Math.hypot(g.ax, g.ay));
 }
 
+export function spectroFocus(sim: Sim): Planet | null {
+  if (sim.orbitLockId) {
+    const p = sim.planets.find((b) => b.id === sim.orbitLockId);
+    if (p && canScan(p)) return p;
+  }
+  if (sim.nearest && canScan(sim.nearest)) return sim.nearest;
+  return null;
+}
+
+export function clearSpectroScan(sim: Sim) {
+  sim.spectroScanId = null;
+  sim.spectroScanT = 0;
+}
+
+export function clearSpectroChart(sim: Sim) {
+  sim.scannedIds = new Set();
+  clearSpectroScan(sim);
+}
+
+export function stepSpectro(sim: Sim, dt: number) {
+  if (!sim.showSpectro || sim.phase !== "flight") {
+    clearSpectroScan(sim);
+    return;
+  }
+  const host = sim.orbitLockId
+    ? (sim.planets.find((b) => b.id === sim.orbitLockId) ?? null)
+    : null;
+  if (!host || !canScan(host)) {
+    clearSpectroScan(sim);
+    return;
+  }
+  if (sim.scannedIds.has(host.id)) {
+    sim.spectroScanId = host.id;
+    sim.spectroScanT = SCAN_SECONDS;
+    return;
+  }
+  if (sim.spectroScanId !== host.id) {
+    sim.spectroScanId = host.id;
+    sim.spectroScanT = 0;
+  }
+  sim.spectroScanT = Math.min(SCAN_SECONDS, sim.spectroScanT + dt);
+  if (sim.spectroScanT >= SCAN_SECONDS - 1e-9) {
+    sim.scannedIds.add(host.id);
+    sim.spectroScanT = SCAN_SECONDS;
+  }
+}
+
+export function spectroHud(
+  sim: Sim,
+  revealAll: boolean,
+): {
+  spectro: boolean;
+  spectroScan: number;
+  spectroScanning: boolean;
+  composition: CompositionReadout | null;
+} {
+  const body = spectroFocus(sim);
+  const scanned = !!(body && sim.scannedIds.has(body.id));
+  const scanning =
+    sim.showSpectro &&
+    sim.phase === "flight" &&
+    !!sim.orbitLockId &&
+    !!body &&
+    body.id === sim.orbitLockId &&
+    canScan(body) &&
+    !scanned;
+  const composition =
+    body && canScan(body) && (scanned || revealAll) ? bodyReadout(body) : null;
+  return {
+    spectro: sim.showSpectro,
+    spectroScan: scanning ? Math.max(0, Math.min(1, sim.spectroScanT / SCAN_SECONDS)) : 0,
+    spectroScanning: scanning,
+    composition,
+  };
+}
+
 export function stepSim(
   sim: Sim,
   dt: number,
@@ -1800,6 +1890,7 @@ export function stepSim(
     aimThrust: boolean;
   },
 ) {
+  stepSpectro(sim, dt);
   updateMoons(sim, dt);
   invalidateLagrange(sim);
   stepFlares(sim, dt);

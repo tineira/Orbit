@@ -19,6 +19,8 @@ import {
   takeoff,
   verboseDiag,
   wrapPi,
+  spectroHud,
+  clearSpectroScan,
   type Sim,
   type SimViewPrefs,
 } from "./sim";
@@ -49,6 +51,7 @@ export type GameHandle = {
   toggleLagrange: () => void;
   toggleGravityGrid: () => void;
   toggleVerbose: () => void;
+  toggleSpectro: () => void;
   cycleFuel: (dir: number) => void;
   cycleEngine: (dir: number) => void;
   cycleTank: (dir: number) => void;
@@ -116,6 +119,10 @@ declare global {
       getPhysicsMenu?: () => boolean;
       getGravityGrid?: () => boolean;
       getVerbose?: () => boolean;
+      getSpectro?: () => boolean;
+      getScanned?: () => string[];
+      getSpectroScan?: () => { id: string | null; t: number };
+      markScanned?: () => string[];
       getSeed?: () => number | null;
       getWarpCharge?: () => number;
       getStarDrift?: () => { x: number; y: number };
@@ -168,6 +175,10 @@ const CREATING_HUD: HudSnapshot = {
   gravityGrid: false,
   verbose: false,
   verboseDiag: null,
+  spectro: false,
+  spectroScan: 0,
+  spectroScanning: false,
+  composition: null,
   dev: false,
   warpCharge: 0,
   transitBeat: "off",
@@ -211,6 +222,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let pWasDown = false;
   let gWasDown = false;
   let vWasDown = false;
+  let mWasDown = false;
   let nWasDown = false;
   let pendingPrefs: SimViewPrefs | null = null;
 
@@ -289,6 +301,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       gravityGrid: sim.showGravityGrid,
       verbose: devTools && sim.showVerbose,
       verboseDiag: devTools && sim.showVerbose ? verboseDiag(sim) : null,
+      ...spectroHud(sim, devTools && sim.showVerbose),
       dev: devTools,
       warpCharge: sim.warpCharge,
       transitBeat: sim.phase === "transit" ? transitBeat(sim.transitAge, sim.reducedMotion) : "off",
@@ -365,6 +378,19 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     const pressed = down && !vWasDown;
     vWasDown = down;
     return pressed;
+  };
+
+  const consumeSpectro = () => {
+    const down = held(input.state).has("KeyM");
+    const pressed = down && !mWasDown;
+    mWasDown = down;
+    return pressed;
+  };
+
+  const flipSpectro = () => {
+    if (!sim) return;
+    sim.showSpectro = !sim.showSpectro;
+    if (!sim.showSpectro) clearSpectroScan(sim);
   };
 
   const consumeNewWorld = () => {
@@ -469,6 +495,13 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getPhysicsMenu: () => s.showPhysics,
       getGravityGrid: () => s.showGravityGrid,
       getVerbose: () => s.showVerbose,
+      getSpectro: () => s.showSpectro,
+      getScanned: () => [...s.scannedIds],
+      getSpectroScan: () => ({ id: s.spectroScanId, t: s.spectroScanT }),
+      markScanned: () => {
+        if (s.nearest?.id && s.nearest.matter) s.scannedIds.add(s.nearest.id);
+        return [...s.scannedIds];
+      },
       getSeed: () => getSystem().seed,
       getWarpCharge: () => s.warpCharge,
       getStarDrift: () => ({ x: s.camera.starDriftX, y: s.camera.starDriftY }),
@@ -528,6 +561,10 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       sim.showVerbose = !sim.showVerbose;
       publish();
     }
+    if (consumeSpectro()) {
+      flipSpectro();
+      publish();
+    }
 
     if (consumeEnter()) {
       if (sim.phase === "title") {
@@ -553,6 +590,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     sim.viewCssW = canvas.clientWidth;
     sim.viewCssH = canvas.clientHeight;
 
+    const live = sim;
     const stepOnce = () => {
       const steer = playing() ? steerFrom(input.state) : 0;
       const thr = playing()
@@ -560,7 +598,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         : { forward: false, reverse: false };
       const aim = aimYaw();
       const aimThrust = !!input.state.pointer?.down && playing();
-      stepSim(sim, STEP, {
+      stepSim(live, STEP, {
         steer,
         forward: thr.forward,
         reverse: thr.reverse,
@@ -705,6 +743,9 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getPhysicsMenu: () => false,
       getGravityGrid: () => false,
       getVerbose: () => false,
+      getSpectro: () => false,
+      getScanned: () => [],
+      getSpectroScan: () => ({ id: null, t: 0 }),
       getPlanetPaths: () => [],
       getSeed: () => null,
       getWarpCharge: () => 0,
@@ -776,6 +817,10 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     toggleVerbose() {
       if (!sim || !devTools) return;
       sim.showVerbose = !sim.showVerbose;
+      publish();
+    },
+    toggleSpectro() {
+      flipSpectro();
       publish();
     },
     cycleFuel(dir) {

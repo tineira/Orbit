@@ -1,4 +1,11 @@
-import type { LostCopy, NearbyHeading, Planet, TransitBeat } from "./types";
+import {
+  gasProfileId,
+  moonProfileId,
+  rockyProfileId,
+  starProfileId,
+  withMatter,
+} from "./matter.ts";
+import type { LostCopy, NearbyHeading, Planet, TransitBeat } from "./types.ts";
 
 /** Gravity constant in world units. a = G * GRAVITY_BASE * M / r² */
 export const G = 1;
@@ -783,28 +790,32 @@ function makeSystem(
     ? (used.add(starNameForced.toLowerCase()), starNameForced)
     : takeName(rng, STAR_NAMES, used);
   const pal = starPal ?? pick(rng, STAR_PALETTES);
-  const star: Planet = {
-    id: slug(starName, 0),
-    name: starName,
-    kind: "star",
-    x: 0,
-    y: 0,
-    vx: 0,
-    vy: 0,
-    radius: starR,
-    surfaceG: starG,
-    mass: massFrom(starR, starG),
-    landable: false,
-    rotate: 0,
-    spin: lerp(0.08, 0.2, rng()),
-    colorA: pal[0],
-    colorB: pal[1],
-    atmo: pal[2],
-    kicker: "Star",
-    title: starName,
-    body: "The well at the center. Too hot to land.",
-    deny: "Too hot to land",
-  };
+  const starPalIndex = STAR_PALETTES.findIndex((p) => p[0] === pal[0] && p[1] === pal[1]);
+  const star = withMatter(
+    {
+      id: slug(starName, 0),
+      name: starName,
+      kind: "star" as const,
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      radius: starR,
+      surfaceG: starG,
+      mass: massFrom(starR, starG),
+      landable: false,
+      rotate: 0,
+      spin: lerp(0.08, 0.2, rng()),
+      colorA: pal[0],
+      colorB: pal[1],
+      atmo: pal[2],
+      kicker: "Star",
+      title: starName,
+      body: "The well at the center. Too hot to land.",
+      deny: "Too hot to land",
+    },
+    starProfileId(starPalIndex < 0 ? 0 : starPalIndex),
+  );
   planets.push(star);
 
   const rockyCount = rng() < 0.45 ? 3 : 4;
@@ -882,26 +893,32 @@ function makeSystem(
     if (draft.kind === "gas") {
       const name = takeName(rng, WORLD_NAMES, used);
       const pal = pick(rng, GAS_PALETTES);
-      planets.push({
-        id: slug(name, planets.length),
-        name,
-        kind: "gas",
-        ...rail,
-        radius: draft.radius,
-        surfaceG: draft.surfaceG,
-        mass: massFrom(draft.radius, draft.surfaceG),
-        landable: false,
-        rotate: rng() * Math.PI,
-        spin: lerp(0.22, 0.48, rng()) * (rng() < 0.5 ? 1 : -1),
-        colorA: pal.a,
-        colorB: pal.b,
-        atmo: atmo(pal.a, 0.22),
-        bands: pal.bands,
-        kicker: "Giant",
-        title: name,
-        body: "A thick atmosphere. You can orbit. You cannot land.",
-        deny: "Atmosphere too thick",
-      });
+      const palIndex = GAS_PALETTES.indexOf(pal);
+      planets.push(
+        withMatter(
+          {
+            id: slug(name, planets.length),
+            name,
+            kind: "gas" as const,
+            ...rail,
+            radius: draft.radius,
+            surfaceG: draft.surfaceG,
+            mass: massFrom(draft.radius, draft.surfaceG),
+            landable: false,
+            rotate: rng() * Math.PI,
+            spin: lerp(0.22, 0.48, rng()) * (rng() < 0.5 ? 1 : -1),
+            colorA: pal.a,
+            colorB: pal.b,
+            atmo: atmo(pal.a, 0.22),
+            bands: pal.bands,
+            kicker: "Giant",
+            title: name,
+            body: "A thick atmosphere. You can orbit. You cannot land.",
+            deny: "Atmosphere too thick",
+          },
+          gasProfileId(palIndex),
+        ),
+      );
       return;
     }
 
@@ -913,24 +930,27 @@ function makeSystem(
       const mA = massFrom(draft.radiusA, draft.surfaceGA);
       const mB = massFrom(draft.radiusB, draft.surfaceGB);
       const baryId = slug("bary", planets.length);
-      const bary: Planet = {
-        id: baryId,
-        name: `${nameA}·${nameB}`,
-        kind: "barycenter",
-        ...rail,
-        radius: 0,
-        surfaceG: 0,
-        mass: mA + mB,
-        landable: false,
-        rotate: 0,
-        spin: 0,
-        colorA: palA[0],
-        colorB: palA[1],
-        atmo: "rgba(0,0,0,0)",
-        kicker: "Pair",
-        title: `${nameA} · ${nameB}`,
-        body: "",
-      };
+      const bary = withMatter(
+        {
+          id: baryId,
+          name: `${nameA}·${nameB}`,
+          kind: "barycenter" as const,
+          ...rail,
+          radius: 0,
+          surfaceG: 0,
+          mass: mA + mB,
+          landable: false,
+          rotate: 0,
+          spin: 0,
+          colorA: palA[0],
+          colorB: palA[1],
+          atmo: "rgba(0,0,0,0)",
+          kicker: "Pair",
+          title: `${nameA} · ${nameB}`,
+          body: "",
+        },
+        null,
+      );
       planets.push(bary);
 
       const mu = G * GRAVITY_BASE * (mA + mB);
@@ -941,60 +961,70 @@ function makeSystem(
       const kA = keplerRail(aA, 0, 0, theta, n * n * aA * aA * aA);
       const kB = keplerRail(aB, 0, 0, theta + Math.PI, n * n * aB * aB * aB);
       const twinSpin = () => lerp(0.12, 0.32, rng()) * (rng() < 0.5 ? 1 : -1);
-      planets.push({
-        id: slug(nameA, planets.length),
-        name: nameA,
-        kind: "rocky",
-        x: bary.x + kA.x,
-        y: bary.y + kA.y,
-        vx: bary.vx + kA.vx,
-        vy: bary.vy + kA.vy,
-        radius: draft.radiusA,
-        surfaceG: draft.surfaceGA,
-        mass: mA,
-        landable: true,
-        rotate: rng() * Math.PI * 2,
-        spin: twinSpin(),
-        colorA: palA[0],
-        colorB: palA[1],
-        atmo: atmo(palA[0], 0.26),
-        parentId: baryId,
-        orbitR: aA,
-        orbitA: theta,
-        orbitW: n,
-        orbitE: 0,
-        orbitPeri: 0,
-        kicker: "Twin",
-        title: nameA,
-        body: `${nameA} is bound to ${nameB}. Two wells, one dance. Land on either; the other never sits still.`,
-      });
-      planets.push({
-        id: slug(nameB, planets.length),
-        name: nameB,
-        kind: "rocky",
-        x: bary.x + kB.x,
-        y: bary.y + kB.y,
-        vx: bary.vx + kB.vx,
-        vy: bary.vy + kB.vy,
-        radius: draft.radiusB,
-        surfaceG: draft.surfaceGB,
-        mass: mB,
-        landable: true,
-        rotate: rng() * Math.PI * 2,
-        spin: twinSpin(),
-        colorA: palB[0],
-        colorB: palB[1],
-        atmo: atmo(palB[0], 0.26),
-        parentId: baryId,
-        orbitR: aB,
-        orbitA: theta + Math.PI,
-        orbitW: n,
-        orbitE: 0,
-        orbitPeri: 0,
-        kicker: "Twin",
-        title: nameB,
-        body: `${nameB} is bound to ${nameA}. Two wells, one dance. Land on either; the other never sits still.`,
-      });
+      planets.push(
+        withMatter(
+          {
+            id: slug(nameA, planets.length),
+            name: nameA,
+            kind: "rocky" as const,
+            x: bary.x + kA.x,
+            y: bary.y + kA.y,
+            vx: bary.vx + kA.vx,
+            vy: bary.vy + kA.vy,
+            radius: draft.radiusA,
+            surfaceG: draft.surfaceGA,
+            mass: mA,
+            landable: true,
+            rotate: rng() * Math.PI * 2,
+            spin: twinSpin(),
+            colorA: palA[0],
+            colorB: palA[1],
+            atmo: atmo(palA[0], 0.26),
+            parentId: baryId,
+            orbitR: aA,
+            orbitA: theta,
+            orbitW: n,
+            orbitE: 0,
+            orbitPeri: 0,
+            kicker: "Twin",
+            title: nameA,
+            body: `${nameA} is bound to ${nameB}. Two wells, one dance. Land on either; the other never sits still.`,
+          },
+          rockyProfileId("Twin"),
+        ),
+      );
+      planets.push(
+        withMatter(
+          {
+            id: slug(nameB, planets.length),
+            name: nameB,
+            kind: "rocky" as const,
+            x: bary.x + kB.x,
+            y: bary.y + kB.y,
+            vx: bary.vx + kB.vx,
+            vy: bary.vy + kB.vy,
+            radius: draft.radiusB,
+            surfaceG: draft.surfaceGB,
+            mass: mB,
+            landable: true,
+            rotate: rng() * Math.PI * 2,
+            spin: twinSpin(),
+            colorA: palB[0],
+            colorB: palB[1],
+            atmo: atmo(palB[0], 0.26),
+            parentId: baryId,
+            orbitR: aB,
+            orbitA: theta + Math.PI,
+            orbitW: n,
+            orbitE: 0,
+            orbitPeri: 0,
+            kicker: "Twin",
+            title: nameB,
+            body: `${nameB} is bound to ${nameA}. Two wells, one dance. Land on either; the other never sits still.`,
+          },
+          rockyProfileId("Twin"),
+        ),
+      );
       return;
     }
 
@@ -1002,24 +1032,29 @@ function makeSystem(
     const pal = rockyPal[rockyI % rockyPal.length]!;
     const role = roles[rockyI]!;
     rockyI += 1;
-    planets.push({
-      id: slug(name, planets.length),
-      name,
-      kind: "rocky",
-      ...rail,
-      radius: draft.radius,
-      surfaceG: draft.surfaceG,
-      mass: massFrom(draft.radius, draft.surfaceG),
-      landable: true,
-      rotate: rng() * Math.PI * 2,
-      spin: lerp(0.1, 0.26, rng()) * (rng() < 0.5 ? 1 : -1),
-      colorA: pal[0],
-      colorB: pal[1],
-      atmo: atmo(pal[0], 0.26),
-      kicker: role.kicker,
-      title: name,
-      body: role.body(name),
-    });
+    planets.push(
+      withMatter(
+        {
+          id: slug(name, planets.length),
+          name,
+          kind: "rocky" as const,
+          ...rail,
+          radius: draft.radius,
+          surfaceG: draft.surfaceG,
+          mass: massFrom(draft.radius, draft.surfaceG),
+          landable: true,
+          rotate: rng() * Math.PI * 2,
+          spin: lerp(0.1, 0.26, rng()) * (rng() < 0.5 ? 1 : -1),
+          colorA: pal[0],
+          colorB: pal[1],
+          atmo: atmo(pal[0], 0.26),
+          kicker: role.kicker,
+          title: name,
+          body: role.body(name),
+        },
+        rockyProfileId(role.kicker),
+      ),
+    );
   });
 
   const gas = planets.find((p) => p.kind === "gas")!;
@@ -1034,33 +1069,38 @@ function makeSystem(
     const orbitA = rng() * Math.PI * 2 + m * 1.7;
     const k = keplerRail(orbitR, orbitE, orbitPeri, orbitA, G * GRAVITY_BASE * gas.mass);
     const pal = moonPal[m % moonPal.length]!;
-    planets.push({
-      id: slug(name, planets.length),
-      name,
-      kind: "moon",
-      x: gas.x + k.x,
-      y: gas.y + k.y,
-      vx: gas.vx + k.vx,
-      vy: gas.vy + k.vy,
-      radius,
-      surfaceG,
-      mass: massFrom(radius, surfaceG),
-      landable: true,
-      rotate: rng() * Math.PI,
-      spin: lerp(0.05, 0.14, rng()),
-      colorA: pal[0],
-      colorB: pal[1],
-      atmo: atmo(pal[0], 0.18),
-      parentId: gas.id,
-      orbitR,
-      orbitA,
-      orbitW: k.n,
-      orbitE,
-      orbitPeri,
-      kicker: "Moon",
-      title: name,
-      body: `A quiet moon of ${gas.name}. Slow down. The well will hold you if you let it.`,
-    });
+    planets.push(
+      withMatter(
+        {
+          id: slug(name, planets.length),
+          name,
+          kind: "moon" as const,
+          x: gas.x + k.x,
+          y: gas.y + k.y,
+          vx: gas.vx + k.vx,
+          vy: gas.vy + k.vy,
+          radius,
+          surfaceG,
+          mass: massFrom(radius, surfaceG),
+          landable: true,
+          rotate: rng() * Math.PI,
+          spin: lerp(0.05, 0.14, rng()),
+          colorA: pal[0],
+          colorB: pal[1],
+          atmo: atmo(pal[0], 0.18),
+          parentId: gas.id,
+          orbitR,
+          orbitA,
+          orbitW: k.n,
+          orbitE,
+          orbitPeri,
+          kicker: "Moon",
+          title: name,
+          body: `A quiet moon of ${gas.name}. Slow down. The well will hold you if you let it.`,
+        },
+        moonProfileId(rng),
+      ),
+    );
   }
 
   return planets;

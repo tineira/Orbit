@@ -17,7 +17,9 @@ import {
   flareArcPoints,
   flareApexNow,
   sinkAlpha,
+  spectroFocus,
 } from "./sim";
+import { bodyPeaks, MZ_MAX, SCAN_SECONDS, SUBSTANCES, type SpectrumPeak } from "./matter";
 import {
   getMinimapWorldR,
   getSystemName,
@@ -127,7 +129,10 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   drawVignette(ctx, cssW, cssH);
   drawArrivalFlash(ctx, sim, cssW, cssH);
   drawWarpAims(ctx, sim, cssW, cssH);
-  if (sim.phase !== "transit" && !sim.warpLost) drawMinimap(ctx, sim, cssW, cssH);
+  if (sim.phase !== "transit" && !sim.warpLost) {
+    drawMinimap(ctx, sim, cssW, cssH);
+    if (sim.showSpectro) drawSpectrograph(ctx, sim, cssW, cssH);
+  }
   void w;
   void h;
 }
@@ -1850,12 +1855,173 @@ function drawLagrangePoints(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera
   ctx.restore();
 }
 
-function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH: number) {
+function minimapLayout(cssW: number, cssH: number) {
   const desktop = cssW >= 1024;
   const size = Math.min(desktop ? 184 : 132, Math.max(96, cssW * 0.16));
   const pad = desktop ? 24 : 16;
   const x = cssW - size - pad;
   const y = cssH - size - pad - 8;
+  return { desktop, size, pad, x, y };
+}
+
+function spectroLayout(cssW: number, cssH: number, phase: Sim["phase"]) {
+  const map = minimapLayout(cssW, cssH);
+  const w = map.desktop ? Math.max(200, map.size + 22) : map.size;
+  const h = map.desktop ? 124 : 96;
+  const stack =
+    !map.desktop || phase === "title" || phase === "crashed" || phase === "landed";
+  if (stack) {
+    return { x: map.x, y: Math.max(map.pad, map.y - h - 8), w, h };
+  }
+  return { x: Math.max(map.pad, map.x - w - 10), y: map.y + map.size - h, w, h };
+}
+
+function spectroProgress(sim: Sim, body: Planet | null) {
+  if (!body) return 0;
+  if (sim.showVerbose || sim.scannedIds.has(body.id)) return 1;
+  if (sim.spectroScanId === body.id) {
+    return Math.max(0, Math.min(1, sim.spectroScanT / SCAN_SECONDS));
+  }
+  return 0;
+}
+
+function peakReveal(progress: number, mz: number) {
+  const u = progress * 1.14 - mz / MZ_MAX;
+  const x = Math.max(0, Math.min(1, u / 0.2));
+  return x * x * (3 - 2 * x);
+}
+
+function peakColor(peak: SpectrumPeak) {
+  if (peak.fuel) return "rgba(125, 155, 134, 0.95)";
+  if (peak.layer === "atmosphere") return "rgba(140, 168, 196, 0.92)";
+  return "rgba(236, 234, 228, 0.88)";
+}
+
+function drawSpectrograph(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH: number) {
+  const { x, y, w, h } = spectroLayout(cssW, cssH, sim.phase);
+  const body = spectroFocus(sim);
+  const progress = spectroProgress(sim, body);
+  const now = performance.now();
+  const noiseAmp = sim.reducedMotion ? 0.06 * (1 - progress) : 0.16 * (1 - progress * 0.85);
+
+  ctx.save();
+  ctx.globalAlpha = 0.92;
+  roundRect(ctx, x, y, w, h, 12);
+  ctx.fillStyle = "rgba(18, 20, 26, 0.78)";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(236, 234, 228, 0.12)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  const padL = 10;
+  const padR = 10;
+  const padT = 22;
+  const padB = 22;
+  const innerX = x + padL;
+  const innerY = y + padT;
+  const innerW = w - padL - padR;
+  const innerH = h - padT - padB;
+  const baseY = innerY + innerH;
+
+  ctx.save();
+  roundRect(ctx, x, y, w, h, 12);
+  ctx.clip();
+
+  ctx.strokeStyle = "rgba(236, 234, 228, 0.08)";
+  ctx.lineWidth = 1;
+  for (const tick of [0, 25, 50, 75, 100]) {
+    const tx = innerX + (tick / MZ_MAX) * innerW;
+    ctx.beginPath();
+    ctx.moveTo(tx, innerY);
+    ctx.lineTo(tx, baseY);
+    ctx.stroke();
+  }
+
+  ctx.beginPath();
+  ctx.strokeStyle = "rgba(236, 234, 228, 0.2)";
+  ctx.moveTo(innerX, baseY);
+  ctx.lineTo(innerX + innerW, baseY);
+  ctx.stroke();
+
+  if (noiseAmp > 0.01) {
+    ctx.beginPath();
+    ctx.strokeStyle = `rgba(236, 234, 228, ${0.16 + noiseAmp * 0.35})`;
+    ctx.lineWidth = 1;
+    const n = Math.max(28, Math.floor(innerW / 3));
+    for (let i = 0; i <= n; i++) {
+      const u = i / n;
+      const px = innerX + u * innerW;
+      const seed = sim.reducedMotion ? u * 71.3 : u * 71.3 + now * 0.0017;
+      const nse = (hash(seed) - 0.5) * 2 * noiseAmp * innerH;
+      const py = baseY - 2 + nse;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+
+  const peaks = body ? bodyPeaks(body) : [];
+  ctx.font = '500 8px "IBM Plex Mono", ui-monospace, monospace';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  for (const peak of peaks) {
+    const reveal = peakReveal(progress, peak.mz);
+    if (reveal < 0.04) continue;
+    const px = innerX + (peak.mz / MZ_MAX) * innerW;
+    const hh = innerH * peak.height * reveal;
+    const half = peak.layer === "atmosphere" ? 1.35 : 2.15;
+    ctx.beginPath();
+    ctx.moveTo(px - half, baseY);
+    ctx.lineTo(px, baseY - hh);
+    ctx.lineTo(px + half, baseY);
+    ctx.closePath();
+    ctx.fillStyle = peakColor(peak);
+    ctx.globalAlpha = 0.55 + 0.45 * reveal;
+    ctx.fill();
+    if (reveal > 0.62 && innerW >= 160) {
+      ctx.globalAlpha = Math.min(1, (reveal - 0.62) / 0.25);
+      ctx.fillStyle = peak.fuel ? "rgba(125, 155, 134, 0.92)" : "rgba(236, 234, 228, 0.7)";
+      ctx.fillText(SUBSTANCES[peak.id].hud, px, baseY - hh - 2);
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+
+  ctx.font = '500 10px "IBM Plex Mono", ui-monospace, monospace';
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(236, 234, 228, 0.62)";
+  ctx.fillText("MASS SPEC", x + 10, y + 8);
+
+  if (w >= 170) {
+    ctx.textAlign = "right";
+    const caption = !body
+      ? "NO LOCK"
+      : progress >= 1
+        ? body.name
+        : progress > 0
+          ? "SCAN"
+          : "IDLE";
+    ctx.fillStyle =
+      progress >= 1
+        ? "rgba(125, 155, 134, 0.88)"
+        : progress > 0
+          ? "rgba(236, 234, 228, 0.7)"
+          : "rgba(140, 142, 148, 0.7)";
+    ctx.fillText(caption, x + w - 10, y + 8);
+  }
+
+  ctx.textAlign = "left";
+  ctx.textBaseline = "bottom";
+  ctx.font = '500 8px "IBM Plex Mono", ui-monospace, monospace';
+  ctx.fillStyle = "rgba(140, 142, 148, 0.7)";
+  ctx.fillText("m/z", x + 10, y + h - 6);
+
+  ctx.restore();
+}
+
+function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH: number) {
+  const { size, x, y } = minimapLayout(cssW, cssH);
   ctx.save();
   ctx.globalAlpha = 0.92;
   roundRect(ctx, x, y, size, size, 12);

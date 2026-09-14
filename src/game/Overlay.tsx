@@ -1,7 +1,15 @@
 import { useEffect } from "react";
 import { Minus, Plus, Volume2, VolumeX } from "lucide-react";
-import type { EngineKind, FuelKind, HudSnapshot, TankKind, VerboseDiag } from "./types";
+import type {
+  CompositionReadout,
+  EngineKind,
+  FuelKind,
+  HudSnapshot,
+  TankKind,
+  VerboseDiag,
+} from "./types";
 import { engineGrade, fuelGrade, tankGrade } from "./fuel";
+import { bodyReadout, SCAN_SECONDS } from "./matter";
 import { ATMO_STEPS, GRAVITY_STEPS, getPlanets, isGhostBody, planetById } from "./world";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +36,7 @@ type Props = {
   onToggleLagrange: () => void;
   onToggleGravityGrid: () => void;
   onToggleVerbose: () => void;
+  onToggleSpectro: () => void;
 };
 
 function isEnterKey(e: KeyboardEvent) {
@@ -50,6 +59,7 @@ export function Overlay({
   onToggleLagrange,
   onToggleGravityGrid,
   onToggleVerbose,
+  onToggleSpectro,
 }: Props) {
   const landed = hud.landedId ? planetById(hud.landedId) : null;
   const crashed = hud.crashedId ? planetById(hud.crashedId) : null;
@@ -120,6 +130,8 @@ export function Overlay({
           onToggleGravityGrid={onToggleGravityGrid}
           verbose={hud.verbose}
           onToggleVerbose={onToggleVerbose}
+          spectro={hud.spectro}
+          onToggleSpectro={onToggleSpectro}
           dev={dev}
         />
       ) : null}
@@ -140,6 +152,10 @@ export function Overlay({
                   <span className="mx-2 text-subtle">/</span>
                   {statusLabel(hud)}
                 </p>
+                {hud.composition ? (
+                  <BodyMixLines className="mt-1.5" mix={hud.composition} />
+                ) : null}
+                {hud.spectroScanning ? <ScanPips frac={hud.spectroScan} /> : null}
               </div>
               <div className="flex flex-col items-end gap-3">
                 <div className="text-right">
@@ -179,6 +195,7 @@ export function Overlay({
               </div>
             </div>
             {dev && hud.verbose && hud.verboseDiag ? <VerbosePanel diag={hud.verboseDiag} /> : null}
+            {dev && hud.verbose && hud.phase === "flight" ? <VerboseMatter /> : null}
           </header>
 
           <div className="absolute bottom-16 left-0 p-4 sm:p-6 max-w-[22rem]">
@@ -208,10 +225,12 @@ export function Overlay({
                 physicsMenu={hud.physicsMenu}
                 gravityGrid={hud.gravityGrid}
                 verbose={hud.verbose}
+                spectro={hud.spectro}
                 onToggleOrbitShell={onToggleOrbitShell}
                 onToggleLagrange={onToggleLagrange}
                 onToggleGravityGrid={onToggleGravityGrid}
                 onToggleVerbose={onToggleVerbose}
+                onToggleSpectro={onToggleSpectro}
                 dev={dev}
               />
             </p>
@@ -233,6 +252,11 @@ export function Overlay({
             {dev && hud.verbose ? (
               <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">
                 Verbose
+              </p>
+            ) : null}
+            {hud.spectro ? (
+              <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">
+                Mass spec
               </p>
             ) : null}
             {hud.orbitHint && hud.phase !== "crashed" ? (
@@ -349,6 +373,8 @@ function Title({
   onToggleLagrange,
   onToggleGravityGrid,
   onToggleVerbose,
+  spectro,
+  onToggleSpectro,
   dev,
 }: {
   onLaunch: () => void;
@@ -358,10 +384,12 @@ function Title({
   lagrangePoints: boolean;
   gravityGrid: boolean;
   verbose: boolean;
+  spectro: boolean;
   onToggleOrbitShell: () => void;
   onToggleLagrange: () => void;
   onToggleGravityGrid: () => void;
   onToggleVerbose: () => void;
+  onToggleSpectro: () => void;
   dev: boolean;
 }) {
   const destinations = getPlanets().filter((p) => p.kind !== "star" && !isGhostBody(p));
@@ -387,11 +415,14 @@ function Title({
       <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
         <ul className="grid grid-cols-2 gap-x-6 gap-y-2 font-mono text-xs text-muted sm:grid-cols-3">
           {destinations.map((p) => (
-            <li key={p.id} className="flex items-baseline gap-2">
-              <span className="font-display text-sm font-medium tracking-tight text-fg">
-                {p.name}
+            <li key={p.id} className="flex flex-col gap-0.5">
+              <span className="flex items-baseline gap-2">
+                <span className="font-display text-sm font-medium tracking-tight text-fg">
+                  {p.name}
+                </span>
+                <span className="text-subtle">{p.kicker}</span>
               </span>
-              <span className="text-subtle">{p.kicker}</span>
+              {verbose ? <BodyMixLines mix={bodyReadout(p)} /> : null}
             </li>
           ))}
         </ul>
@@ -406,10 +437,12 @@ function Title({
               physicsMenu={physicsMenu}
               gravityGrid={gravityGrid}
               verbose={verbose}
+              spectro={spectro}
               onToggleOrbitShell={onToggleOrbitShell}
               onToggleLagrange={onToggleLagrange}
               onToggleGravityGrid={onToggleGravityGrid}
               onToggleVerbose={onToggleVerbose}
+              onToggleSpectro={onToggleSpectro}
               dev={dev}
             />
           </p>
@@ -634,6 +667,83 @@ function VCell({
   );
 }
 
+function BodyMixLines({
+  mix,
+  className,
+}: {
+  mix: CompositionReadout;
+  className?: string;
+}) {
+  if (!mix.atmosphere && !mix.bulk) return null;
+  return (
+    <div
+      className={cn(
+        "font-mono text-[10px] leading-4 tabular-nums uppercase tracking-wide text-muted",
+        className,
+      )}
+    >
+      {mix.atmosphere ? (
+        <p>
+          <span className="text-subtle">Atmo</span> {mix.atmosphere}
+        </p>
+      ) : null}
+      {mix.bulk ? (
+        <p>
+          <span className="text-subtle">Core</span> {mix.bulk}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function ScanPips({ frac }: { frac: number }) {
+  const t = Math.max(0, Math.min(1, frac));
+  const pips = 8;
+  const filled = Math.round(t * pips);
+  const left = Math.max(0, Math.ceil((1 - t) * SCAN_SECONDS));
+  return (
+    <div
+      className="mt-2"
+      role="meter"
+      aria-label="Mass spec scan"
+      aria-valuemin={0}
+      aria-valuemax={SCAN_SECONDS}
+      aria-valuenow={Math.round(t * SCAN_SECONDS)}
+    >
+      <p className="font-mono text-[10px] tracking-[0.16em] uppercase text-muted">Scan</p>
+      <div className="mt-1 flex items-center gap-2">
+        <span className="flex h-3 items-center gap-px rounded-sm bg-bg px-px">
+          {Array.from({ length: pips }, (_, i) => (
+            <span key={i} className={cn("h-2 w-1.5", i < filled ? "bg-ok" : "bg-surface-2")} />
+          ))}
+        </span>
+        <span className="font-mono text-[10px] tabular-nums text-muted">{left}s</span>
+      </div>
+    </div>
+  );
+}
+
+function VerboseMatter() {
+  const bodies = getPlanets().filter((p) => p.matter);
+  if (!bodies.length) return null;
+  return (
+    <div className="pointer-events-auto max-h-[22vh] max-w-[28rem] overflow-y-auto font-mono text-[10px] leading-4 tabular-nums uppercase tracking-wide text-muted">
+      {bodies.map((p) => {
+        const mix = bodyReadout(p);
+        const bits = [
+          mix.atmosphere ? `Atmo ${mix.atmosphere}` : null,
+          mix.bulk ? `Core ${mix.bulk}` : null,
+        ].filter((s): s is string => !!s);
+        return (
+          <p key={p.id} className="mt-1 first:mt-0">
+            <span className="text-fg">{p.name}</span> {bits.join("  ")}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 function VerbosePanel({ diag }: { diag: VerboseDiag }) {
   const vOverC = diag.vCirc && diag.vCirc > 0 ? diag.relSpeed / diag.vCirc : null;
   const shellWarn =
@@ -699,10 +809,12 @@ function KeyTips({
   physicsMenu,
   gravityGrid,
   verbose,
+  spectro,
   onToggleOrbitShell,
   onToggleLagrange,
   onToggleGravityGrid,
   onToggleVerbose,
+  onToggleSpectro,
   dev,
 }: {
   orbitShell: boolean;
@@ -710,16 +822,19 @@ function KeyTips({
   physicsMenu: boolean;
   gravityGrid: boolean;
   verbose: boolean;
+  spectro: boolean;
   onToggleOrbitShell: () => void;
   onToggleLagrange: () => void;
   onToggleGravityGrid: () => void;
   onToggleVerbose: () => void;
+  onToggleSpectro: () => void;
   dev: boolean;
 }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 sm:gap-x-3">
       <KeyTip code="O" label="orbit shell" on={orbitShell} onToggle={onToggleOrbitShell} />
       <KeyTip code="L" label="Lagrange" on={lagrangePoints} onToggle={onToggleLagrange} />
+      <KeyTip code="M" label="mass spec" on={spectro} onToggle={onToggleSpectro} />
       {dev ? (
         <KeyTip code="P" label="physics" on={physicsMenu} className="hidden sm:inline-flex" />
       ) : null}

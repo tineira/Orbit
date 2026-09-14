@@ -1,5 +1,45 @@
 export type PlanetKind = "star" | "rocky" | "gas" | "moon" | "barycenter";
 
+/** Closed catalog. What a body or its atmosphere can be made of. */
+export type SubstanceId =
+  | "h2"
+  | "he"
+  | "n2"
+  | "co2"
+  | "ch4"
+  | "nh3"
+  | "d"
+  | "he3"
+  | "lumen"
+  | "h2o"
+  | "silicate"
+  | "iron"
+  | "carbon"
+  | "sulfur";
+
+export type MixEntry = { id: SubstanceId; fraction: number };
+export type Mix = MixEntry[];
+
+/** Named recipes. A charted body picks one; barycenters have none. */
+export type MatterProfileId =
+  | "star-warm"
+  | "star-hot"
+  | "rocky-home"
+  | "rocky-workshop"
+  | "rocky-signal"
+  | "rocky-archive"
+  | "rocky-twin"
+  | "gas-ammonia"
+  | "gas-methane"
+  | "gas-ice"
+  | "gas-sulfur"
+  | "gas-water"
+  | "moon-rock"
+  | "moon-ice"
+  | "moon-ammonia"
+  | "moon-he3"
+  | "moon-deuterium";
+
 export type Planet = {
   id: string;
   name: string;
@@ -29,6 +69,10 @@ export type Planet = {
   body: string;
   href?: { label: string; url: string };
   deny?: string;
+  /** Locked recipe. Null on barycenters. Not drawn. */
+  matter: MatterProfileId | null;
+  bulk: Mix;
+  atmosphere: Mix;
 };
 
 export type FuelKind = "ch4" | "nh3" | "h2" | "ntr" | "d" | "he3" | "lumen" | "hush";
@@ -146,6 +190,11 @@ export type FlightStatus =
   | "crashed"
   | "warp";
 
+export type CompositionReadout = {
+  atmosphere: string | null;
+  bulk: string | null;
+};
+
 export type VerboseDiag = {
   gate: string;
   ok: boolean;
@@ -209,6 +258,10 @@ export type HudSnapshot = {
   gravityGrid: boolean;
   verbose: boolean;
   verboseDiag: VerboseDiag | null;
+  spectro: boolean;
+  spectroScan: number;
+  spectroScanning: boolean;
+  composition: CompositionReadout | null;
   dev: boolean;
   warpCharge: number;
   transitBeat: TransitBeat | "off";

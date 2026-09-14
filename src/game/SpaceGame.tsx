@@ -42,6 +42,10 @@ const INITIAL: HudSnapshot = {
   gravityGrid: false,
   verbose: false,
   verboseDiag: null,
+  spectro: false,
+  spectroScan: 0,
+  spectroScanning: false,
+  composition: null,
   dev: false,
   warpCharge: 0,
   transitBeat: "off",
@@ -107,6 +111,9 @@ export function SpaceGame() {
   const onToggleVerbose = useCallback(() => {
     gameRef.current?.toggleVerbose();
   }, []);
+  const onToggleSpectro = useCallback(() => {
+    gameRef.current?.toggleSpectro();
+  }, []);
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-bg text-fg">
@@ -132,6 +139,7 @@ export function SpaceGame() {
         onToggleLagrange={onToggleLagrange}
         onToggleGravityGrid={onToggleGravityGrid}
         onToggleVerbose={onToggleVerbose}
+        onToggleSpectro={onToggleSpectro}
       />
     </div>
   );
