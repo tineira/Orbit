@@ -87,6 +87,211 @@ function startLoop(ctx: AudioContext, buffer: AudioBuffer) {
   return src;
 }
 
+type BlastSpec = {
+  at?: number;
+  /** Mid crack peak. */
+  crack: number;
+  /** Crack bandpass Hz. */
+  band: number;
+  /** Body oscillator start Hz. */
+  thump: number;
+  /** Sub sine start Hz. */
+  sub: number;
+  /** Low noise body peak. */
+  body: number;
+  /** Sub-100 Hz tail peak. */
+  rumble: number;
+  /** How long the rumble stays audible, seconds. */
+  tail: number;
+};
+
+let thunderIR: AudioBuffer | null = null;
+
+function getThunderIR(ctx: AudioContext) {
+  if (thunderIR && thunderIR.sampleRate === ctx.sampleRate) return thunderIR;
+  const sec = 3.6;
+  const len = Math.floor(ctx.sampleRate * sec);
+  const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    let b = 0;
+    for (let i = 0; i < len; i++) {
+      const u = i / len;
+      const env = Math.pow(1 - u, 1.12);
+      const white = Math.random() * 2 - 1;
+      b = (b + 0.028 * white) / 1.028;
+      d[i] = b * env * (ch === 0 ? 2.1 : 1.85);
+    }
+  }
+  thunderIR = buf;
+  return buf;
+}
+
+/** Hang, then a slow fade. Exponential-to-zero dies in a fraction of the tail. */
+function hangThenFade(g: AudioParam, t: number, peak: number, hang: number, tail: number) {
+  g.cancelScheduledValues(t);
+  g.setValueAtTime(0.0001, t);
+  g.linearRampToValueAtTime(peak, t + 0.045);
+  g.linearRampToValueAtTime(peak * 0.7, t + hang);
+  g.setTargetAtTime(0.0001, t + hang, tail * 0.34);
+}
+
+/** Chest bomb — short slam, then a rolling thunder that actually hangs. */
+function fireBlast(
+  ctx: AudioContext,
+  dest: AudioNode,
+  whiteBuf: AudioBuffer,
+  spec: BlastSpec,
+  nodes: AudioNode[],
+) {
+  const t = ctx.currentTime + (spec.at ?? 0);
+  const push = <T extends AudioNode>(n: T) => {
+    nodes.push(n);
+    return n;
+  };
+  const tail = spec.tail;
+  const hang = Math.min(0.85, tail * 0.22);
+  const play = tail + 0.35;
+  const subEnd = Math.max(13, spec.sub * 0.28);
+
+  const dry = push(ctx.createGain());
+  dry.gain.value = 1;
+  dry.connect(dest);
+
+  const conv = push(ctx.createConvolver());
+  conv.buffer = getThunderIR(ctx);
+  const wetLp = push(ctx.createBiquadFilter());
+  wetLp.type = "lowpass";
+  wetLp.frequency.value = 220;
+  wetLp.Q.value = 0.6;
+  const wet = push(ctx.createGain());
+  wet.gain.value = 0.72;
+  conv.connect(wetLp);
+  wetLp.connect(wet);
+  wet.connect(dest);
+
+  const thunder = push(ctx.createGain());
+  thunder.gain.value = 1;
+  thunder.connect(dry);
+  thunder.connect(conv);
+
+  const sub = ctx.createOscillator();
+  const subG = push(ctx.createGain());
+  sub.type = "sine";
+  sub.frequency.setValueAtTime(spec.sub, t);
+  sub.frequency.exponentialRampToValueAtTime(subEnd, t + tail * 0.92);
+  hangThenFade(subG.gain, t, spec.body * 1.05, hang, tail);
+  sub.connect(subG);
+  subG.connect(thunder);
+  sub.start(t);
+  sub.stop(t + play);
+  push(sub);
+
+  const shock = 0.07;
+  const sub2 = ctx.createOscillator();
+  const sub2G = push(ctx.createGain());
+  sub2.type = "sine";
+  sub2.frequency.setValueAtTime(spec.sub * 0.68, t + shock);
+  sub2.frequency.exponentialRampToValueAtTime(subEnd * 0.85, t + shock + tail * 0.85);
+  hangThenFade(sub2G.gain, t + shock, spec.body * 0.62, hang * 0.9, tail * 0.9);
+  sub2.connect(sub2G);
+  sub2G.connect(thunder);
+  sub2.start(t + shock);
+  sub2.stop(t + shock + play);
+  push(sub2);
+
+  const thump = ctx.createOscillator();
+  const thG = push(ctx.createGain());
+  thump.type = "triangle";
+  thump.frequency.setValueAtTime(spec.thump, t);
+  thump.frequency.exponentialRampToValueAtTime(spec.thump * 0.24, t + 0.9);
+  thG.gain.setValueAtTime(spec.crack * 0.9, t);
+  thG.gain.exponentialRampToValueAtTime(0.0001, t + 0.85);
+  thump.connect(thG);
+  thG.connect(dry);
+  thump.start(t);
+  thump.stop(t + 0.9);
+  push(thump);
+
+  const crack = ctx.createBufferSource();
+  crack.buffer = whiteBuf;
+  const bp = push(ctx.createBiquadFilter());
+  bp.type = "bandpass";
+  bp.frequency.value = spec.band;
+  bp.Q.value = 0.5;
+  const cg = push(ctx.createGain());
+  cg.gain.setValueAtTime(0.0001, t);
+  cg.gain.exponentialRampToValueAtTime(spec.crack, t + 0.005);
+  cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+  crack.connect(bp);
+  bp.connect(cg);
+  cg.connect(dry);
+  crack.start(t);
+  crack.stop(t + 0.2);
+  push(crack);
+
+  const body = ctx.createBufferSource();
+  body.buffer = whiteBuf;
+  body.loop = true;
+  const bodyLp = push(ctx.createBiquadFilter());
+  bodyLp.type = "lowpass";
+  bodyLp.frequency.value = 210;
+  bodyLp.Q.value = 0.7;
+  const bg = push(ctx.createGain());
+  hangThenFade(bg.gain, t, spec.body * 0.85, hang * 0.75, tail * 0.7);
+  body.connect(bodyLp);
+  bodyLp.connect(bg);
+  bg.connect(thunder);
+  body.start(t);
+  body.stop(t + play);
+  push(body);
+
+  const rumble = ctx.createBufferSource();
+  rumble.buffer = whiteBuf;
+  rumble.loop = true;
+  const lp = push(ctx.createBiquadFilter());
+  lp.type = "lowpass";
+  lp.frequency.value = 72;
+  lp.Q.value = 0.95;
+  const rg = push(ctx.createGain());
+  hangThenFade(rg.gain, t, spec.rumble, hang, tail);
+  rumble.connect(lp);
+  lp.connect(rg);
+  rg.connect(thunder);
+  rumble.start(t);
+  rumble.stop(t + play);
+  push(rumble);
+
+  const lfo = ctx.createOscillator();
+  lfo.type = "sine";
+  lfo.frequency.setValueAtTime(4.6, t);
+  lfo.frequency.linearRampToValueAtTime(2.4, t + tail);
+  const lfoG = push(ctx.createGain());
+  lfoG.gain.setValueAtTime(spec.rumble * 0.42, t);
+  lfoG.gain.setTargetAtTime(0.0001, t + hang, tail * 0.4);
+  lfo.connect(lfoG);
+  lfoG.connect(rg.gain);
+  lfo.start(t);
+  lfo.stop(t + play);
+  push(lfo);
+
+  const floor = ctx.createBufferSource();
+  floor.buffer = whiteBuf;
+  floor.loop = true;
+  const floorLp = push(ctx.createBiquadFilter());
+  floorLp.type = "lowpass";
+  floorLp.frequency.value = 42;
+  floorLp.Q.value = 1.05;
+  const fg = push(ctx.createGain());
+  hangThenFade(fg.gain, t, spec.rumble * 0.7, hang * 1.15, tail * 1.08);
+  floor.connect(floorLp);
+  floorLp.connect(fg);
+  fg.connect(thunder);
+  floor.start(t);
+  floor.stop(t + play);
+  push(floor);
+}
+
 type AudioApi = {
   unlock: () => void;
   setThrust: (on: boolean, intensity: number) => void;
@@ -455,7 +660,6 @@ export function createAudio(): AudioApi {
       ensure();
       if (!ctx || !sfx || !whiteBuf) return;
       void ctx.resume();
-      const t = ctx.currentTime;
       const nodes: AudioNode[] = [];
       const tidy = () => {
         for (const n of nodes) {
@@ -468,14 +672,14 @@ export function createAudio(): AudioApi {
       };
 
       if (!voidIR) {
-        const sec = 2.7;
+        const sec = 3.8;
         const len = Math.floor(ctx.sampleRate * sec);
         voidIR = ctx.createBuffer(2, len, ctx.sampleRate);
         for (let ch = 0; ch < 2; ch++) {
           const d = voidIR.getChannelData(ch);
           for (let i = 0; i < len; i++) {
             const u = i / len;
-            d[i] = (Math.random() * 2 - 1) * Math.pow(1 - u, 2.6) * (ch === 0 ? 1 : 0.88);
+            d[i] = (Math.random() * 2 - 1) * Math.pow(1 - u, 1.2) * (ch === 0 ? 1 : 0.88);
           }
         }
       }
@@ -483,7 +687,7 @@ export function createAudio(): AudioApi {
       const hit = ctx.createGain();
       hit.gain.value = 1;
       const dry = ctx.createGain();
-      dry.gain.value = 0.95;
+      dry.gain.value = 1;
       hit.connect(dry);
       dry.connect(sfx);
       nodes.push(hit, dry);
@@ -492,131 +696,54 @@ export function createAudio(): AudioApi {
       conv.buffer = voidIR;
       const wetLp = ctx.createBiquadFilter();
       wetLp.type = "lowpass";
-      wetLp.frequency.value = 1700;
+      wetLp.frequency.value = 900;
       wetLp.Q.value = 0.5;
       const wet = ctx.createGain();
-      wet.gain.value = 0.82;
+      wet.gain.value = 0.48;
       hit.connect(conv);
       conv.connect(wetLp);
       wetLp.connect(wet);
       wet.connect(sfx);
       nodes.push(conv, wetLp, wet);
 
-      const sub = ctx.createOscillator();
-      const subG = ctx.createGain();
-      sub.type = "sine";
-      sub.frequency.setValueAtTime(46, t);
-      sub.frequency.exponentialRampToValueAtTime(16, t + 0.7);
-      subG.gain.setValueAtTime(0.48, t);
-      subG.gain.exponentialRampToValueAtTime(0.0001, t + 0.78);
-      sub.connect(subG);
-      subG.connect(hit);
-      sub.start(t);
-      sub.stop(t + 0.8);
-      nodes.push(sub, subG);
+      fireBlast(ctx, hit, whiteBuf, {
+        crack: 0.88,
+        band: 520,
+        thump: 68,
+        sub: 46,
+        body: 0.62,
+        rumble: 0.55,
+        tail: 3.4,
+      }, nodes);
 
-      const crack = ctx.createBufferSource();
-      crack.buffer = whiteBuf;
-      const crackBp = ctx.createBiquadFilter();
-      crackBp.type = "bandpass";
-      crackBp.frequency.value = 780;
-      crackBp.Q.value = 0.55;
-      const crackG = ctx.createGain();
-      crackG.gain.setValueAtTime(0.0001, t);
-      crackG.gain.exponentialRampToValueAtTime(0.62, t + 0.008);
-      crackG.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
-      crack.connect(crackBp);
-      crackBp.connect(crackG);
-      crackG.connect(hit);
-      crack.start(t);
-      crack.stop(t + 0.24);
-      nodes.push(crack, crackBp, crackG);
-
-      const snap = ctx.createOscillator();
-      const snapG = ctx.createGain();
-      snap.type = "triangle";
-      snap.frequency.setValueAtTime(520, t);
-      snap.frequency.exponentialRampToValueAtTime(90, t + 0.35);
-      snapG.gain.setValueAtTime(0.16, t);
-      snapG.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
-      snap.connect(snapG);
-      snapG.connect(hit);
-      snap.start(t);
-      snap.stop(t + 0.42);
-      nodes.push(snap, snapG);
-
-      window.setTimeout(tidy, 2900);
+      window.setTimeout(tidy, 7800);
     },
     sonicBooms(times: readonly number[] = WARP_BOOM_TIMES) {
       ensure();
       if (!ctx || !sfx || !whiteBuf) return;
       void ctx.resume();
-      const t = ctx.currentTime;
-      const boom = (at: number, crackGain: number, band: number, thump: number) => {
-        const src = ctx!.createBufferSource();
-        src.buffer = whiteBuf;
-        const bp = ctx!.createBiquadFilter();
-        bp.type = "bandpass";
-        bp.frequency.value = band;
-        bp.Q.value = 0.5;
-        const ng = ctx!.createGain();
-        ng.gain.setValueAtTime(0.0001, t + at);
-        ng.gain.exponentialRampToValueAtTime(crackGain, t + at + 0.008);
-        ng.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.28);
-        src.connect(bp);
-        bp.connect(ng);
-        ng.connect(sfx!);
-        src.start(t + at);
-        src.stop(t + at + 0.3);
-
-        const osc = ctx!.createOscillator();
-        const og = ctx!.createGain();
-        osc.type = "triangle";
-        osc.frequency.setValueAtTime(thump, t + at);
-        osc.frequency.exponentialRampToValueAtTime(thump * 0.38, t + at + 0.45);
-        og.gain.setValueAtTime(crackGain * 1.05, t + at);
-        og.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.52);
-        osc.connect(og);
-        og.connect(sfx!);
-        osc.start(t + at);
-        osc.stop(t + at + 0.55);
-
-        const rumble = ctx!.createBufferSource();
-        rumble.buffer = whiteBuf;
-        const lp = ctx!.createBiquadFilter();
-        lp.type = "lowpass";
-        lp.frequency.value = 160;
-        lp.Q.value = 0.7;
-        const rg = ctx!.createGain();
-        rg.gain.setValueAtTime(0.0001, t + at);
-        rg.gain.exponentialRampToValueAtTime(crackGain * 0.7, t + at + 0.03);
-        rg.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.78);
-        rumble.connect(lp);
-        lp.connect(rg);
-        rg.connect(sfx!);
-        rumble.start(t + at);
-        rumble.stop(t + at + 0.82);
-
-        osc.onended = () => {
-          src.disconnect();
-          bp.disconnect();
-          ng.disconnect();
-          osc.disconnect();
-          og.disconnect();
-          rumble.disconnect();
-          lp.disconnect();
-          rg.disconnect();
-        };
-      };
-      const hits: [number, number, number][] = [
-        [0.78, 820, 118],
-        [0.64, 1100, 96],
-        [0.88, 700, 132],
+      const nodes: AudioNode[] = [];
+      const hits: BlastSpec[] = [
+        { crack: 0.82, band: 480, thump: 64, sub: 44, body: 0.58, rumble: 0.5, tail: 3.0 },
+        { crack: 0.74, band: 620, thump: 56, sub: 38, body: 0.5, rumble: 0.44, tail: 2.7 },
+        { crack: 0.95, band: 420, thump: 72, sub: 50, body: 0.68, rumble: 0.6, tail: 3.6 },
       ];
+      let longest = 0;
       for (let i = 0; i < times.length; i++) {
         const spec = hits[i] ?? hits[hits.length - 1]!;
-        boom(times[i]!, spec[0], spec[1], spec[2]);
+        const at = times[i]!;
+        fireBlast(ctx, sfx, whiteBuf, { ...spec, at }, nodes);
+        longest = Math.max(longest, at + spec.tail);
       }
+      window.setTimeout(() => {
+        for (const n of nodes) {
+          try {
+            n.disconnect();
+          } catch {
+            /* already gone */
+          }
+        }
+      }, (longest + 4.2) * 1000);
     },
     bump(amount) {
       if (!ctx || !sfx) return;
