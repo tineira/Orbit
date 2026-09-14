@@ -18,8 +18,16 @@ export const ORBIT_SHELL_MIN_ALT = 18;
 export const ORBIT_SHELL_MAX_ALT_FACTOR = 1.28;
 export const ORBIT_SHELL_MAX_ALT_CAP = 170;
 export const ORBIT_SHELL_MOON_MIN_ALT = 90;
-/** How far past a gas giant's atmosphere the outer lock ring extends. Inner stays at 18. */
+/** How far past a gas giant's haze the outer lock ring extends. */
 export const ORBIT_SHELL_GAS_CLEAR = 72;
+/** Visual haze / drag outer radius as a multiple of body radius. */
+export const GAS_ATMO_FACTOR = 1.85;
+/** Cloud deck outer radius. Drag ramps up here; haze is the glow outside. */
+export const GAS_CLOUD_FACTOR = 1.12;
+/** Haze drag (the glow). Same ballpark as star corona so a fast dive still hits the clouds. */
+export const GAS_HAZE_DENSITY = 0.04;
+/** Cloud-deck drag, near the painted body. */
+export const GAS_CLOUD_DENSITY = 0.48;
 /** Star corona outer radius / body radius. Keep in sync with parking: min shell sits just past this. */
 export const STAR_ATMO_FACTOR = 2.1;
 /** Corona drag vs gas 0.48 / rocky 0.5. Low so a fast dive still hits the disk. */
@@ -172,13 +180,13 @@ function scatterKeepout(p: Planet) {
 
 function closeOtherKeepout(p: Planet) {
   if (p.kind === "star") return p.radius * STAR_ATMO_FACTOR + 90;
-  if (p.kind === "gas") return p.radius * 1.85 + 36;
+  if (p.kind === "gas") return p.radius * GAS_ATMO_FACTOR + 36;
   return p.radius + SHIP_HULL + 36;
 }
 
 function encounterRange(p: Planet) {
   if (p.kind === "gas") {
-    const atmo = p.radius * 1.85;
+    const atmo = p.radius * GAS_ATMO_FACTOR;
     return { min: atmo + 70, max: atmo + 280 };
   }
   return { min: p.radius + SHIP_HULL + 110, max: p.radius + SHIP_HULL + 360 };
@@ -325,7 +333,7 @@ export function orbitShellAlts(p: Planet, planets: Planet[] = []) {
       if (toParent > minAlt + 8) maxAlt = Math.min(maxAlt, toParent - 8);
     }
   } else if (p.kind === "gas") {
-    const atmoAlt = p.radius * 0.85;
+    const atmoAlt = p.radius * (GAS_ATMO_FACTOR - 1);
     maxAlt = Math.max(maxAlt, atmoAlt + ORBIT_SHELL_GAS_CLEAR);
   } else if (p.kind === "star") {
     const atmoAlt = p.radius * (STAR_ATMO_FACTOR - 1);

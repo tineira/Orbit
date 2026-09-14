@@ -29,6 +29,10 @@ import {
   twinOf,
   STAR_ATMO_FACTOR,
   STAR_DRAG_DENSITY,
+  GAS_ATMO_FACTOR,
+  GAS_CLOUD_FACTOR,
+  GAS_HAZE_DENSITY,
+  GAS_CLOUD_DENSITY,
   KEPLER_STAR_APO_FACTOR,
   KEPLER_STAR_APO_CAP,
   FLARE_CAP,
@@ -1013,13 +1017,28 @@ function stepLockedLagrange(
 }
 
 function atmoRadius(p: Planet) {
-  return p.radius * (p.kind === "gas" ? 1.85 : p.kind === "star" ? STAR_ATMO_FACTOR : 1.72);
+  if (p.kind === "gas") return p.radius * GAS_ATMO_FACTOR;
+  if (p.kind === "star") return p.radius * STAR_ATMO_FACTOR;
+  return p.radius * 1.72;
 }
 
-function atmoDensityK(p: Planet) {
-  if (p.kind === "gas") return 0.48;
-  if (p.kind === "star") return STAR_DRAG_DENSITY;
-  return 0.5;
+function atmoDensityAt(p: Planet, d: number) {
+  const outer = atmoRadius(p);
+  if (d >= outer || d < p.radius || outer <= p.radius) return 0;
+  if (p.kind === "gas") {
+    const cloud = p.radius * GAS_CLOUD_FACTOR;
+    if (d >= cloud) {
+      const span = outer - cloud;
+      const t = span > 1e-8 ? (outer - d) / span : 0;
+      return t * t * GAS_HAZE_DENSITY;
+    }
+    const span = Math.max(cloud - p.radius, 1e-8);
+    const t = (cloud - d) / span;
+    return GAS_HAZE_DENSITY + t * t * (GAS_CLOUD_DENSITY - GAS_HAZE_DENSITY);
+  }
+  const t = (outer - d) / (outer - p.radius);
+  const k = p.kind === "star" ? STAR_DRAG_DENSITY : 0.5;
+  return t * t * k;
 }
 
 function dragNear(
@@ -1038,10 +1057,8 @@ function dragNear(
     const dx = x - p.x;
     const dy = y - p.y;
     const d = Math.hypot(dx, dy);
-    const outer = atmoRadius(p);
-    if (d >= outer || d < p.radius) continue;
-    const t = 1 - (d - p.radius) / (outer - p.radius);
-    const density = t * t * atmoDensityK(p);
+    const density = atmoDensityAt(p, d);
+    if (density <= 0) continue;
     const rvx = vx - p.vx;
     const rvy = vy - p.vy;
     const speed = Math.hypot(rvx, rvy);
@@ -1074,10 +1091,8 @@ function atmoHost(sim: Sim): Planet | null {
   for (const p of sim.planets) {
     if (isGhostBody(p) || p.radius <= 0) continue;
     const d = Math.hypot(x - p.x, y - p.y);
-    const outer = atmoRadius(p);
-    if (d >= outer || d < p.radius) continue;
-    const t = 1 - (d - p.radius) / (outer - p.radius);
-    const density = t * t * atmoDensityK(p);
+    const density = atmoDensityAt(p, d);
+    if (density <= 0) continue;
     const mag = density * Math.hypot(vx - p.vx, vy - p.vy) * sim.atmoScale;
     if (mag > bestMag) {
       bestMag = mag;
