@@ -1,4 +1,4 @@
-export type PlanetKind = "star" | "rocky" | "gas" | "moon" | "barycenter";
+export type PlanetKind = "star" | "rocky" | "gas" | "moon" | "asteroid" | "barycenter";
 
 /** Closed catalog. What a body or its atmosphere can be made of. */
 export type SubstanceId =
@@ -38,7 +38,11 @@ export type MatterProfileId =
   | "moon-ice"
   | "moon-ammonia"
   | "moon-he3"
-  | "moon-deuterium";
+  | "moon-deuterium"
+  | "asteroid-silicate"
+  | "asteroid-iron"
+  | "asteroid-ice"
+  | "asteroid-carbon";
 
 export type Planet = {
   id: string;
@@ -69,6 +73,10 @@ export type Planet = {
   body: string;
   href?: { label: string; url: string };
   deny?: string;
+  /** Asteroid silhouette. Ignored on round bodies. */
+  shapeSeed?: number;
+  /** Body-frame angle of the landing face, before spin. */
+  padAngle?: number;
   /** Locked recipe. Null on barycenters. Not drawn. */
   matter: MatterProfileId | null;
   bulk: Mix;

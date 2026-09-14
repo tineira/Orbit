@@ -244,6 +244,46 @@ export const MATTER_PROFILES: Record<MatterProfileId, MatterProfile> = {
     ),
     atmosphere: [],
   },
+  "asteroid-silicate": {
+    id: "asteroid-silicate",
+    kind: "asteroid",
+    bulk: mix(
+      { id: "silicate", fraction: 0.68 },
+      { id: "iron", fraction: 0.22 },
+      { id: "carbon", fraction: 0.1 },
+    ),
+    atmosphere: [],
+  },
+  "asteroid-iron": {
+    id: "asteroid-iron",
+    kind: "asteroid",
+    bulk: mix(
+      { id: "iron", fraction: 0.58 },
+      { id: "silicate", fraction: 0.32 },
+      { id: "sulfur", fraction: 0.1 },
+    ),
+    atmosphere: [],
+  },
+  "asteroid-ice": {
+    id: "asteroid-ice",
+    kind: "asteroid",
+    bulk: mix(
+      { id: "h2o", fraction: 0.62 },
+      { id: "silicate", fraction: 0.28 },
+      { id: "carbon", fraction: 0.1 },
+    ),
+    atmosphere: [],
+  },
+  "asteroid-carbon": {
+    id: "asteroid-carbon",
+    kind: "asteroid",
+    bulk: mix(
+      { id: "carbon", fraction: 0.55 },
+      { id: "silicate", fraction: 0.32 },
+      { id: "iron", fraction: 0.13 },
+    ),
+    atmosphere: [],
+  },
 };
 
 export const MATTER_PROFILE_IDS = Object.keys(MATTER_PROFILES) as MatterProfileId[];
@@ -275,6 +315,10 @@ export const KIND_ALLOW: Record<
   },
   moon: {
     bulk: ["silicate", "iron", "carbon", "sulfur", "h2o", "ch4", "nh3", "he3", "d"],
+    atmosphere: ["n2", "ch4", "co2"],
+  },
+  asteroid: {
+    bulk: ["silicate", "iron", "carbon", "sulfur", "h2o"],
     atmosphere: ["n2", "ch4", "co2"],
   },
 };
@@ -340,6 +384,17 @@ export function rockyProfileId(kicker: string): MatterProfileId {
 
 export function moonProfileId(rng: () => number): MatterProfileId {
   return MOON_PROFILE_IDS[Math.floor(rng() * MOON_PROFILE_IDS.length)]!;
+}
+
+export const ASTEROID_PROFILE_IDS: MatterProfileId[] = [
+  "asteroid-silicate",
+  "asteroid-iron",
+  "asteroid-ice",
+  "asteroid-carbon",
+];
+
+export function asteroidProfileId(rng: () => number): MatterProfileId {
+  return ASTEROID_PROFILE_IDS[Math.floor(rng() * ASTEROID_PROFILE_IDS.length)]!;
 }
 
 export function mixLegal(

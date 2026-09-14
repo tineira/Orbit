@@ -1,4 +1,5 @@
 import { bodyReadout, canScan, clonePlanetMatter, SCAN_SECONDS } from "./matter.ts";
+import { asteroidLandedRadius, padHasFuel, surfaceAltitude, surfaceRadius, worldAngleFromLanded } from "./asteroid.ts";
 import type {
   BurnCause,
   Camera,
@@ -103,6 +104,7 @@ export type Sim = {
   camera: Camera;
   phase: "creating" | "title" | "flight" | "landed" | "crashed" | "transit";
   landedId: string | null;
+  takeoffIgnoreId: string | null;
   crashedId: string | null;
   landedAngle: number;
   status: FlightStatus;
@@ -203,6 +205,7 @@ export function createSim(): Sim {
     },
     phase: "title",
     landedId: null,
+    takeoffIgnoreId: null,
     crashedId: null,
     landedAngle: 0,
     status: "deep",
@@ -926,7 +929,7 @@ function computeLagrangePoints(planets: Planet[], gravityScale: number): Lagrang
   const out: LagrangePoint[] = [];
   const binaryDone = new Set<string>();
   for (const p of planets) {
-    if (p.kind === "star" || isGhostBody(p)) continue;
+    if (p.kind === "star" || p.kind === "asteroid" || isGhostBody(p)) continue;
     if (p.parentId == null || p.orbitR == null || p.orbitA == null || p.orbitW == null) continue;
     const parent = byId.get(p.parentId);
     if (!parent) continue;
@@ -1056,9 +1059,15 @@ function stepLockedLagrange(
 }
 
 function atmoRadius(p: Planet) {
+  if (p.kind === "asteroid") return p.radius;
   if (p.kind === "gas") return p.radius * GAS_ATMO_FACTOR;
   if (p.kind === "star") return p.radius * STAR_ATMO_FACTOR;
   return p.radius * 1.72;
+}
+
+function approachRadius(p: Planet) {
+  if (p.kind === "asteroid") return Math.max(p.radius * 2.8, p.radius + 40);
+  return atmoRadius(p);
 }
 
 function atmoDensityAt(p: Planet, d: number) {
@@ -1222,6 +1231,7 @@ export function applyDebugWarp(sim: Sim, search = typeof window !== "undefined" 
   sim.ship.thrusting = false;
   sim.ship.reverse = false;
   sim.landedId = null;
+  sim.takeoffIgnoreId = null;
   sim.phase = "flight";
   sim.camera.x = sim.ship.x;
   sim.camera.y = sim.ship.y;
@@ -1253,6 +1263,7 @@ export function takeoff(sim: Sim) {
   sim.ship.x += dir.x * 8;
   sim.ship.y += dir.y * 8;
   sim.phase = "flight";
+  sim.takeoffIgnoreId = p.id;
   sim.landedId = null;
   sim.status = "approach";
   sim.orbitLockId = null;
@@ -1265,7 +1276,11 @@ export function takeoff(sim: Sim) {
 
 function stickToPlanet(sim: Sim, p: Planet) {
   const ang = sim.landedAngle;
-  const pad = p.radius + SHIP_HULL * 0.85;
+  const worldAng = worldAngleFromLanded(ang);
+  const pad =
+    p.kind === "asteroid" && (p.landable || sim.phase === "landed")
+      ? asteroidLandedRadius(p, worldAng)
+      : surfaceRadius(p, worldAng) + SHIP_HULL * 0.85;
   sim.ship.x = p.x + Math.sin(ang) * pad;
   sim.ship.y = p.y - Math.cos(ang) * pad;
   sim.ship.vx = p.vx;
@@ -1277,7 +1292,7 @@ function faceRadial(sim: Sim) {
 }
 
 function carryOnSurface(sim: Sim, p: Planet, dt: number) {
-  const dAng = p.spin * dt * 0.35;
+  const dAng = p.spin * dt;
   sim.landedAngle += dAng;
   sim.ship.yaw -= dAng;
   stickToPlanet(sim, p);
@@ -1301,7 +1316,9 @@ function pinToSurface(sim: Sim, p: Planet) {
 }
 
 function shipTouchesHull(sim: Sim, p: Planet) {
-  return Math.hypot(sim.ship.x - p.x, sim.ship.y - p.y) <= p.radius + SHIP_HULL;
+  const dx = sim.ship.x - p.x;
+  const dy = sim.ship.y - p.y;
+  return Math.hypot(dx, dy) <= surfaceRadius(p, Math.atan2(dy, dx)) + SHIP_HULL;
 }
 
 /** After a flare, keep coasting under gravity and drag until the star, then sink in like a gas giant. */
@@ -1525,7 +1542,7 @@ function inspectKepler(
   const dy = ship.y - p.y;
   const r = Math.hypot(dx, dy);
   if (r < 1e-8) return null;
-  const minR = p.radius + SHIP_HULL + 16;
+  const minR = (p.kind === "asteroid" ? p.radius * 1.24 : p.radius) + SHIP_HULL + 16;
   const rvx = ship.vx - p.vx;
   const rvy = ship.vy - p.vy;
   const mu = bodyMu(p, gravityScale);
@@ -1600,7 +1617,7 @@ function readKepler(p: Planet, ship: Ship, gravityScale: number, planets: Planet
 function wellInspect(p: Planet, x: number, y: number, planets: Planet[]) {
   const d = Math.hypot(x - p.x, y - p.y) || 1;
   const aThis = (G * p.mass) / (d * d);
-  if (p.kind === "moon") {
+  if (p.kind === "moon" || p.kind === "asteroid") {
     let aMax = 0;
     for (const q of planets) {
       if (q.id === p.id || isGhostBody(q)) continue;
@@ -1906,7 +1923,8 @@ export function stepSim(
     if (sim.landedId) {
       const p = sim.planets.find((b) => b.id === sim.landedId);
       if (p) {
-        stickToPlanet(sim, p);
+        carryOnSurface(sim, p, dt);
+        faceRadial(sim);
         sim.nearest = p;
         sim.altitude = SHIP_HULL * 0.85;
         sim.status = "landed";
@@ -1965,7 +1983,7 @@ export function stepSim(
       stickToPlanet(sim, p);
       faceRadial(sim);
       ship.thrusting = false;
-      pumpPadRefill(ship, dt);
+      if (padHasFuel(p)) pumpPadRefill(ship, dt);
       sipWell(sim, dt);
     }
     sim.warpCharge = 0;
@@ -2058,7 +2076,7 @@ export function stepSim(
   if (sim.phase === "flight" && shipHitsFlare(sim)) burnInFlare(sim);
 
   sim.nearest = nearest;
-  sim.altitude = dist - nearest.radius;
+  sim.altitude = surfaceAltitude(nearest, sim.ship.x, sim.ship.y);
   classify(sim, nearest, dist);
   decayParticles(sim, dt);
   updateCamera(sim, dt);
@@ -2148,6 +2166,7 @@ function crashInto(sim: Sim, p: Planet, nx: number, ny: number, rel: number) {
   sim.burned = kind === "burn";
   sim.burnCause = kind === "burn" ? "star" : null;
   sim.landedId = null;
+  sim.takeoffIgnoreId = null;
   sim.landedAngle = Math.atan2(nx, -ny);
   sim.orbitLockId = null;
   sim.orbitDwell = 0;
@@ -2370,10 +2389,14 @@ function collidePlanets(sim: Sim) {
     const dx = s.x - p.x;
     const dy = s.y - p.y;
     const d = Math.hypot(dx, dy) || 0.0001;
-    const min = p.radius + SHIP_HULL;
-    if (d >= min) continue;
     const nx = dx / d;
     const ny = dy / d;
+    const min = surfaceRadius(p, Math.atan2(dy, dx)) + SHIP_HULL;
+    if (sim.takeoffIgnoreId === p.id) {
+      if (d < min) continue;
+      sim.takeoffIgnoreId = null;
+    }
+    if (d >= min) continue;
     const rvx = s.vx - p.vx;
     const rvy = s.vy - p.vy;
     const rel = Math.hypot(rvx, rvy);
@@ -2389,12 +2412,14 @@ function collidePlanets(sim: Sim) {
       sim.crashedId = null;
       sim.landedAngle = Math.atan2(nx, -ny);
       sim.status = "landed";
+      sim.takeoffIgnoreId = null;
       sim.orbitLockId = null;
       sim.lagrangeLockKey = null;
       sim.lagrangeDwell = 0;
       s.vx = p.vx;
       s.vy = p.vy;
-      beginPadRefill(s);
+      if (padHasFuel(p)) beginPadRefill(s);
+      stickToPlanet(sim, p);
       faceRadial(sim);
       sim.camera.trauma = Math.min(1, sim.camera.trauma + 0.18);
       return;
@@ -2408,6 +2433,7 @@ function collidePlanets(sim: Sim) {
 function orbitReady(sim: Sim, nearest: Planet, dist: number) {
   if (sim.orbitLockCooldown > 0) return false;
   if (sim.ship.thrusting || sim.ship.reverse) return false;
+  if (nearest.kind === "asteroid" && !nearest.landable) return false;
   const alt = dist - nearest.radius;
   const { minAlt, maxAlt } = orbitShellAlts(nearest, sim.planets);
   if (alt < minAlt || alt > maxAlt) return false;
@@ -2559,6 +2585,11 @@ export function verboseDiag(sim: Sim): VerboseDiag {
   };
 }
 
+function landHint(p: Planet, rel: number) {
+  if (!p.landable) return p.deny ?? "Cannot land";
+  return rel > LAND_SPEED * 1.15 ? "Too fast to land" : "Slow to land";
+}
+
 function classify(sim: Sim, nearest: Planet, dist: number) {
   if (sim.orbitDragHintT > 0) sim.orbitDragHintT = Math.max(0, sim.orbitDragHintT - STEP);
 
@@ -2603,7 +2634,7 @@ function classify(sim: Sim, nearest: Planet, dist: number) {
   }
 
   const s = sim.ship;
-  const atmo = atmoRadius(nearest);
+  const atmo = approachRadius(nearest);
   const rel = Math.hypot(s.vx - nearest.vx, s.vy - nearest.vy);
   const powered = s.thrusting || s.reverse;
 
@@ -2633,14 +2664,7 @@ function classify(sim: Sim, nearest: Planet, dist: number) {
 
   if (dist < atmo) {
     sim.status = rel > LAND_SPEED * 1.15 ? "too-fast" : "approach";
-    sim.orbitHint =
-      sim.status === "too-fast"
-        ? nearest.landable
-          ? "Too fast to land"
-          : (nearest.deny ?? "Cannot land")
-        : nearest.landable
-          ? "Slow to land"
-          : (nearest.deny ?? "Cannot land");
+    sim.orbitHint = landHint(nearest, rel);
   } else {
     sim.status = "deep";
     sim.orbitHint = null;
@@ -2849,7 +2873,7 @@ export function relativePathTarget(sim: Sim): Planet | null {
   const dist = Math.hypot(sim.ship.x - p.x, sim.ship.y - p.y);
   const alt = dist - p.radius;
   const { maxAlt } = orbitShellAlts(p, sim.planets);
-  const near = Math.max(maxAlt * 2.4, atmoRadius(p) - p.radius + 40, 220);
+  const near = Math.max(maxAlt * 2.4, approachRadius(p) - p.radius + 40, 220);
   if (alt > near || alt < -2) return null;
   return p;
 }

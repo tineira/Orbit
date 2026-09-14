@@ -48,10 +48,10 @@ test("every locked profile is legal for its kind", () => {
   }
 });
 
-test("moons are airless; stars and giants always have atmosphere", () => {
+test("moons and asteroids are airless; stars and giants always have atmosphere", () => {
   for (const id of MATTER_PROFILE_IDS) {
     const p = MATTER_PROFILES[id];
-    if (p.kind === "moon") assert.equal(p.atmosphere.length, 0, id);
+    if (p.kind === "moon" || p.kind === "asteroid") assert.equal(p.atmosphere.length, 0, id);
     if (p.kind === "star" || p.kind === "gas") assert.ok(p.atmosphere.length > 0, id);
   }
 });
@@ -78,7 +78,7 @@ test("kind allow-lists reject the wrong layer", () => {
 });
 
 test("charted bodies carry a legal locked mix; barycenters stay empty", () => {
-  const kinds: PlanetKind[] = ["star", "rocky", "gas", "moon", "barycenter"];
+  const kinds: PlanetKind[] = ["star", "rocky", "gas", "moon", "asteroid", "barycenter"];
   const seen = new Set<MatterProfileId>();
   for (let seed = 1; seed <= 24; seed++) {
     const sys = createSystem(seed);
@@ -130,11 +130,13 @@ test("mix percents keep order and sum to 100", () => {
   assert.equal(formatMix(mix), "N2 78 · CO2 22");
 });
 
-test("airless moons list core only; giants list both layers", () => {
+test("airless moons and asteroids list core only; giants list both layers", () => {
   const moon = MATTER_PROFILES["moon-rock"];
   const moonOut = bodyReadout(moon);
   assert.equal(moonOut.atmosphere, null);
   assert.ok(moonOut.bulk?.includes("Si"));
+  const rock = MATTER_PROFILES["asteroid-silicate"];
+  assert.equal(bodyReadout(rock).atmosphere, null);
   const gas = MATTER_PROFILES["gas-methane"];
   const gasOut = bodyReadout(gas);
   assert.ok(gasOut.atmosphere?.includes("CH4"));

@@ -1,4 +1,5 @@
 import { createAudio } from "./audio";
+import { padHasFuel } from "./asteroid";
 import { drawFrame } from "./draw";
 import { createInput, enterHeld, held, steerFrom, thrustFrom } from "./input";
 import {
@@ -264,6 +265,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       return;
     }
     const s = sim.ship;
+    const landedId = sim.landedId;
+    const pad = landedId ? sim.planets.find((p) => p.id === landedId) : null;
     const hud: HudSnapshot = {
       phase: sim.phase,
       speed: Math.hypot(s.vx, s.vy),
@@ -274,7 +277,11 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       fuelCapacity: s.fuelCapacity,
       fuelKind: s.fuelKind,
       refueling:
-        sim.phase === "landed" && s.fuelKind === "ch4" && s.fuel < s.fuelCapacity - 1e-6,
+        sim.phase === "landed" &&
+        s.fuelKind === "ch4" &&
+        s.fuel < s.fuelCapacity - 1e-6 &&
+        !!pad &&
+        padHasFuel(pad),
       engineKind: s.engineKind,
       tankKind: s.tankKind,
       engineIsp: s.engineIsp,
@@ -418,6 +425,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       place: (x, y, vx, vy) => {
         s.phase = "flight";
         s.landedId = null;
+        s.takeoffIgnoreId = null;
         s.crashedId = null;
         s.burned = false;
         s.burnCause = null;

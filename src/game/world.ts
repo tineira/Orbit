@@ -1,4 +1,5 @@
 import {
+  asteroidProfileId,
   gasProfileId,
   moonProfileId,
   rockyProfileId,
@@ -353,6 +354,8 @@ export function orbitShellAlts(p: Planet, planets: Planet[] = []) {
   } else if (p.kind === "gas") {
     const atmoAlt = p.radius * (GAS_ATMO_FACTOR - 1);
     maxAlt = Math.max(maxAlt, atmoAlt + ORBIT_SHELL_GAS_CLEAR);
+  } else if (p.kind === "asteroid") {
+    if (p.landable) maxAlt = Math.max(maxAlt, 48);
   } else if (p.kind === "star") {
     const atmoAlt = p.radius * (STAR_ATMO_FACTOR - 1);
     minAlt = atmoAlt + ORBIT_SHELL_STAR_CLEAR;
@@ -388,6 +391,51 @@ export function twinOf(p: Planet, planets: Planet[]): Planet | undefined {
   const parent = planets.find((b) => b.id === p.parentId);
   if (!parent || parent.kind !== "barycenter") return undefined;
   return planets.find((q) => q.parentId === p.parentId && q.id !== p.id && !isGhostBody(q));
+}
+
+export type BeltBand = {
+  parentId: string;
+  orbitR: number;
+  orbitE: number;
+  orbitPeri: number;
+  width: number;
+  seed: number;
+};
+
+/** Shared Kepler rail for a belt. One band per parent. */
+export function beltBands(planets: Planet[]): BeltBand[] {
+  const groups = new Map<string, Planet[]>();
+  for (const p of planets) {
+    if (p.kind !== "asteroid" || p.parentId == null || p.orbitR == null) continue;
+    const list = groups.get(p.parentId) ?? [];
+    list.push(p);
+    groups.set(p.parentId, list);
+  }
+  const out: BeltBand[] = [];
+  for (const [parentId, rocks] of groups) {
+    let minA = Infinity;
+    let maxA = 0;
+    let sumA = 0;
+    let sumE = 0;
+    const peri = rocks[0]!.orbitPeri ?? 0;
+    for (const r of rocks) {
+      const a = r.orbitR!;
+      minA = Math.min(minA, a);
+      maxA = Math.max(maxA, a);
+      sumA += a;
+      sumE += r.orbitE ?? 0;
+    }
+    const n = rocks.length;
+    out.push({
+      parentId,
+      orbitR: sumA / n,
+      orbitE: sumE / n,
+      orbitPeri: peri,
+      width: Math.max(140, maxA - minA + 80),
+      seed: rocks[0]!.shapeSeed ?? 1,
+    });
+  }
+  return out;
 }
 
 export const TAKEOFF_SPEED = 20;
@@ -620,6 +668,20 @@ const MOON_PALETTES: [string, string][] = [
   ["#b4c8b8", "#3e4c42"],
 ];
 
+const ROCK_NAMES = [
+  "Clast", "Grit", "Knurl", "Chondra", "Rubble", "Scree", "Talus", "Chip",
+  "Flake", "Nodule", "Sliver", "Scuff", "Pumice", "Reg", "Tephra",
+];
+
+const ASTEROID_PALETTES: [string, string][] = [
+  ["#9a9084", "#3e3832"],
+  ["#8a7a6a", "#3a3028"],
+  ["#7a848c", "#2e3438"],
+  ["#6a6864", "#2a2a28"],
+  ["#b08a70", "#4a3428"],
+  ["#6e6058", "#2c2622"],
+];
+
 export const STAR_PALETTES: [string, string, string][] = [
   ["#f3e3b0", "#d8882c", "rgba(255, 186, 74, 0.22)"],
   ["#f6f0dc", "#e0a24a", "rgba(255, 214, 140, 0.2)"],
@@ -720,17 +782,32 @@ function placeOnRails(
 
 export type ChartFlags = {
   twins?: "on" | "tight";
+  belt?: boolean;
 };
 
-/** `?twins` / `?twins=1` always rolls a pair. `?twins=tight` always rolls a close one. */
+function flagOn(raw: string | null) {
+  if (raw == null) return null;
+  const t = raw.trim().toLowerCase();
+  if (t === "0" || t === "off" || t === "false" || t === "no") return false;
+  return true;
+}
+
+/** `?twins` / `?twins=1` always rolls a pair. `?twins=tight` always rolls a close one. `?belt` always rolls a belt. */
 export function chartFlagsFromSearch(search = ""): ChartFlags {
   const raw = search.startsWith("?") ? search.slice(1) : search;
-  const v = new URLSearchParams(raw).get("twins");
-  if (v == null) return {};
-  const t = v.trim().toLowerCase();
-  if (t === "0" || t === "off" || t === "false" || t === "no") return {};
-  if (t === "tight" || t === "close") return { twins: "tight" };
-  return { twins: "on" };
+  const q = new URLSearchParams(raw);
+  const flags: ChartFlags = {};
+  const twins = q.get("twins");
+  if (twins != null) {
+    const t = twins.trim().toLowerCase();
+    if (t === "0" || t === "off" || t === "false" || t === "no") {
+      /* leave unset */
+    } else if (t === "tight" || t === "close") flags.twins = "tight";
+    else flags.twins = "on";
+  }
+  const belt = flagOn(q.get("belt"));
+  if (belt != null) flags.belt = belt;
+  return flags;
 }
 
 export type PlayFlags = {
@@ -833,6 +910,7 @@ function makeSystem(
   type Draft =
     | { kind: "rocky"; radius: number; surfaceG: number }
     | { kind: "gas"; radius: number; surfaceG: number }
+    | { kind: "belt"; radius: number }
     | {
         kind: "pair";
         radius: number;
@@ -869,6 +947,8 @@ function makeSystem(
       surfaceG: lerp(8.6, 13.8, rng()),
     });
   }
+  const wantBelt = flags.belt === true ? true : flags.belt === false ? false : rng() < 0.34;
+  if (wantBelt) drafts.push({ kind: "belt", radius: 210 });
   const gasR = lerp(175, 248, rng());
   const gasG = lerp(13, 17, rng());
   drafts.push({ kind: "gas", radius: gasR, surfaceG: gasG });
@@ -890,6 +970,82 @@ function makeSystem(
       vx: seat.vx,
       vy: seat.vy,
     };
+    if (draft.kind === "belt") {
+      const n = 5 + Math.floor(rng() * 3);
+      const halfW = lerp(110, 190, rng());
+      const baseA = rng() * Math.PI * 2;
+      const mu = G * GRAVITY_BASE * star.mass;
+      const camp = rng() < 0.2;
+      const extraLand = n >= 6 && rng() < 0.4;
+      for (let i = 0; i < n; i++) {
+        const primary = i === 0;
+        const medium = i === 1 && extraLand;
+        const landable = primary || medium;
+        const radius = primary
+          ? lerp(28, 40, rng())
+          : medium
+            ? lerp(16, 22, rng())
+            : lerp(8, 14, rng());
+        const surfaceG = primary
+          ? lerp(1.8, 3.4, rng())
+          : medium
+            ? lerp(1.1, 2.0, rng())
+            : lerp(0.35, 0.9, rng());
+        const name = takeName(rng, ROCK_NAMES, used);
+        const pal = pick(rng, ASTEROID_PALETTES);
+        const inhabited = primary && camp;
+        const kicker = inhabited ? "Camp" : landable ? "Rock" : "Shard";
+        const orbitR = seat.orbitR + lerp(-halfW, halfW, rng());
+        const orbitE = lerp(0.04, 0.11, rng());
+        const orbitPeri = seat.orbitPeri + lerp(-0.18, 0.18, rng());
+        const orbitA = baseA + (i * Math.PI * 2) / n + lerp(-0.1, 0.1, rng());
+        const k = keplerRail(orbitR, orbitE, orbitPeri, orbitA, mu);
+        const body = inhabited
+          ? `Someone bolted a light to ${name}. The well is a pebble. The tank still fills.`
+          : landable
+            ? `No one named this. ${name} is a face in the belt. The tank stays empty.`
+            : `${name} is grit on the rail. Too small to land.`;
+        planets.push(
+          withMatter(
+            {
+              id: slug(name, planets.length),
+              name,
+              kind: "asteroid" as const,
+              x: k.x,
+              y: k.y,
+              vx: k.vx,
+              vy: k.vy,
+              radius,
+              surfaceG,
+              mass: massFrom(radius, surfaceG),
+              landable,
+              rotate: rng() * Math.PI * 2,
+              spin:
+                (landable ? lerp(0.16, 0.36, rng()) : lerp(0.45, 1.05, rng())) *
+                (rng() < 0.5 ? 1 : -1),
+              colorA: pal[0],
+              colorB: pal[1],
+              atmo: "rgba(0,0,0,0)",
+              parentId: star.id,
+              orbitR,
+              orbitA,
+              orbitW: k.n,
+              orbitE,
+              orbitPeri,
+              kicker,
+              title: name,
+              body,
+              deny: landable ? undefined : "Too small to land",
+              shapeSeed: rng() * 0xffffffff,
+              padAngle: rng() * Math.PI * 2,
+            },
+            inhabited ? "asteroid-silicate" : asteroidProfileId(rng),
+          ),
+        );
+      }
+      return;
+    }
+
     if (draft.kind === "gas") {
       const name = takeName(rng, WORLD_NAMES, used);
       const pal = pick(rng, GAS_PALETTES);

@@ -48,7 +48,9 @@ import {
   WARP_LOST_FADE_REDUCED,
   WARP_RUMBLE_REF_SPEED,
   WARP_TUNNEL_STREAK,
+  beltBands,
 } from "./world";
+import { asteroidWorldPath } from "./asteroid";
 
 type DrawOpts = {
   w: number;
@@ -104,6 +106,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
       drawPath(ctx, predictPath(sim, sp > 400 ? 3 : 10), sim);
     }
     const star = sim.planets.find((b) => b.kind === "star") ?? null;
+    drawBelts(ctx, sim);
     for (const p of sim.planets) {
       if (!isGhostBody(p)) drawPlanet(ctx, p, cam, star, sim.planets);
     }
@@ -1033,6 +1036,124 @@ function stampBodyShadows(
   ctx.restore();
 }
 
+function drawBelts(ctx: CanvasRenderingContext2D, sim: Sim) {
+  const bands = beltBands(sim.planets);
+  if (!bands.length) return;
+  const byId = new Map(sim.planets.map((p) => [p.id, p]));
+  ctx.save();
+  for (const belt of bands) {
+    const parent = byId.get(belt.parentId);
+    const px = parent?.x ?? 0;
+    const py = parent?.y ?? 0;
+    const a = belt.orbitR;
+    const e = belt.orbitE;
+    const peri = belt.orbitPeri;
+    const b = a * Math.sqrt(Math.max(0, 1 - e * e));
+    const ox = px - Math.cos(peri) * a * e;
+    const oy = py - Math.sin(peri) * a * e;
+    ctx.save();
+    ctx.translate(ox, oy);
+    ctx.rotate(peri);
+    ctx.strokeStyle = "rgba(236, 234, 228, 0.055)";
+    ctx.lineWidth = belt.width * 0.55;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, a, b, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    const n = 42;
+    for (let i = 0; i < n; i++) {
+      const theta = (i / n) * Math.PI * 2 + hash(belt.seed + i * 3.1) * 0.4;
+      const nu = theta - peri;
+      const rr =
+        e < 1e-8
+          ? a
+          : (a * Math.max(0, 1 - e * e)) / (1 + e * Math.cos(nu));
+      const rad = rr + (hash(belt.seed + i * 8.2) - 0.5) * belt.width * 0.42;
+      const x = px + Math.cos(theta) * rad;
+      const y = py + Math.sin(theta) * rad;
+      const sz = 0.7 + hash(i * 5.5 + belt.seed) * 1.8;
+      ctx.fillStyle = `rgba(236, 234, 228, ${0.08 + hash(i * 2.2) * 0.12})`;
+      ctx.beginPath();
+      ctx.arc(x, y, sz, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function traceAsteroid(ctx: CanvasRenderingContext2D, p: Planet) {
+  const pts = asteroidWorldPath(p);
+  ctx.beginPath();
+  for (let i = 0; i < pts.length; i++) {
+    const q = pts[i]!;
+    if (i === 0) ctx.moveTo(q.x, q.y);
+    else ctx.lineTo(q.x, q.y);
+  }
+  ctx.closePath();
+}
+
+function drawAsteroid(
+  ctx: CanvasRenderingContext2D,
+  p: Planet,
+  cam: Camera,
+  star: Planet | null,
+) {
+  const r = p.radius;
+  ctx.fillStyle = p.colorA;
+  traceAsteroid(ctx, p);
+  ctx.fill();
+
+  ctx.save();
+  traceAsteroid(ctx, p);
+  ctx.clip();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(p.rotate);
+  ctx.fillStyle = p.colorB;
+  const n = 7;
+  for (let i = 0; i < n; i++) {
+    const a = hash(i * 3.1 + (p.shapeSeed ?? 0)) * Math.PI * 2;
+    const cr = Math.sqrt(hash(i * 7.7 + p.mass)) * r * 0.72;
+    const s = r * (0.04 + hash(i * 2.2) * 0.12);
+    ctx.globalAlpha = 0.4 + hash(i * 5.9) * 0.22;
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * cr, Math.sin(a) * cr, s, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  ctx.save();
+  traceAsteroid(ctx, p);
+  ctx.clip();
+  const L = lightDir(p, star);
+  const shade = ctx.createLinearGradient(
+    p.x - L.x * r,
+    p.y - L.y * r,
+    p.x + L.x * r,
+    p.y + L.y * r,
+  );
+  shade.addColorStop(0, "rgba(7,8,12,0.88)");
+  shade.addColorStop(0.44, "rgba(7,8,12,0.5)");
+  shade.addColorStop(0.52, "rgba(7,8,12,0.16)");
+  shade.addColorStop(0.6, "rgba(7,8,12,0)");
+  shade.addColorStop(1, "rgba(7,8,12,0)");
+  ctx.fillStyle = shade;
+  ctx.fillRect(p.x - r * 1.4, p.y - r * 1.4, r * 2.8, r * 2.8);
+  ctx.restore();
+
+  if (p.landable || cam.zoom >= 0.45) {
+    ctx.save();
+    ctx.translate(p.x + r + 12 / cam.zoom, p.y);
+    ctx.scale(1 / cam.zoom, 1 / cam.zoom);
+    ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
+    ctx.fillStyle = "rgba(236, 234, 228, 0.55)";
+    ctx.textBaseline = "middle";
+    ctx.fillText(p.name, 0, 0);
+    ctx.restore();
+  }
+}
+
 function drawPlanet(
   ctx: CanvasRenderingContext2D,
   p: Planet,
@@ -1040,6 +1161,10 @@ function drawPlanet(
   star: Planet | null,
   bodies: Planet[],
 ) {
+  if (p.kind === "asteroid") {
+    drawAsteroid(ctx, p, cam, star);
+    return;
+  }
   const r = p.radius;
   const outer = haloOuter(p);
   if (p.kind !== "star") {
@@ -2045,7 +2170,7 @@ function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH
   const drawnPair = new Set<string>();
   ctx.lineWidth = 1;
   for (const p of sim.planets) {
-    if (p.kind === "star" || p.orbitR == null) continue;
+    if (p.kind === "star" || p.kind === "asteroid" || p.orbitR == null) continue;
     const parent = p.parentId ? byId.get(p.parentId) : undefined;
     if (parent && isGhostBody(parent)) {
       if (drawnPair.has(parent.id)) continue;
@@ -2076,19 +2201,46 @@ function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH
     }
   }
 
+  ctx.setLineDash([3, 4]);
+  ctx.strokeStyle = "rgba(236, 234, 228, 0.22)";
+  ctx.lineWidth = 1;
+  for (const belt of beltBands(sim.planets)) {
+    const parent = byId.get(belt.parentId);
+    const px = parent?.x ?? 0;
+    const py = parent?.y ?? 0;
+    const a = belt.orbitR;
+    const e = belt.orbitE;
+    const peri = belt.orbitPeri;
+    if (e < 0.008) {
+      ctx.beginPath();
+      ctx.arc(cx + px * scale, cy + py * scale, a * scale, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      const b = a * Math.sqrt(Math.max(0, 1 - e * e));
+      const ox = px - Math.cos(peri) * a * e;
+      const oy = py - Math.sin(peri) * a * e;
+      ctx.save();
+      ctx.translate(cx + ox * scale, cy + oy * scale);
+      ctx.rotate(peri);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, a * scale, b * scale, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+  ctx.setLineDash([]);
+
   for (const p of sim.planets) {
     if (isGhostBody(p)) continue;
     const px = cx + p.x * scale;
     const py = cy + p.y * scale;
     ctx.beginPath();
     ctx.fillStyle = p.kind === "star" ? "#f0d48a" : p.colorA;
-    ctx.arc(
-      px,
-      py,
-      Math.max(p.kind === "moon" ? 1.2 : 1.6, p.radius * scale * 0.9),
-      0,
-      Math.PI * 2,
-    );
+    const pipR =
+      p.kind === "asteroid"
+        ? Math.max(p.landable ? 1.15 : 0.7, p.radius * scale * 0.9)
+        : Math.max(p.kind === "moon" ? 1.2 : 1.6, p.radius * scale * 0.9);
+    ctx.arc(px, py, pipR, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();

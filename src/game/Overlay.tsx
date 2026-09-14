@@ -320,7 +320,7 @@ export function Overlay({
         <CrashCard
           burned={hud.burned}
           crashKind={hud.crashKind}
-          detail={crashDetail(crashed.name, hud.burned, hud.burnCause, hud.crashKind)}
+          detail={crashDetail(crashed.name, hud.burned, hud.burnCause, hud.crashKind, crashed)}
           onReboot={onReboot}
           onNewWorld={onNewWorld}
         />
@@ -393,7 +393,11 @@ function Title({
   onToggleSpectro: () => void;
   dev: boolean;
 }) {
-  const destinations = getPlanets().filter((p) => p.kind !== "star" && !isGhostBody(p));
+  const destinations = getPlanets().filter((p) => {
+    if (p.kind === "star" || isGhostBody(p)) return false;
+    if (p.kind === "asteroid" && !p.landable) return false;
+    return true;
+  });
   return (
     <div
       className="pointer-events-auto absolute inset-0 flex flex-col justify-between p-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-8"
@@ -545,9 +549,13 @@ function crashDetail(
   burned: boolean,
   cause: HudSnapshot["burnCause"],
   kind: HudSnapshot["crashKind"],
+  body: NonNullable<ReturnType<typeof planetById>> | null,
 ) {
   if (kind === "sink") return `The craft fell into ${name}. The clouds closed.`;
   if (!burned) {
+    if (body?.kind === "asteroid" && !body.landable) {
+      return `${name} is too small to land. The hull took the hit.`;
+    }
     return `The approach into ${name} was too fast. The well won. Bring the craft back and try a slower pass — or catch an orbit first.`;
   }
   if (cause === "flare") return `A flare from ${name} reached the craft.`;
