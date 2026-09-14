@@ -1,5 +1,6 @@
 import { bodyReadout, canScan, clonePlanetMatter, SCAN_SECONDS } from "./matter.ts";
 import { asteroidLandedRadius, padHasFuel, surfaceAltitude, surfaceRadius, worldAngleFromLanded } from "./asteroid.ts";
+import { scanBeltHull, type BeltTick } from "./belt.ts";
 import type {
   BurnCause,
   Camera,
@@ -164,6 +165,12 @@ export type Sim = {
   viewCssH: number;
   warpRings: WarpRing[];
   transitBoomN: number;
+  beltTicks: BeltTick[];
+  beltDust: number;
+  beltDustBright: number;
+  beltHitCool: Map<string, number>;
+  beltTickWait: number;
+  beltRainWait: number;
 };
 
 export const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
@@ -265,6 +272,12 @@ export function createSim(): Sim {
     viewCssH: 800,
     warpRings: [],
     transitBoomN: 0,
+    beltTicks: [],
+    beltDust: 0,
+    beltDustBright: 0,
+    beltHitCool: new Map(),
+    beltTickWait: 0,
+    beltRainWait: 0,
   };
   landOnHome(sim);
   return sim;
@@ -369,6 +382,12 @@ export function rebootSim(sim: Sim) {
   sim.transitBoomed = false;
   sim.transitBoomN = 0;
   sim.warpRings = [];
+  sim.beltTicks = [];
+  sim.beltDust = 0;
+  sim.beltDustBright = 0;
+  sim.beltHitCool.clear();
+  sim.beltTickWait = 0;
+  sim.beltRainWait = 0;
   landOnHome(sim);
   sim.camera.zoomAuto = 0.96;
   sim.camera.zoom = 0.96 * sim.camera.userZoom;
@@ -1900,6 +1919,44 @@ export function spectroHud(
   };
 }
 
+export type SpectroVoice = "off" | "idle" | "scan" | "done";
+
+/** Mass-spec bed: powered hiss, RF sweep while a lock is reading, hush after a hit. */
+export function spectroVoice(sim: Sim): SpectroVoice {
+  if (!sim.showSpectro || sim.phase !== "flight") return "off";
+  if (!sim.orbitLockId) return "idle";
+  const host = sim.planets.find((b) => b.id === sim.orbitLockId);
+  if (!host || !canScan(host)) return "idle";
+  if (sim.scannedIds.has(host.id)) return "done";
+  return "scan";
+}
+
+export function spectroScanProgress(sim: Sim) {
+  if (spectroVoice(sim) !== "scan") return 0;
+  return Math.max(0, Math.min(1, sim.spectroScanT / SCAN_SECONDS));
+}
+
+function applyBeltHull(sim: Sim, dt: number) {
+  if (sim.phase !== "flight") {
+    sim.beltTickWait = Math.max(0, sim.beltTickWait - dt);
+    sim.beltRainWait = Math.max(0, sim.beltRainWait - dt);
+    return;
+  }
+  const scan = scanBeltHull(
+    sim.ship,
+    sim.planets,
+    sim.beltHitCool,
+    sim.beltTickWait,
+    dt,
+    sim.beltRainWait,
+  );
+  sim.beltTicks = scan.ticks;
+  sim.beltDust = scan.dust;
+  sim.beltDustBright = scan.dustBright;
+  sim.beltTickWait = scan.tickWait;
+  sim.beltRainWait = scan.rainWait;
+}
+
 export function stepSim(
   sim: Sim,
   dt: number,
@@ -1921,6 +1978,9 @@ export function stepSim(
   sim.ionTrail = sim.ionTrail.filter((wisp) => wisp.age < wisp.life);
 
   const ship = sim.ship;
+  sim.beltTicks.length = 0;
+  sim.beltDust = 0;
+  sim.beltDustBright = 0;
   if (sim.phase === "title") {
     if (sim.landedId) {
       const p = sim.planets.find((b) => b.id === sim.landedId);
@@ -2021,6 +2081,7 @@ export function stepSim(
   if (sim.lagrangeLockKey) {
     if (stepLockedLagrange(sim, dt, controls)) {
       if (shipHitsFlare(sim)) burnInFlare(sim);
+      applyBeltHull(sim, dt);
       decayParticles(sim, dt);
       updateCamera(sim, dt);
       return;
@@ -2030,6 +2091,7 @@ export function stepSim(
   if (sim.orbitLockId) {
     if (stepLockedOrbit(sim, dt, controls)) {
       if (shipHitsFlare(sim)) burnInFlare(sim);
+      applyBeltHull(sim, dt);
       decayParticles(sim, dt);
       updateCamera(sim, dt);
       return;
@@ -2076,6 +2138,7 @@ export function stepSim(
 
   collidePlanets(sim);
   if (sim.phase === "flight" && shipHitsFlare(sim)) burnInFlare(sim);
+  applyBeltHull(sim, dt);
 
   sim.nearest = nearest;
   sim.altitude = surfaceAltitude(nearest, sim.ship.x, sim.ship.y);

@@ -16,7 +16,7 @@
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
     "check:auth": "node scripts/check-auth-invariant.mjs",
-    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/preview-embedber-origin.test.ts src/game/warp.test.ts src/game/fuel.test.ts src/game/matter.test.ts src/game/spectro.test.ts src/game/asteroid.test.ts src/game/orbit-lock.test.ts",
+    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/preview-embedber-origin.test.ts src/game/warp.test.ts src/game/fuel.test.ts src/game/matter.test.ts src/game/spectro.test.ts src/game/asteroid.test.ts src/game/belt.test.ts src/game/orbit-lock.test.ts",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

@@ -51,6 +51,7 @@ import {
   beltBands,
 } from "./world";
 import { asteroidWorldPath } from "./asteroid";
+import { beltPhase, moteAt } from "./belt";
 
 type DrawOpts = {
   w: number;
@@ -1037,12 +1038,6 @@ function stampBodyShadows(
 }
 
 /** Dust and chips only. Named rocks stay in `planets`; these never enter physics. */
-function moteSize(u: number, v: number) {
-  if (u < 0.58) return 0.45 + v * 1.9;
-  if (u < 0.86) return 1.8 + v * 5;
-  return 6 + v * 9;
-}
-
 function drawBelts(ctx: CanvasRenderingContext2D, sim: Sim) {
   const bands = beltBands(sim.planets);
   if (!bands.length) return;
@@ -1056,44 +1051,24 @@ function drawBelts(ctx: CanvasRenderingContext2D, sim: Sim) {
     const parent = byId.get(belt.parentId);
     const px = parent?.x ?? 0;
     const py = parent?.y ?? 0;
-    const a = belt.orbitR;
-    const e = belt.orbitE;
-    const peri = belt.orbitPeri;
-    const oneE2 = Math.max(0, 1 - e * e);
-    let phase = 0;
-    for (const p of sim.planets) {
-      if (p.kind === "asteroid" && p.parentId === belt.parentId) {
-        phase = p.orbitA ?? 0;
-        break;
-      }
-    }
+    const phase = beltPhase(sim.planets, belt.parentId);
     const n = belt.motes;
     for (let i = 0; i < n; i++) {
-      const u = hash(belt.seed + i * 1.7);
-      const v = hash(belt.seed + i * 5.9);
-      const sz = moteSize(u, v);
-      if (sz * z < 0.3) continue;
-      let theta = (i / n) * Math.PI * 2 + hash(belt.seed + i * 3.1) * 0.7 + phase;
-      theta += 0.16 * Math.sin(theta * 5 + belt.seed);
-      const nu = theta - peri;
-      const rr = e < 1e-8 ? a : (a * oneE2) / (1 + e * Math.cos(nu));
-      const g = hash(belt.seed + i * 8.2) * 2 - 1;
-      const rad = rr + g * Math.abs(g) * belt.width * 0.55;
-      const x = px + Math.cos(theta) * rad;
-      const y = py + Math.sin(theta) * rad;
-      if (Math.abs(x - cam.x) > hx || Math.abs(y - cam.y) > hy) continue;
-      ctx.globalAlpha = u < 0.58 ? 0.14 + v * 0.16 : 0.2 + v * 0.24;
-      ctx.fillStyle = u > 0.9 ? "#b08a70" : u > 0.76 ? "#8a7a6a" : "#eceae4";
+      const m = moteAt(belt, px, py, phase, i);
+      if (m.sz * z < 0.3) continue;
+      if (Math.abs(m.x - cam.x) > hx || Math.abs(m.y - cam.y) > hy) continue;
+      ctx.globalAlpha = m.u < 0.58 ? 0.14 + m.v * 0.16 : 0.2 + m.v * 0.24;
+      ctx.fillStyle = m.u > 0.9 ? "#b08a70" : m.u > 0.76 ? "#8a7a6a" : "#eceae4";
       ctx.beginPath();
-      if (sz < 2.4) {
-        ctx.arc(x, y, sz, 0, Math.PI * 2);
+      if (m.sz < 2.4) {
+        ctx.arc(m.x, m.y, m.sz, 0, Math.PI * 2);
       } else {
         const k = 5;
         for (let j = 0; j < k; j++) {
           const ang = (j / k) * Math.PI * 2 + hash(i * 9.1 + j) * 0.6;
-          const rChip = sz * (0.62 + hash(i * 4.4 + j * 3) * 0.55);
-          const mx = x + Math.cos(ang) * rChip;
-          const my = y + Math.sin(ang) * rChip;
+          const rChip = m.sz * (0.62 + hash(i * 4.4 + j * 3) * 0.55);
+          const mx = m.x + Math.cos(ang) * rChip;
+          const my = m.y + Math.sin(ang) * rChip;
           if (j === 0) ctx.moveTo(mx, my);
           else ctx.lineTo(mx, my);
         }

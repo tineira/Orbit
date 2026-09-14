@@ -7,6 +7,8 @@ import {
   enterWarp,
   rebootSim,
   spectroHud,
+  spectroVoice,
+  spectroScanProgress,
   stepSpectro,
 } from "./sim.ts";
 import { createSystem } from "./world.ts";
@@ -76,6 +78,42 @@ test("a stored scan survives reboot and skips the countdown", () => {
   const hud = spectroHud(sim, false);
   assert.equal(hud.spectroScanning, false);
   assert.ok(hud.composition);
+});
+
+test("spectro voice is idle until lock, scan while reading, done after a hit", () => {
+  const { sim, host } = flightOn();
+  sim.orbitLockId = null;
+  assert.equal(spectroVoice(sim), "idle");
+  assert.equal(spectroScanProgress(sim), 0);
+  sim.orbitLockId = host.id;
+  assert.equal(spectroVoice(sim), "scan");
+  stepSpectro(sim, SCAN_SECONDS);
+  assert.equal(spectroVoice(sim), "done");
+  sim.orbitLockId = null;
+  assert.equal(spectroVoice(sim), "idle");
+  sim.showSpectro = false;
+  assert.equal(spectroVoice(sim), "off");
+});
+
+test("re-locking a scanned body stays done and does not restart a scan", () => {
+  const { sim, host } = flightOn();
+  stepSpectro(sim, SCAN_SECONDS);
+  sim.orbitLockId = null;
+  stepSpectro(sim, 0);
+  sim.orbitLockId = host.id;
+  stepSpectro(sim, 0.3);
+  assert.equal(spectroVoice(sim), "done");
+  assert.equal(spectroScanProgress(sim), 0);
+});
+
+test("landed and transit mute the spectro voice", () => {
+  const { sim } = flightOn();
+  sim.phase = "landed";
+  assert.equal(spectroVoice(sim), "off");
+  sim.phase = "flight";
+  sim.showSpectro = true;
+  enterWarp(sim);
+  assert.equal(spectroVoice(sim), "off");
 });
 
 test("a locked shard survey stores the mix", () => {

@@ -21,9 +21,12 @@ import {
   verboseDiag,
   wrapPi,
   spectroHud,
+  spectroVoice,
+  spectroScanProgress,
   clearSpectroScan,
   type Sim,
   type SimViewPrefs,
+  type SpectroVoice,
 } from "./sim";
 import { cycleEngine as stepEngine, cycleFuelKind, cycleTank as stepTank } from "./fuel";
 import type { GameUiHandler, HudSnapshot } from "./types";
@@ -215,6 +218,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let prevCrashed: string | null = null;
   let prevTrauma = 0;
   let prevPhase: string | null = null;
+  let prevSpectroVoice: SpectroVoice = "off";
   let prevPunched = false;
   let prevBoomed = false;
   let enterWasDown = false;
@@ -632,6 +636,14 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       Math.min(1, Math.hypot(sim.ship.vx, sim.ship.vy) / 120),
     );
     audio.setAtmo(playing() ? atmoDrag(sim) : 0);
+    audio.setBeltDust(0);
+    if (playing() && sim.phase === "flight") {
+      for (const tick of sim.beltTicks) audio.hullTick(tick);
+    }
+    const specVoice = playing() ? spectroVoice(sim) : "off";
+    audio.setSpectro(specVoice, spectroScanProgress(sim), sim.reducedMotion);
+    if (specVoice === "done" && prevSpectroVoice === "scan") audio.spectroPing();
+    prevSpectroVoice = specVoice;
     const beat = sim.phase === "transit" ? transitBeat(sim.transitAge, sim.reducedMotion) : "off";
     const lostFade = sim.reducedMotion ? WARP_LOST_FADE_REDUCED : WARP_LOST_FADE;
     if (sim.warpLost) {
@@ -703,6 +715,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     prevLanded = sim.landedId;
     prevCrashed = null;
     prevTrauma = 0;
+    prevSpectroVoice = "off";
     nWasDown = held(input.state).has("KeyN");
     publish();
     raf = requestAnimationFrame(frame);
