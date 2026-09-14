@@ -1036,9 +1036,20 @@ function stampBodyShadows(
   ctx.restore();
 }
 
+/** Dust and chips only. Named rocks stay in `planets`; these never enter physics. */
+function moteSize(u: number, v: number) {
+  if (u < 0.58) return 0.45 + v * 1.9;
+  if (u < 0.86) return 1.8 + v * 5;
+  return 6 + v * 9;
+}
+
 function drawBelts(ctx: CanvasRenderingContext2D, sim: Sim) {
   const bands = beltBands(sim.planets);
   if (!bands.length) return;
+  const cam = sim.camera;
+  const z = Math.max(1e-6, cam.zoom);
+  const hx = ((sim.viewCssW || 1280) * 0.5) / z + 64 / z;
+  const hy = ((sim.viewCssH || 800) * 0.5) / z + 64 / z;
   const byId = new Map(sim.planets.map((p) => [p.id, p]));
   ctx.save();
   for (const belt of bands) {
@@ -1048,37 +1059,50 @@ function drawBelts(ctx: CanvasRenderingContext2D, sim: Sim) {
     const a = belt.orbitR;
     const e = belt.orbitE;
     const peri = belt.orbitPeri;
-    const b = a * Math.sqrt(Math.max(0, 1 - e * e));
-    const ox = px - Math.cos(peri) * a * e;
-    const oy = py - Math.sin(peri) * a * e;
-    ctx.save();
-    ctx.translate(ox, oy);
-    ctx.rotate(peri);
-    ctx.strokeStyle = "rgba(236, 234, 228, 0.055)";
-    ctx.lineWidth = belt.width * 0.55;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, a, b, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-
-    const n = 42;
+    const oneE2 = Math.max(0, 1 - e * e);
+    let phase = 0;
+    for (const p of sim.planets) {
+      if (p.kind === "asteroid" && p.parentId === belt.parentId) {
+        phase = p.orbitA ?? 0;
+        break;
+      }
+    }
+    const n = belt.motes;
     for (let i = 0; i < n; i++) {
-      const theta = (i / n) * Math.PI * 2 + hash(belt.seed + i * 3.1) * 0.4;
+      const u = hash(belt.seed + i * 1.7);
+      const v = hash(belt.seed + i * 5.9);
+      const sz = moteSize(u, v);
+      if (sz * z < 0.3) continue;
+      let theta = (i / n) * Math.PI * 2 + hash(belt.seed + i * 3.1) * 0.7 + phase;
+      theta += 0.16 * Math.sin(theta * 5 + belt.seed);
       const nu = theta - peri;
-      const rr =
-        e < 1e-8
-          ? a
-          : (a * Math.max(0, 1 - e * e)) / (1 + e * Math.cos(nu));
-      const rad = rr + (hash(belt.seed + i * 8.2) - 0.5) * belt.width * 0.42;
+      const rr = e < 1e-8 ? a : (a * oneE2) / (1 + e * Math.cos(nu));
+      const g = hash(belt.seed + i * 8.2) * 2 - 1;
+      const rad = rr + g * Math.abs(g) * belt.width * 0.55;
       const x = px + Math.cos(theta) * rad;
       const y = py + Math.sin(theta) * rad;
-      const sz = 0.7 + hash(i * 5.5 + belt.seed) * 1.8;
-      ctx.fillStyle = `rgba(236, 234, 228, ${0.08 + hash(i * 2.2) * 0.12})`;
+      if (Math.abs(x - cam.x) > hx || Math.abs(y - cam.y) > hy) continue;
+      ctx.globalAlpha = u < 0.58 ? 0.14 + v * 0.16 : 0.2 + v * 0.24;
+      ctx.fillStyle = u > 0.9 ? "#b08a70" : u > 0.76 ? "#8a7a6a" : "#eceae4";
       ctx.beginPath();
-      ctx.arc(x, y, sz, 0, Math.PI * 2);
+      if (sz < 2.4) {
+        ctx.arc(x, y, sz, 0, Math.PI * 2);
+      } else {
+        const k = 5;
+        for (let j = 0; j < k; j++) {
+          const ang = (j / k) * Math.PI * 2 + hash(i * 9.1 + j) * 0.6;
+          const rChip = sz * (0.62 + hash(i * 4.4 + j * 3) * 0.55);
+          const mx = x + Math.cos(ang) * rChip;
+          const my = y + Math.sin(ang) * rChip;
+          if (j === 0) ctx.moveTo(mx, my);
+          else ctx.lineTo(mx, my);
+        }
+        ctx.closePath();
+      }
       ctx.fill();
     }
   }
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 

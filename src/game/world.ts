@@ -34,7 +34,19 @@ export const ORBIT_BREAK_COOLDOWN = 1.35;
 export const ORBIT_SHELL_MIN_ALT = 18;
 export const ORBIT_SHELL_MAX_ALT_FACTOR = 1.28;
 export const ORBIT_SHELL_MAX_ALT_CAP = 170;
-export const ORBIT_SHELL_MOON_MIN_ALT = 90;
+/** Extra periapsis clearance past the hull (asteroids also pad for the lumpy silhouette). */
+export const KEPLER_CLEAR_HULL = 16;
+export const KEPLER_ASTEROID_SURFACE = 1.24;
+/** Closed Kepler apoapsis altitude as a multiple of radius, then a hard cap. */
+export const KEPLER_APO_FACTOR = 4.8;
+export const KEPLER_APO_CAP = 720;
+/**
+ * Lock shell vs Hill sphere. Perturb 0.4 dumps at ~0.84 Hill; stay inside so a
+ * circular coast can dwell without the parent well stealing the lock.
+ */
+export const ORBIT_SHELL_HILL_FRACTION = 0.55;
+/** Fraction of the parent-well dominance radius — leaves room on the near side. */
+export const ORBIT_SHELL_WELL_FRACTION = 0.88;
 /** How far past a gas giant's haze the outer lock ring extends. */
 export const ORBIT_SHELL_GAS_CLEAR = 72;
 /** Visual haze / drag outer radius as a multiple of body radius. */
@@ -338,24 +350,72 @@ export function pickWarpArrival(
 export const GRAVITY_STEPS = [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 8] as const;
 export const ATMO_STEPS = [0, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6] as const;
 
+/** Periapsis floor used by Kepler lock (center-to-ship). */
+export function keplerMinR(p: Pick<Planet, "kind" | "radius">) {
+  const surface = p.kind === "asteroid" ? p.radius * KEPLER_ASTEROID_SURFACE : p.radius;
+  const clear =
+    p.kind === "asteroid"
+      ? Math.min(KEPLER_CLEAR_HULL, Math.max(6, p.radius * 0.55))
+      : KEPLER_CLEAR_HULL;
+  return surface + SHIP_HULL + clear;
+}
+
+function parentPeriapsis(p: Planet, planets: Planet[]) {
+  const parent = p.parentId ? planets.find((b) => b.id === p.parentId) : undefined;
+  if (!parent || p.orbitR == null || parent.mass <= 0) return null;
+  return { parent, rPeri: p.orbitR * (1 - (p.orbitE ?? 0)) };
+}
+
+/** Hill radius from the body's center around its kinematic parent. */
+export function hillRadius(p: Planet, planets: Planet[]) {
+  const rail = parentPeriapsis(p, planets);
+  if (!rail || p.mass <= 0) return Infinity;
+  return rail.rPeri * Math.cbrt(Math.max(0, p.mass / (3 * rail.parent.mass)));
+}
+
+/** Parent-well radius: host gravity still beats the kinematic parent at this distance. */
+export function wellRadius(p: Planet, planets: Planet[]) {
+  const rail = parentPeriapsis(p, planets);
+  if (!rail || p.mass <= 0) return Infinity;
+  return rail.rPeri * Math.sqrt(p.mass / rail.parent.mass);
+}
+
+/**
+ * Tightest Hill sphere vs every other mass. Belt shards sit next to a primary;
+ * the star Hill is huge, the neighbor's is the one that matters.
+ */
+export function influenceRadius(p: Planet, planets: Planet[]) {
+  if (p.mass <= 0) return Infinity;
+  let r = hillRadius(p, planets);
+  for (const q of planets) {
+    if (q.id === p.id || q.id === p.parentId || isGhostBody(q) || q.mass <= 0) continue;
+    const sep = Math.hypot(p.x - q.x, p.y - q.y);
+    if (sep < 1) continue;
+    r = Math.min(r, sep * Math.cbrt(p.mass / (3 * q.mass)));
+  }
+  return r;
+}
+
 export function orbitShellAlts(p: Planet, planets: Planet[] = []) {
   let minAlt = ORBIT_SHELL_MIN_ALT;
   let maxAlt = Math.min(p.radius * ORBIT_SHELL_MAX_ALT_FACTOR, ORBIT_SHELL_MAX_ALT_CAP);
-  if (p.kind === "moon") {
-    maxAlt = Math.max(maxAlt, ORBIT_SHELL_MOON_MIN_ALT);
-    const parent = p.parentId ? planets.find((b) => b.id === p.parentId) : undefined;
-    if (parent && p.orbitR != null && parent.mass > 0) {
-      const rPeri = p.orbitR * (1 - (p.orbitE ?? 0));
-      const hill = rPeri * Math.cbrt(Math.max(0, p.mass / (3 * parent.mass)));
-      maxAlt = Math.max(maxAlt, hill - p.radius);
-      const toParent = rPeri - parent.radius - p.radius;
-      if (toParent > minAlt + 8) maxAlt = Math.min(maxAlt, toParent - 8);
+  if (p.kind === "moon" || p.kind === "asteroid") {
+    minAlt = Math.max(minAlt, keplerMinR(p) - p.radius);
+    const hillAlt = influenceRadius(p, planets) - p.radius;
+    const wellAlt = wellRadius(p, planets) - p.radius;
+    const apoAlt = Math.min(p.radius * KEPLER_APO_FACTOR, KEPLER_APO_CAP);
+    maxAlt = Math.min(apoAlt, hillAlt * ORBIT_SHELL_HILL_FRACTION, wellAlt * ORBIT_SHELL_WELL_FRACTION);
+    if (p.kind === "moon") {
+      const rail = parentPeriapsis(p, planets);
+      if (rail) {
+        const toParent = rail.rPeri - rail.parent.radius - p.radius;
+        if (toParent > minAlt + 8) maxAlt = Math.min(maxAlt, toParent - 8);
+      }
     }
+    if (!Number.isFinite(maxAlt) || maxAlt < minAlt) maxAlt = minAlt;
   } else if (p.kind === "gas") {
     const atmoAlt = p.radius * (GAS_ATMO_FACTOR - 1);
     maxAlt = Math.max(maxAlt, atmoAlt + ORBIT_SHELL_GAS_CLEAR);
-  } else if (p.kind === "asteroid") {
-    if (p.landable) maxAlt = Math.max(maxAlt, 48);
   } else if (p.kind === "star") {
     const atmoAlt = p.radius * (STAR_ATMO_FACTOR - 1);
     minAlt = atmoAlt + ORBIT_SHELL_STAR_CLEAR;
@@ -400,7 +460,17 @@ export type BeltBand = {
   orbitPeri: number;
   width: number;
   seed: number;
+  motes: number;
 };
+
+export const BELT_MOTES_MIN = 4000;
+export const BELT_MOTES_MAX = 9000;
+
+function beltMoteCount(seed: number) {
+  const x = Math.sin(seed * 127.1) * 43758.5453;
+  const u = x - Math.floor(x);
+  return BELT_MOTES_MIN + Math.round(u * (BELT_MOTES_MAX - BELT_MOTES_MIN));
+}
 
 /** Shared Kepler rail for a belt. One band per parent. */
 export function beltBands(planets: Planet[]): BeltBand[] {
@@ -433,6 +503,7 @@ export function beltBands(planets: Planet[]): BeltBand[] {
       orbitPeri: peri,
       width: Math.max(140, maxA - minA + 80),
       seed: rocks[0]!.shapeSeed ?? 1,
+      motes: beltMoteCount(rocks[0]!.shapeSeed ?? 1),
     });
   }
   return out;
@@ -990,7 +1061,7 @@ function makeSystem(
           ? lerp(1.8, 3.4, rng())
           : medium
             ? lerp(1.1, 2.0, rng())
-            : lerp(0.35, 0.9, rng());
+            : lerp(0.9, 1.55, rng());
         const name = takeName(rng, ROCK_NAMES, used);
         const pal = pick(rng, ASTEROID_PALETTES);
         const inhabited = primary && camp;
@@ -1004,7 +1075,7 @@ function makeSystem(
           ? `Someone bolted a light to ${name}. The well is a pebble. The tank still fills.`
           : landable
             ? `No one named this. ${name} is a face in the belt. The tank stays empty.`
-            : `${name} is grit on the rail. Too small to land.`;
+            : `${name} is grit on the rail. Too small to land. Catch an orbit; the spec still reads.`;
         planets.push(
           withMatter(
             {

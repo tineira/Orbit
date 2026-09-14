@@ -78,6 +78,24 @@ test("a stored scan survives reboot and skips the countdown", () => {
   assert.ok(hud.composition);
 });
 
+test("a locked shard survey stores the mix", () => {
+  createSystem(2, { belt: true });
+  const sim = createSim();
+  sim.phase = "flight";
+  sim.landedId = null;
+  sim.showSpectro = true;
+  const shard = sim.planets.find((p) => p.kind === "asteroid" && !p.landable);
+  assert.ok(shard);
+  assert.equal(canScan(shard!), true);
+  sim.orbitLockId = shard!.id;
+  sim.nearest = shard!;
+  stepSpectro(sim, SCAN_SECONDS);
+  assert.equal(sim.scannedIds.has(shard!.id), true);
+  const hud = spectroHud(sim, false);
+  assert.ok(hud.composition?.bulk);
+  assert.equal(hud.composition?.atmosphere, null);
+});
+
 test("verbose reveal shows the mix before a scan; warp clears the chart", () => {
   const { sim, host } = flightOn();
   const hidden = spectroHud(sim, false);

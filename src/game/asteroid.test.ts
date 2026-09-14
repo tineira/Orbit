@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { asteroidLandedRadius, ASTEROID_LAND_PROTRUDE, padHasFuel, surfaceRadius, worldAngleFromLanded, wrapPi } from "./asteroid.ts";
 import { createSim, listLagrangePoints, stepSim, takeoff } from "./sim.ts";
 import { beginPadRefill, PAD_REFILL_RATE } from "./fuel.ts";
-import { chartFlagsFromSearch, createSystem, SHIP_HULL } from "./world.ts";
+import { beltBands, BELT_MOTES_MAX, BELT_MOTES_MIN, chartFlagsFromSearch, createSystem, SHIP_HULL } from "./world.ts";
 import type { Planet } from "./types.ts";
 
 function shape(over: Partial<Planet> = {}): Planet {
@@ -67,6 +67,19 @@ test("belt=false never charts asteroids", () => {
     const sys = createSystem(seed, { belt: false });
     assert.equal(sys.planets.some((p) => p.kind === "asteroid"), false, String(seed));
   }
+});
+
+test("belt dust density varies by chart between min and max", () => {
+  const counts = new Set<number>();
+  for (let seed = 1; seed <= 20; seed++) {
+    const sys = createSystem(seed, { belt: true });
+    const bands = beltBands(sys.planets);
+    assert.equal(bands.length, 1, String(seed));
+    const n = bands[0]!.motes;
+    assert.ok(n >= BELT_MOTES_MIN && n <= BELT_MOTES_MAX, `seed ${seed} motes ${n}`);
+    counts.add(n);
+  }
+  assert.ok(counts.size > 1);
 });
 
 test("asteroids do not host Lagrange points", () => {
@@ -186,6 +199,24 @@ test("takeoff from an asteroid ignores hull until the craft is clear", () => {
   stepSim(sim, 0, idle);
   assert.equal(sim.phase, "crashed");
   assert.equal(sim.crashedId, rock!.id);
+});
+
+test("a slow hit on a shard still crashes; it is not a pad", () => {
+  createSystem(2, { belt: true });
+  const sim = createSim();
+  const shard = sim.planets.find((p) => p.kind === "asteroid" && !p.landable);
+  assert.ok(shard);
+  sim.phase = "flight";
+  sim.landedId = null;
+  sim.orbitLockId = null;
+  const body = sim.planets.find((p) => p.id === shard!.id)!;
+  sim.ship.x = body.x + body.radius + SHIP_HULL * 0.4;
+  sim.ship.y = body.y;
+  sim.ship.vx = body.vx;
+  sim.ship.vy = body.vy;
+  stepSim(sim, 0, idle);
+  assert.equal(sim.phase, "crashed");
+  assert.equal(sim.crashedId, shard!.id);
 });
 
 test("empty rocks do not pump methane; camps do", () => {

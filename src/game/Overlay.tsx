@@ -395,7 +395,6 @@ function Title({
 }) {
   const destinations = getPlanets().filter((p) => {
     if (p.kind === "star" || isGhostBody(p)) return false;
-    if (p.kind === "asteroid" && !p.landable) return false;
     return true;
   });
   return (

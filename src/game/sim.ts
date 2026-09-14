@@ -27,6 +27,7 @@ import {
   ORBIT_LOCK_DWELL,
   ORBIT_PERTURB_BREAK,
   orbitShellAlts,
+  keplerMinR,
   keplerRail,
   isGhostBody,
   twinOf,
@@ -1542,16 +1543,17 @@ function inspectKepler(
   const dy = ship.y - p.y;
   const r = Math.hypot(dx, dy);
   if (r < 1e-8) return null;
-  const minR = (p.kind === "asteroid" ? p.radius * 1.24 : p.radius) + SHIP_HULL + 16;
+  const minR = keplerMinR(p);
   const rvx = ship.vx - p.vx;
   const rvy = ship.vy - p.vy;
   const mu = bodyMu(p, gravityScale);
   const h = dx * rvy - dy * rvx;
   const v2 = rvx * rvx + rvy * rvy;
+  const shell = orbitShellAlts(p, planets);
   let maxApo =
     p.kind === "star"
       ? p.radius + Math.min(p.radius * KEPLER_STAR_APO_FACTOR, KEPLER_STAR_APO_CAP)
-      : p.radius + Math.min(p.radius * 4.8, 720);
+      : p.radius + shell.maxAlt;
   const sibling = twinOf(p, planets);
   if (sibling) {
     const sep = Math.hypot(p.x - sibling.x, p.y - sibling.y);
@@ -2433,11 +2435,12 @@ function collidePlanets(sim: Sim) {
 function orbitReady(sim: Sim, nearest: Planet, dist: number) {
   if (sim.orbitLockCooldown > 0) return false;
   if (sim.ship.thrusting || sim.ship.reverse) return false;
-  if (nearest.kind === "asteroid" && !nearest.landable) return false;
   const alt = dist - nearest.radius;
   const { minAlt, maxAlt } = orbitShellAlts(nearest, sim.planets);
   if (alt < minAlt || alt > maxAlt) return false;
-  if (!wellDominant(nearest, sim.ship.x, sim.ship.y, sim.planets)) return false;
+  // Belt shards sit in a bigger well; tidal perturb is the lock gate, not SOI.
+  if (nearest.kind !== "asteroid" && !wellDominant(nearest, sim.ship.x, sim.ship.y, sim.planets))
+    return false;
   if (atmoDrag(sim) > ORBIT_DRAG_BREAK) return false;
   if (
     orbitPerturbRatio(nearest, sim.ship.x, sim.ship.y, sim.planets, sim.gravityScale) >
@@ -2548,7 +2551,8 @@ export function verboseDiag(sim: Sim): VerboseDiag {
     const hostAlt = Math.hypot(ship.x - host.x, ship.y - host.y) - host.radius;
     if (hostAlt < shell.minAlt || hostAlt > shell.maxAlt) {
       gate = `SHELL ${fmtDiag(hostAlt, 1)} [${fmtDiag(shell.minAlt, 0)}–${fmtDiag(shell.maxAlt, 0)}]`;
-    } else if (well && !well.ok) gate = `WELL ${fmtDiag(well.ratio)} / ${fmtDiag(well.limit)}`;
+    } else if (host.kind !== "asteroid" && well && !well.ok)
+      gate = `WELL ${fmtDiag(well.ratio)} / ${fmtDiag(well.limit)}`;
     else if (drag > ORBIT_DRAG_BREAK) gate = `DRAG ${fmtDiag(drag)} / ${fmtDiag(ORBIT_DRAG_BREAK)}`;
     else if (perturb > ORBIT_PERTURB_BREAK)
       gate = `PERTURB ${fmtDiag(perturb)} / ${fmtDiag(ORBIT_PERTURB_BREAK)}`;
@@ -2873,7 +2877,7 @@ export function relativePathTarget(sim: Sim): Planet | null {
   const dist = Math.hypot(sim.ship.x - p.x, sim.ship.y - p.y);
   const alt = dist - p.radius;
   const { maxAlt } = orbitShellAlts(p, sim.planets);
-  const near = Math.max(maxAlt * 2.4, approachRadius(p) - p.radius + 40, 220);
+  const near = Math.max(maxAlt * 1.35, approachRadius(p) - p.radius + 24);
   if (alt > near || alt < -2) return null;
   return p;
 }
