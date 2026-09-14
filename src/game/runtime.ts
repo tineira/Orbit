@@ -25,6 +25,7 @@ import {
 import type { GameUiHandler, HudSnapshot } from "./types";
 import {
   createSystem,
+  devToolsFromSearch,
   getSystem,
   transitBeat,
   transitArriveU,
@@ -53,6 +54,7 @@ declare global {
     __controlsTest?: {
       getYaw: () => number;
       getSpeed: () => number;
+      getFuel?: () => number;
       setSteer?: (v: number) => void;
       setKeys?: (codes: string[]) => void;
       place?: (x: number, y: number, vx: number, vy: number) => void;
@@ -128,6 +130,7 @@ const CREATING_HUD: HudSnapshot = {
   drag: 0,
   headingDeg: 0,
   mass: 1,
+  fuel: 1,
   nearestId: null,
   nearestName: null,
   altitude: null,
@@ -153,6 +156,7 @@ const CREATING_HUD: HudSnapshot = {
   gravityGrid: false,
   verbose: false,
   verboseDiag: null,
+  dev: false,
   warpCharge: 0,
   transitBeat: "off",
 };
@@ -163,6 +167,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   if (!ctx) throw new Error("Canvas 2D is not available");
 
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const devTools = devToolsFromSearch(window.location.search);
   let sim: Sim | null = null;
   const input = createInput(canvas, {
     getUserZoom: () => sim?.camera.userZoom ?? 1,
@@ -240,6 +245,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       drag: atmoDrag(sim),
       headingDeg: ((wrapPi(s.yaw) * 180) / Math.PI + 360) % 360,
       mass: s.mass,
+      fuel: s.fuel,
       nearestId: sim.nearest?.id ?? null,
       nearestName: sim.nearest?.name ?? null,
       altitude: sim.altitude,
@@ -261,10 +267,11 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       lagrangePoints: sim.showLagrange,
       lagrangeLocked: !!sim.lagrangeLockKey,
       lagrangeLabel: (sim.lagrangeLockKey ?? sim.lagrangeDwellKey)?.split(":")[1] ?? null,
-      physicsMenu: sim.showPhysics,
+      physicsMenu: devTools && sim.showPhysics,
       gravityGrid: sim.showGravityGrid,
-      verbose: sim.showVerbose,
-      verboseDiag: sim.showVerbose ? verboseDiag(sim) : null,
+      verbose: devTools && sim.showVerbose,
+      verboseDiag: devTools && sim.showVerbose ? verboseDiag(sim) : null,
+      dev: devTools,
       warpCharge: sim.warpCharge,
       transitBeat: sim.phase === "transit" ? transitBeat(sim.transitAge, sim.reducedMotion) : "off",
     };
@@ -354,6 +361,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     window.__controlsTest = {
       getYaw: () => s.ship.yaw,
       getSpeed: () => Math.hypot(s.ship.vx, s.ship.vy),
+      getFuel: () => s.ship.fuel,
       setSteer: (v) => {
         input.state.qaSteer = v;
       },
@@ -490,7 +498,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       sim.showLagrange = !sim.showLagrange;
       publish();
     }
-    if (consumePhysics()) {
+    if (devTools && consumePhysics()) {
       sim.showPhysics = !sim.showPhysics;
       publish();
     }
@@ -498,7 +506,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       sim.showGravityGrid = !sim.showGravityGrid;
       publish();
     }
-    if (consumeVerbose()) {
+    if (devTools && consumeVerbose()) {
       sim.showVerbose = !sim.showVerbose;
       publish();
     }
@@ -656,6 +664,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     window.__controlsTest = {
       getYaw: () => 0,
       getSpeed: () => 0,
+      getFuel: () => 1,
       getPhase: () => "creating",
       getLanded: () => null,
       getCrashed: () => null,
@@ -747,7 +756,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       publish();
     },
     toggleVerbose() {
-      if (!sim) return;
+      if (!sim || !devTools) return;
       sim.showVerbose = !sim.showVerbose;
       publish();
     },

@@ -38,6 +38,8 @@ export type Ship = {
   vy: number;
   yaw: number;
   mass: number;
+  fuel: number;
+  fuelCapacity: number;
   thrusting: boolean;
   reverse: boolean;
 };
@@ -163,6 +165,8 @@ export type HudSnapshot = {
   drag: number;
   headingDeg: number;
   mass: number;
+  fuel: number;
+  fuelCapacity: number;
   nearestId: string | null;
   nearestName: string | null;
   altitude: number | null;
@@ -188,6 +192,7 @@ export type HudSnapshot = {
   gravityGrid: boolean;
   verbose: boolean;
   verboseDiag: VerboseDiag | null;
+  dev: boolean;
   warpCharge: number;
   transitBeat: TransitBeat | "off";
 };

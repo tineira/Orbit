@@ -9,6 +9,7 @@ const INITIAL: HudSnapshot = {
   drag: 0,
   headingDeg: 0,
   mass: 1,
+  fuel: 1,
   nearestId: null,
   nearestName: null,
   altitude: null,
@@ -34,6 +35,7 @@ const INITIAL: HudSnapshot = {
   gravityGrid: false,
   verbose: false,
   verboseDiag: null,
+  dev: false,
   warpCharge: 0,
   transitBeat: "off",
 };

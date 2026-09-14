@@ -12,6 +12,7 @@
   --color-border: color-mix(in oklab, var(--color-fg) 12%, transparent);
   --color-border-strong: color-mix(in oklab, var(--color-fg) 22%, transparent);
   --color-warn: #c45c4a;
+  --color-caution: #c4a05a;
   --color-ok: #7d9b86;
 
   --font-display: "Space Grotesk", "IBM Plex Sans", system-ui, sans-serif;

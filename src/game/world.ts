@@ -9,6 +9,12 @@ export const SHIP_MASS = 1;
 export const SHIP_HULL = 9;
 export const THRUST_FORCE = 22;
 export const RETRO_FORCE = 10;
+/** Starting tank size in fuel units. A bigger tank later is more units; engine burn stays the same. */
+export const SHIP_FUEL_CAPACITY = 100;
+/** Seconds of main burn for the starting tank. Retro drains by thrust ratio. */
+export const FUEL_MAIN_SECONDS = 90;
+/** Units burned per second at full main thrust. Independent of tank size. */
+export const FUEL_BURN_MAIN = SHIP_FUEL_CAPACITY / FUEL_MAIN_SECONDS;
 export const TURN_RATE = 2.85;
 export const LAND_SPEED = 20;
 export const STEP = 1 / 60;
@@ -731,6 +737,16 @@ export function playFlagsFromSearch(search = ""): PlayFlags {
   const t = (q.get("target") ?? "on").trim().toLowerCase();
   const target = !(t === "0" || t === "off" || t === "false" || t === "no");
   return { warp, target };
+}
+
+/** `?dev` / `?dev=1` shows physics knobs, verbose HUD, and the mass readout. */
+export function devToolsFromSearch(search = ""): boolean {
+  const raw = search.startsWith("?") ? search.slice(1) : search;
+  const v = new URLSearchParams(raw).get("dev");
+  if (v == null) return false;
+  const t = v.trim().toLowerCase();
+  if (t === "0" || t === "off" || t === "false" || t === "no") return false;
+  return true;
 }
 
 /** Travel dir for `?warp=` : lock the first nearby chart, or miss them all. */

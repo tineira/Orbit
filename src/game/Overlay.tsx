@@ -46,6 +46,7 @@ export function Overlay({
 }: Props) {
   const landed = hud.landedId ? planetById(hud.landedId) : null;
   const crashed = hud.crashedId ? planetById(hud.crashedId) : null;
+  const dev = hud.dev;
 
   useEffect(() => {
     if (hud.phase !== "title") return;
@@ -112,6 +113,7 @@ export function Overlay({
           onToggleGravityGrid={onToggleGravityGrid}
           verbose={hud.verbose}
           onToggleVerbose={onToggleVerbose}
+          dev={dev}
         />
       ) : null}
 
@@ -141,10 +143,12 @@ export function Overlay({
                     {fmt(hud.drag)} <span className="text-muted">drag</span>
                   </p>
                   <p className="mt-0.5 font-mono text-xs tabular-nums text-muted">
-                    HDG {hud.headingDeg.toFixed(0).padStart(3, "0")}° · MASS {hud.mass.toFixed(1)}
+                    HDG {hud.headingDeg.toFixed(0).padStart(3, "0")}°
+                    {dev ? ` · MASS ${hud.mass.toFixed(1)}` : ""}
                   </p>
+                  <FuelBar fuel={hud.fuel} />
                 </div>
-                {hud.physicsMenu ? (
+                {dev && hud.physicsMenu ? (
                   <PhysicsKnobs
                     gravityScale={hud.gravityScale}
                     atmoScale={hud.atmoScale}
@@ -154,7 +158,7 @@ export function Overlay({
                 ) : null}
               </div>
             </div>
-            {hud.verbose && hud.verboseDiag ? <VerbosePanel diag={hud.verboseDiag} /> : null}
+            {dev && hud.verbose && hud.verboseDiag ? <VerbosePanel diag={hud.verboseDiag} /> : null}
           </header>
 
           <div className="absolute bottom-16 left-0 p-4 sm:p-6 max-w-[22rem]">
@@ -188,6 +192,7 @@ export function Overlay({
                 onToggleLagrange={onToggleLagrange}
                 onToggleGravityGrid={onToggleGravityGrid}
                 onToggleVerbose={onToggleVerbose}
+                dev={dev}
               />
             </p>
             {hud.orbitShell ? (
@@ -205,7 +210,7 @@ export function Overlay({
                 Gravity grid
               </p>
             ) : null}
-            {hud.verbose ? (
+            {dev && hud.verbose ? (
               <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">
                 Verbose
               </p>
@@ -248,7 +253,7 @@ export function Overlay({
               <Volume2 className="size-4" strokeWidth={1.75} />
             )}
           </button>
-          {hud.physicsMenu ? (
+          {dev && hud.physicsMenu ? (
             <PhysicsKnobs
               gravityScale={hud.gravityScale}
               atmoScale={hud.atmoScale}
@@ -324,6 +329,7 @@ function Title({
   onToggleLagrange,
   onToggleGravityGrid,
   onToggleVerbose,
+  dev,
 }: {
   onLaunch: () => void;
   onNewWorld: () => void;
@@ -336,6 +342,7 @@ function Title({
   onToggleLagrange: () => void;
   onToggleGravityGrid: () => void;
   onToggleVerbose: () => void;
+  dev: boolean;
 }) {
   const destinations = getPlanets().filter((p) => p.kind !== "star" && !isGhostBody(p));
   return (
@@ -383,6 +390,7 @@ function Title({
               onToggleLagrange={onToggleLagrange}
               onToggleGravityGrid={onToggleGravityGrid}
               onToggleVerbose={onToggleVerbose}
+              dev={dev}
             />
           </p>
           <div className="flex flex-wrap items-center gap-3">
@@ -675,6 +683,7 @@ function KeyTips({
   onToggleLagrange,
   onToggleGravityGrid,
   onToggleVerbose,
+  dev,
 }: {
   orbitShell: boolean;
   lagrangePoints: boolean;
@@ -685,14 +694,17 @@ function KeyTips({
   onToggleLagrange: () => void;
   onToggleGravityGrid: () => void;
   onToggleVerbose: () => void;
+  dev: boolean;
 }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 sm:gap-x-3">
       <KeyTip code="O" label="orbit shell" on={orbitShell} onToggle={onToggleOrbitShell} />
       <KeyTip code="L" label="Lagrange" on={lagrangePoints} onToggle={onToggleLagrange} />
-      <KeyTip code="P" label="physics" on={physicsMenu} className="hidden sm:inline-flex" />
+      {dev ? (
+        <KeyTip code="P" label="physics" on={physicsMenu} className="hidden sm:inline-flex" />
+      ) : null}
       <KeyTip code="G" label="grid" on={gravityGrid} onToggle={onToggleGravityGrid} />
-      <KeyTip code="V" label="verbose" on={verbose} onToggle={onToggleVerbose} />
+      {dev ? <KeyTip code="V" label="verbose" on={verbose} onToggle={onToggleVerbose} /> : null}
     </span>
   );
 }
@@ -834,6 +846,43 @@ function ScaleRow({
           <Plus className="size-3.5" strokeWidth={1.75} />
         </button>
       </div>
+    </div>
+  );
+}
+
+const FUEL_PIPS = 8;
+const FUEL_CAUTION = 0.55;
+const FUEL_WARN = 0.28;
+
+function fuelTone(fuel: number) {
+  if (fuel > FUEL_CAUTION) return "ok" as const;
+  if (fuel > FUEL_WARN) return "caution" as const;
+  return "warn" as const;
+}
+
+function FuelBar({ fuel }: { fuel: number }) {
+  const t = Math.max(0, Math.min(1, fuel));
+  const filled = Math.round(t * FUEL_PIPS);
+  const tone = fuelTone(t);
+  const pip =
+    tone === "ok" ? "bg-ok" : tone === "caution" ? "bg-caution" : "bg-warn";
+  const label =
+    tone === "ok" ? "text-muted" : tone === "caution" ? "text-caution" : "text-warn";
+  return (
+    <div
+      className="mt-1.5 flex items-center justify-end gap-2"
+      role="meter"
+      aria-label="Fuel"
+      aria-valuemin={0}
+      aria-valuemax={1}
+      aria-valuenow={Number(t.toFixed(2))}
+    >
+      <span className="flex h-3 items-center gap-px rounded-sm bg-bg px-px">
+        {Array.from({ length: FUEL_PIPS }, (_, i) => (
+          <span key={i} className={cn("h-2 w-1.5", i < filled ? pip : "bg-surface-2")} />
+        ))}
+      </span>
+      <span className={cn("font-mono text-[10px] tracking-[0.16em] uppercase", label)}>Fuel</span>
     </div>
   );
 }

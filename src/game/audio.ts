@@ -49,6 +49,36 @@ function makePebbleBuffer(ctx: AudioContext, seconds: number) {
   return buf;
 }
 
+/** Sparse plume pops — Raptor crackle, not pebbles or hiss. */
+function makeEngineCrackleBuffer(ctx: AudioContext, seconds: number) {
+  const sr = ctx.sampleRate;
+  const length = Math.floor(sr * seconds);
+  const buf = ctx.createBuffer(2, length, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = buf.getChannelData(ch);
+    let pop = 0;
+    let thump = 0;
+    for (let i = 0; i < length; i++) {
+      if (Math.random() < 16 / sr) pop = 0.55 + Math.random() * 0.45;
+      if (Math.random() < 3.5 / sr) thump = 0.3 + Math.random() * 0.4;
+      pop *= 0.991;
+      thump *= 0.9965;
+      data[i] = (Math.random() * 2 - 1) * (pop * 0.9 + thump * 0.6);
+    }
+  }
+  return buf;
+}
+
+function makeDriveCurve() {
+  const n = 257;
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    curve[i] = Math.tanh(x * 2.15);
+  }
+  return curve;
+}
+
 function startLoop(ctx: AudioContext, buffer: AudioBuffer) {
   const src = ctx.createBufferSource();
   src.buffer = buffer;
@@ -77,7 +107,18 @@ export function createAudio(): AudioApi {
   let master: GainNode | null = null;
   let sfx: GainNode | null = null;
   let thrustGain: GainNode | null = null;
-  let thrustFilter: BiquadFilterNode | null = null;
+  let rumbleHp: BiquadFilterNode | null = null;
+  let rumbleLp: BiquadFilterNode | null = null;
+  let rumbleGain: GainNode | null = null;
+  let roarHp: BiquadFilterNode | null = null;
+  let roarLp: BiquadFilterNode | null = null;
+  let roarGain: GainNode | null = null;
+  let thrustSub: OscillatorNode | null = null;
+  let thrustSubGain: GainNode | null = null;
+  let crackleSrc: AudioBufferSourceNode | null = null;
+  let crackleFilter: BiquadFilterNode | null = null;
+  let crackleDull: BiquadFilterNode | null = null;
+  let crackleGain: GainNode | null = null;
   let noiseSrc: AudioBufferSourceNode | null = null;
   let warpSub: OscillatorNode | null = null;
   let warpSubGain: GainNode | null = null;
@@ -125,15 +166,71 @@ export function createAudio(): AudioApi {
     noiseSrc = ctx.createBufferSource();
     noiseSrc.buffer = buffer;
     noiseSrc.loop = true;
-    thrustFilter = ctx.createBiquadFilter();
-    thrustFilter.type = "lowpass";
-    thrustFilter.frequency.value = 420;
-    thrustFilter.Q.value = 0.7;
+    // Super Heavy: chest rumble + methane roar + plume crackle.
+    // Stays below the atmo hiss (~320 Hz) so they don't blend.
     thrustGain = ctx.createGain();
     thrustGain.gain.value = 0;
-    noiseSrc.connect(thrustFilter);
-    thrustFilter.connect(thrustGain);
     thrustGain.connect(sfx);
+
+    rumbleHp = ctx.createBiquadFilter();
+    rumbleHp.type = "highpass";
+    rumbleHp.frequency.value = 22;
+    rumbleHp.Q.value = 0.5;
+    rumbleLp = ctx.createBiquadFilter();
+    rumbleLp.type = "lowpass";
+    rumbleLp.frequency.value = 78;
+    rumbleLp.Q.value = 0.9;
+    const rumbleDrive = ctx.createWaveShaper();
+    rumbleDrive.curve = makeDriveCurve();
+    rumbleDrive.oversample = "2x";
+    rumbleGain = ctx.createGain();
+    rumbleGain.gain.value = 0.14;
+    noiseSrc.connect(rumbleHp);
+    rumbleHp.connect(rumbleLp);
+    rumbleLp.connect(rumbleDrive);
+    rumbleDrive.connect(rumbleGain);
+    rumbleGain.connect(thrustGain);
+
+    roarHp = ctx.createBiquadFilter();
+    roarHp.type = "highpass";
+    roarHp.frequency.value = 55;
+    roarHp.Q.value = 0.55;
+    roarLp = ctx.createBiquadFilter();
+    roarLp.type = "lowpass";
+    roarLp.frequency.value = 210;
+    roarLp.Q.value = 0.75;
+    roarGain = ctx.createGain();
+    roarGain.gain.value = 0.1;
+    noiseSrc.connect(roarHp);
+    roarHp.connect(roarLp);
+    roarLp.connect(roarGain);
+    roarGain.connect(thrustGain);
+
+    thrustSub = ctx.createOscillator();
+    thrustSub.type = "sine";
+    thrustSub.frequency.value = 28;
+    thrustSubGain = ctx.createGain();
+    thrustSubGain.gain.value = 0.022;
+    thrustSub.connect(thrustSubGain);
+    thrustSubGain.connect(thrustGain);
+    thrustSub.start();
+
+    crackleSrc = startLoop(ctx, makeEngineCrackleBuffer(ctx, 3.4));
+    crackleFilter = ctx.createBiquadFilter();
+    crackleFilter.type = "bandpass";
+    crackleFilter.frequency.value = 240;
+    crackleFilter.Q.value = 0.55;
+    crackleDull = ctx.createBiquadFilter();
+    crackleDull.type = "lowpass";
+    crackleDull.frequency.value = 520;
+    crackleDull.Q.value = 0.5;
+    crackleGain = ctx.createGain();
+    crackleGain.gain.value = 0.04;
+    crackleSrc.connect(crackleFilter);
+    crackleFilter.connect(crackleDull);
+    crackleDull.connect(crackleGain);
+    crackleGain.connect(thrustGain);
+
     noiseSrc.start();
 
     whiteBuf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 1.2), ctx.sampleRate);
@@ -275,11 +372,22 @@ export function createAudio(): AudioApi {
       }
     },
     setThrust(on, intensity) {
-      if (!ctx || !thrustGain || !thrustFilter) return;
+      if (!ctx || !thrustGain || !rumbleLp || !roarLp || !crackleFilter || !thrustSub) return;
+      if (!rumbleGain || !roarGain || !thrustSubGain || !crackleGain) return;
       thrustOn = on;
-      const g = on ? 0.045 + intensity * 0.06 : 0;
-      thrustGain.gain.setTargetAtTime(g, ctx.currentTime, 0.05);
-      thrustFilter.frequency.setTargetAtTime(on ? 380 + intensity * 420 : 220, ctx.currentTime, 0.08);
+      const t = ctx.currentTime;
+      const u = Math.max(0, Math.min(1, intensity));
+      thrustGain.gain.setTargetAtTime(on ? 0.72 + u * 0.28 : 0, t, 0.05);
+      if (on) {
+        rumbleLp.frequency.setTargetAtTime(68 + u * 42, t, 0.1);
+        rumbleGain.gain.setTargetAtTime(0.16 + u * 0.06, t, 0.08);
+        roarLp.frequency.setTargetAtTime(180 + u * 90, t, 0.1);
+        roarGain.gain.setTargetAtTime(0.08 + u * 0.055, t, 0.08);
+        thrustSub.frequency.setTargetAtTime(26 + u * 6, t, 0.12);
+        thrustSubGain.gain.setTargetAtTime(0.02 + u * 0.014, t, 0.1);
+        crackleFilter.frequency.setTargetAtTime(210 + u * 80, t, 0.12);
+        crackleGain.gain.setTargetAtTime(0.045 + u * 0.05, t, 0.1);
+      }
       void thrustOn;
     },
     setAtmo(drag) {
@@ -602,11 +710,13 @@ export function createAudio(): AudioApi {
         pinkSrc?.stop();
         pebbleSrc?.stop();
         spraySrc?.stop();
+        crackleSrc?.stop();
       } catch {
         /* ignore */
       }
       try {
         warpSub?.stop();
+        thrustSub?.stop();
       } catch {
         /* ignore */
       }

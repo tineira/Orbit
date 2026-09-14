@@ -48,6 +48,7 @@ import {
   pickLostCopy,
   WARP_AIM_DEG,
   RETRO_FORCE,
+  SHIP_FUEL_CAPACITY,
   SHIP_HULL,
   SHIP_MASS,
   STEP,
@@ -80,6 +81,7 @@ import {
   transitArriveU,
   WARP_FLIGHT_RUSH,
 } from "./world";
+import { armedEngine, burnFuel, refillFuel } from "./fuel";
 
 export type Sim = {
   ship: Ship;
@@ -253,6 +255,8 @@ function freshShip(): Ship {
     vy: start.vy,
     yaw: start.yaw,
     mass: SHIP_MASS,
+    fuel: SHIP_FUEL_CAPACITY,
+    fuelCapacity: SHIP_FUEL_CAPACITY,
     thrusting: false,
     reverse: false,
   };
@@ -989,12 +993,12 @@ function stepLockedLagrange(
     return false;
   }
   const ship = sim.ship;
-  ship.thrusting = controls.forward || controls.aimThrust;
-  ship.reverse = controls.reverse && !ship.thrusting;
-  if (ship.thrusting || ship.reverse) {
+  if (armedEngine(ship, controls)) {
     breakLagrangeLock(sim);
     return false;
   }
+  ship.thrusting = false;
+  ship.reverse = false;
   if (atmoDrag(sim) > ORBIT_DRAG_BREAK) {
     dumpCurrentLock(sim, ORBIT_DRAG_HINT);
     return false;
@@ -1351,6 +1355,7 @@ function landOnHome(sim: Sim) {
   if (!home) return;
   sim.landedId = home.id;
   sim.landedAngle = 0;
+  refillFuel(sim.ship);
   sim.ship.thrusting = false;
   sim.ship.reverse = false;
   stickToPlanet(sim, home);
@@ -1729,12 +1734,12 @@ function stepLockedOrbit(
     return false;
   }
   const ship = sim.ship;
-  ship.thrusting = controls.forward || controls.aimThrust;
-  ship.reverse = controls.reverse && !ship.thrusting;
-  if (ship.thrusting || ship.reverse) {
+  if (armedEngine(ship, controls)) {
     breakOrbitLock(sim);
     return false;
   }
+  ship.thrusting = false;
+  ship.reverse = false;
   if (atmoDrag(sim) > ORBIT_DRAG_BREAK) {
     dumpCurrentLock(sim, ORBIT_DRAG_HINT);
     return false;
@@ -1892,8 +1897,9 @@ export function stepSim(
   }
 
   const f = forwardOf(ship.yaw);
-  ship.thrusting = controls.forward || controls.aimThrust;
-  ship.reverse = controls.reverse && !ship.thrusting;
+  const engine = armedEngine(ship, controls);
+  ship.thrusting = engine === "main";
+  ship.reverse = engine === "retro";
 
   const {
     ax: gx,
@@ -1906,11 +1912,13 @@ export function stepSim(
   let tx = 0;
   let ty = 0;
   if (ship.thrusting) {
+    burnFuel(ship, dt, THRUST_FORCE);
     const a = THRUST_FORCE / ship.mass;
     tx += f.x * a;
     ty += f.y * a;
     emitExhaust(sim, f, 1);
   } else if (ship.reverse) {
+    burnFuel(ship, dt, RETRO_FORCE);
     const a = RETRO_FORCE / ship.mass;
     tx -= f.x * a;
     ty -= f.y * a;
@@ -2263,6 +2271,7 @@ function collidePlanets(sim: Sim) {
       sim.lagrangeDwell = 0;
       s.vx = p.vx;
       s.vy = p.vy;
+      refillFuel(s);
       faceRadial(sim);
       sim.camera.trauma = Math.min(1, sim.camera.trauma + 0.18);
       return;

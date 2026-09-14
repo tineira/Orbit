@@ -6,6 +6,7 @@ import {
   isGhostBody,
   lockedNearby,
   playFlagsFromSearch,
+  devToolsFromSearch,
   debugWarpDir,
   pickWarpArrival,
   SHIP_HULL,
@@ -68,6 +69,16 @@ test("play flags parse warp speed and target lock from the query", () => {
   assert.equal(playFlagsFromSearch("?warp=1300&target=on").target, true);
   assert.equal(playFlagsFromSearch("?warp=1450&target=off").target, false);
   assert.equal(playFlagsFromSearch("?warp=nope").warp, undefined);
+});
+
+test("dev tools stay off unless ?dev is set", () => {
+  assert.equal(devToolsFromSearch(""), false);
+  assert.equal(devToolsFromSearch("?twins=on"), false);
+  assert.equal(devToolsFromSearch("?dev"), true);
+  assert.equal(devToolsFromSearch("?dev=1"), true);
+  assert.equal(devToolsFromSearch("?dev=on"), true);
+  assert.equal(devToolsFromSearch("?dev=0"), false);
+  assert.equal(devToolsFromSearch("?dev=off"), false);
 });
 
 test("debug warp dir locks a nearby chart or misses them", () => {
