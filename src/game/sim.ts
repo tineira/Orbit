@@ -86,7 +86,9 @@ import {
   applyLoadout,
   burnFuel,
   engineForce,
+  beginPadRefill,
   fillGrade,
+  pumpPadRefill,
   sipField,
   DEFAULT_ENGINE_KIND,
   DEFAULT_FUEL_KIND,
@@ -1963,6 +1965,7 @@ export function stepSim(
       stickToPlanet(sim, p);
       faceRadial(sim);
       ship.thrusting = false;
+      pumpPadRefill(ship, dt);
       sipWell(sim, dt);
     }
     sim.warpCharge = 0;
@@ -2391,7 +2394,7 @@ function collidePlanets(sim: Sim) {
       sim.lagrangeDwell = 0;
       s.vx = p.vx;
       s.vy = p.vy;
-      fillGrade(s, DEFAULT_FUEL_KIND);
+      beginPadRefill(s);
       faceRadial(sim);
       sim.camera.trauma = Math.min(1, sim.camera.trauma + 0.18);
       return;

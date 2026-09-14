@@ -13,6 +13,7 @@ const INITIAL: HudSnapshot = {
   fuel: SHIP_FUEL_CAPACITY,
   fuelCapacity: SHIP_FUEL_CAPACITY,
   fuelKind: "ch4",
+  refueling: false,
   engineKind: "v1",
   tankKind: "fuel",
   engineIsp: 1,

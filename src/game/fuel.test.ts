@@ -12,6 +12,9 @@ import {
   fillGrade,
   fuelGrade,
   fuelMass,
+  beginPadRefill,
+  PAD_REFILL_RATE,
+  pumpPadRefill,
   refillFuel,
   sipField,
   tankGrade,
@@ -29,6 +32,7 @@ import {
 } from "./fuel.ts";
 import {
   CH4_FULL_MASS,
+  createSystem,
   FUEL_BURN_MAIN,
   FUEL_MAIN_SECONDS,
   RETRO_FORCE,
@@ -37,6 +41,7 @@ import {
   STEP,
   THRUST_FORCE,
 } from "./world.ts";
+import { createSim, stepSim } from "./sim.ts";
 import type { FuelKind } from "./types.ts";
 
 const ship = (fuel = SHIP_FUEL_CAPACITY, fuelKind: FuelKind = DEFAULT_FUEL_KIND) => {
@@ -135,6 +140,44 @@ test("landing refill restores current tank volume", () => {
   refillFuel(s);
   assert.equal(s.fuel, 200);
   assert.equal(s.fuelKind, "ch4");
+});
+
+test("the pad pumps CH4 at 3 L/s and clamps at the tank", () => {
+  const s = ship(10);
+  pumpPadRefill(s, 1);
+  assert.ok(Math.abs(s.fuel - (10 + PAD_REFILL_RATE)) < 1e-9);
+  pumpPadRefill(s, 100);
+  assert.equal(s.fuel, s.fuelCapacity);
+  assert.equal(PAD_REFILL_RATE, 3);
+});
+
+test("the pad dumps other grades and loads methane from empty", () => {
+  const s = ship(80, "he3");
+  beginPadRefill(s);
+  assert.equal(s.fuelKind, "ch4");
+  assert.equal(s.fuel, 0);
+  pumpPadRefill(s, 2);
+  assert.ok(Math.abs(s.fuel - 2 * PAD_REFILL_RATE) < 1e-9);
+  const ch4 = ship(40);
+  beginPadRefill(ch4);
+  assert.equal(ch4.fuel, 40);
+});
+
+test("a landing pumps CH4 over time instead of topping off", () => {
+  createSystem(1);
+  const sim = createSim();
+  sim.phase = "landed";
+  sim.ship.fuel = 10;
+  beginPadRefill(sim.ship);
+  stepSim(sim, 1, {
+    steer: 0,
+    forward: false,
+    reverse: false,
+    aimYaw: null,
+    aimThrust: false,
+  });
+  assert.ok(Math.abs(sim.ship.fuel - (10 + PAD_REFILL_RATE)) < 1e-6);
+  assert.ok(sim.ship.fuel < sim.ship.fuelCapacity);
 });
 
 test("fillGrade swaps the kind and tops the tank", () => {

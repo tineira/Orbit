@@ -146,6 +146,7 @@ const CREATING_HUD: HudSnapshot = {
   fuel: SHIP_FUEL_CAPACITY,
   fuelCapacity: SHIP_FUEL_CAPACITY,
   fuelKind: "ch4",
+  refueling: false,
   engineKind: "v1",
   tankKind: "fuel",
   engineIsp: 1,
@@ -272,6 +273,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       fuel: s.fuel,
       fuelCapacity: s.fuelCapacity,
       fuelKind: s.fuelKind,
+      refueling:
+        sim.phase === "landed" && s.fuelKind === "ch4" && s.fuel < s.fuelCapacity - 1e-6,
       engineKind: s.engineKind,
       tankKind: s.tankKind,
       engineIsp: s.engineIsp,

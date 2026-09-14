@@ -229,6 +229,7 @@ export type HudSnapshot = {
   fuel: number;
   fuelCapacity: number;
   fuelKind: FuelKind;
+  refueling: boolean;
   engineKind: EngineKind;
   tankKind: TankKind;
   engineIsp: number;

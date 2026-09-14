@@ -175,6 +175,7 @@ export function Overlay({
                   fuel={hud.fuel}
                   capacity={hud.fuelCapacity}
                   kind={hud.fuelKind}
+                  refueling={hud.refueling}
                   engineKind={hud.engineKind}
                   tankKind={hud.tankKind}
                   engineIsp={hud.engineIsp}
@@ -1045,6 +1046,7 @@ function FuelPanel({
   fuel,
   capacity,
   kind,
+  refueling,
   engineKind,
   tankKind,
   engineIsp,
@@ -1057,6 +1059,7 @@ function FuelPanel({
   fuel: number;
   capacity: number;
   kind: FuelKind;
+  refueling: boolean;
   engineKind: EngineKind;
   tankKind: TankKind;
   engineIsp: number;
@@ -1130,6 +1133,9 @@ function FuelPanel({
           {shown} / {cap} L
         </span>
       </div>
+      {refueling ? (
+        <p className="mt-0.5 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">Refuel</p>
+      ) : null}
       <p
         className="mt-0.5 font-mono text-[10px] tabular-nums text-muted"
         aria-label={`Specific impulse ${fmtStat(isp)}, thrust ${fmtStat(thrust)}`}

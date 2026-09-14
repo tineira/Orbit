@@ -155,6 +155,9 @@ export function syncFuelMass(ship: Pick<Ship, "fuel" | "fuelKind" | "dryMass" | 
   ship.mass = ship.dryMass + fuelMass(ship);
 }
 
+/** Pad pump, litres per second. A starter CH4 tank takes ~33 s to top off. */
+export const PAD_REFILL_RATE = 3;
+
 export function refillFuel(ship: Fueled) {
   ship.fuel = ship.fuelCapacity;
   syncFuelMass(ship);
@@ -163,6 +166,22 @@ export function refillFuel(ship: Fueled) {
 export function fillGrade(ship: Fueled, kind: FuelKind) {
   ship.fuelKind = kind;
   ship.fuel = ship.fuelCapacity;
+  syncFuelMass(ship);
+}
+
+/** Pads load methane. Other grades dump; leftover CH4 keeps pumping from here. */
+export function beginPadRefill(ship: Fueled) {
+  if (ship.fuelKind !== DEFAULT_FUEL_KIND) {
+    ship.fuelKind = DEFAULT_FUEL_KIND;
+    ship.fuel = 0;
+  }
+  syncFuelMass(ship);
+}
+
+export function pumpPadRefill(ship: Fueled, dt: number) {
+  if (ship.fuelKind !== DEFAULT_FUEL_KIND) return;
+  if (ship.fuel >= ship.fuelCapacity) return;
+  ship.fuel = Math.min(ship.fuelCapacity, ship.fuel + PAD_REFILL_RATE * dt);
   syncFuelMass(ship);
 }
 
