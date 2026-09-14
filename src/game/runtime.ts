@@ -22,6 +22,7 @@ import {
   type Sim,
   type SimViewPrefs,
 } from "./sim";
+import { cycleEngine as stepEngine, cycleFuelKind, cycleTank as stepTank } from "./fuel";
 import type { GameUiHandler, HudSnapshot } from "./types";
 import {
   createSystem,
@@ -48,6 +49,9 @@ export type GameHandle = {
   toggleLagrange: () => void;
   toggleGravityGrid: () => void;
   toggleVerbose: () => void;
+  cycleFuel: (dir: number) => void;
+  cycleEngine: (dir: number) => void;
+  cycleTank: (dir: number) => void;
   destroy: () => void;
 };
 
@@ -135,6 +139,8 @@ const CREATING_HUD: HudSnapshot = {
   fuel: SHIP_FUEL_CAPACITY,
   fuelCapacity: SHIP_FUEL_CAPACITY,
   fuelKind: "ch4",
+  engineKind: "v1",
+  tankKind: "fuel",
   engineIsp: 1,
   engineThrust: 1,
   nearestId: null,
@@ -254,6 +260,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       fuel: s.fuel,
       fuelCapacity: s.fuelCapacity,
       fuelKind: s.fuelKind,
+      engineKind: s.engineKind,
+      tankKind: s.tankKind,
       engineIsp: s.engineIsp,
       engineThrust: s.engineThrust,
       nearestId: sim.nearest?.id ?? null,
@@ -768,6 +776,21 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     toggleVerbose() {
       if (!sim || !devTools) return;
       sim.showVerbose = !sim.showVerbose;
+      publish();
+    },
+    cycleFuel(dir) {
+      if (!sim || !devTools) return;
+      cycleFuelKind(sim.ship, dir);
+      publish();
+    },
+    cycleEngine(dir) {
+      if (!sim || !devTools) return;
+      stepEngine(sim.ship, dir);
+      publish();
+    },
+    cycleTank(dir) {
+      if (!sim || !devTools) return;
+      stepTank(sim.ship, dir);
       publish();
     },
     destroy() {

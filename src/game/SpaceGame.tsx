@@ -13,6 +13,8 @@ const INITIAL: HudSnapshot = {
   fuel: SHIP_FUEL_CAPACITY,
   fuelCapacity: SHIP_FUEL_CAPACITY,
   fuelKind: "ch4",
+  engineKind: "v1",
+  tankKind: "fuel",
   engineIsp: 1,
   engineThrust: 1,
   nearestId: null,
@@ -84,6 +86,15 @@ export function SpaceGame() {
   const onAtmo = useCallback((dir: number) => {
     gameRef.current?.adjustAtmo(dir);
   }, []);
+  const onCycleFuel = useCallback((dir: number) => {
+    gameRef.current?.cycleFuel(dir);
+  }, []);
+  const onCycleEngine = useCallback((dir: number) => {
+    gameRef.current?.cycleEngine(dir);
+  }, []);
+  const onCycleTank = useCallback((dir: number) => {
+    gameRef.current?.cycleTank(dir);
+  }, []);
   const onToggleOrbitShell = useCallback(() => {
     gameRef.current?.toggleOrbitShell();
   }, []);
@@ -114,6 +125,9 @@ export function SpaceGame() {
         onMute={onMute}
         onGravity={onGravity}
         onAtmo={onAtmo}
+        onCycleFuel={onCycleFuel}
+        onCycleEngine={onCycleEngine}
+        onCycleTank={onCycleTank}
         onToggleOrbitShell={onToggleOrbitShell}
         onToggleLagrange={onToggleLagrange}
         onToggleGravityGrid={onToggleGravityGrid}

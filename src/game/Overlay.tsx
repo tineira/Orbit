@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Minus, Plus, Volume2, VolumeX } from "lucide-react";
-import type { FuelKind, HudSnapshot, VerboseDiag } from "./types";
-import { fuelGrade } from "./fuel";
+import type { EngineKind, FuelKind, HudSnapshot, TankKind, VerboseDiag } from "./types";
+import { engineGrade, fuelGrade, tankGrade } from "./fuel";
 import { ATMO_STEPS, GRAVITY_STEPS, getPlanets, isGhostBody, planetById } from "./world";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +21,9 @@ type Props = {
   onMute: () => void;
   onGravity: (dir: number) => void;
   onAtmo: (dir: number) => void;
+  onCycleFuel: (dir: number) => void;
+  onCycleEngine: (dir: number) => void;
+  onCycleTank: (dir: number) => void;
   onToggleOrbitShell: () => void;
   onToggleLagrange: () => void;
   onToggleGravityGrid: () => void;
@@ -40,6 +43,9 @@ export function Overlay({
   onMute,
   onGravity,
   onAtmo,
+  onCycleFuel,
+  onCycleEngine,
+  onCycleTank,
   onToggleOrbitShell,
   onToggleLagrange,
   onToggleGravityGrid,
@@ -153,8 +159,14 @@ export function Overlay({
                   fuel={hud.fuel}
                   capacity={hud.fuelCapacity}
                   kind={hud.fuelKind}
+                  engineKind={hud.engineKind}
+                  tankKind={hud.tankKind}
                   engineIsp={hud.engineIsp}
                   engineThrust={hud.engineThrust}
+                  dev={dev}
+                  onCycleFuel={onCycleFuel}
+                  onCycleEngine={onCycleEngine}
+                  onCycleTank={onCycleTank}
                 />
                 {dev && hud.physicsMenu ? (
                   <PhysicsKnobs
@@ -873,20 +885,75 @@ function fmtStat(n: number) {
   return n.toFixed(2);
 }
 
+function MiniStep({
+  label,
+  onDown,
+  onUp,
+}: {
+  label: string;
+  onDown: () => void;
+  onUp: () => void;
+}) {
+  const btn =
+    "pointer-events-auto size-7 grid place-items-center rounded-md border border-border text-muted hover:text-fg hover:border-border-strong transition-colors duration-[var(--motion-quick)] ease-[var(--ease-out)]";
+  return (
+    <span className="inline-flex items-center gap-0.5" data-ui>
+      <button
+        type="button"
+        data-ui
+        aria-label={`Previous ${label}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDown();
+        }}
+        className={btn}
+      >
+        <Minus className="size-3" strokeWidth={1.75} />
+      </button>
+      <button
+        type="button"
+        data-ui
+        aria-label={`Next ${label}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onUp();
+        }}
+        className={btn}
+      >
+        <Plus className="size-3" strokeWidth={1.75} />
+      </button>
+    </span>
+  );
+}
+
 function FuelPanel({
   fuel,
   capacity,
   kind,
+  engineKind,
+  tankKind,
   engineIsp,
   engineThrust,
+  dev,
+  onCycleFuel,
+  onCycleEngine,
+  onCycleTank,
 }: {
   fuel: number;
   capacity: number;
   kind: FuelKind;
+  engineKind: EngineKind;
+  tankKind: TankKind;
   engineIsp: number;
   engineThrust: number;
+  dev: boolean;
+  onCycleFuel: (dir: number) => void;
+  onCycleEngine: (dir: number) => void;
+  onCycleTank: (dir: number) => void;
 }) {
   const grade = fuelGrade(kind);
+  const engine = engineGrade(engineKind);
+  const tank = tankGrade(tankKind);
   const max = Math.max(0, capacity);
   const t = max > 0 ? Math.max(0, Math.min(1, fuel / max)) : 0;
   const filled = Math.round(t * FUEL_PIPS);
@@ -899,14 +966,37 @@ function FuelPanel({
   const cap = Math.round(max);
   const isp = grade.isp * engineIsp;
   const thrust = grade.thrust * engineThrust;
-  const reading = `${grade.hud} ${shown} / ${cap}`;
+  const reading = `${grade.hud} ${shown} / ${cap} L`;
   return (
     <div className="text-right">
-      <p className="font-mono text-xs tracking-[0.18em] uppercase text-muted">Fuel</p>
-      <p className="mt-1 font-mono text-sm tabular-nums leading-tight">
-        <span className="text-fg">{grade.hud}</span>
-        <span className="ml-2 text-muted">{grade.name}</span>
-      </p>
+      <p className="font-mono text-xs tracking-[0.18em] uppercase text-muted">Engine</p>
+      <div className="mt-1 flex items-center justify-end gap-2">
+        {dev ? (
+          <MiniStep label="engine" onDown={() => onCycleEngine(-1)} onUp={() => onCycleEngine(1)} />
+        ) : null}
+        <p className="font-mono text-sm tabular-nums text-fg">{engine.hud}</p>
+      </div>
+      <p className="mt-3 font-mono text-xs tracking-[0.18em] uppercase text-muted">Fuel</p>
+      <div className="mt-1 flex items-center justify-end gap-2">
+        {dev ? (
+          <MiniStep label="fuel" onDown={() => onCycleFuel(-1)} onUp={() => onCycleFuel(1)} />
+        ) : null}
+        <p className="font-mono text-sm tabular-nums leading-tight">
+          <span className="text-fg">{grade.hud}</span>
+          {" "}
+          <span className="text-muted">{grade.name}</span>
+        </p>
+      </div>
+      <div className="mt-3 flex items-center justify-end gap-2">
+        {dev ? (
+          <MiniStep label="tank" onDown={() => onCycleTank(-1)} onUp={() => onCycleTank(1)} />
+        ) : null}
+        <p className="font-mono text-sm tabular-nums leading-tight">
+          <span className="text-fg">{tank.hud}</span>
+          {" "}
+          <span className="text-muted">{tank.volume} L</span>
+        </p>
+      </div>
       <div
         className="mt-1.5 flex items-center justify-end gap-2"
         role="meter"
@@ -922,11 +1012,15 @@ function FuelPanel({
           ))}
         </span>
         <span className={cn("font-mono text-[10px] tabular-nums", countColor)}>
-          {shown} / {cap}
+          {shown} / {cap} L
         </span>
       </div>
-      <p className="mt-0.5 font-mono text-[10px] tabular-nums text-muted">
-        Isp {fmtStat(isp)}
+      <p
+        className="mt-0.5 font-mono text-[10px] tabular-nums text-muted"
+        aria-label={`Specific impulse ${fmtStat(isp)}, thrust ${fmtStat(thrust)}`}
+      >
+        I<sub className="relative -bottom-px text-[0.7em] tracking-normal">sp</sub>{" "}
+        {fmtStat(isp)}
         <span className="mx-1.5 text-subtle">·</span>
         T {fmtStat(thrust)}
       </p>

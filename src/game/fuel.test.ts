@@ -1,21 +1,31 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  applyLoadout,
   armedEngine,
   burnFuel,
+  cycleEngine,
+  cycleFuelKind,
+  cycleTank,
   engineForce,
+  engineGrade,
   fillGrade,
   fuelGrade,
   fuelMass,
   refillFuel,
   sipField,
-  syncFuelMass,
-  CH4_FULL_MASS as _unused,
+  tankGrade,
+  DEFAULT_ENGINE_KIND,
   DEFAULT_ENGINE_ISP,
   DEFAULT_ENGINE_THRUST,
   DEFAULT_FUEL_KIND,
+  DEFAULT_TANK_KIND,
+  ENGINE_ORDER,
   FUEL_GRADES,
+  FUEL_KIND_ORDER,
+  HULL_MASS,
   HUSH_WELL_FLOOR,
+  TANK_ORDER,
 } from "./fuel.ts";
 import {
   CH4_FULL_MASS,
@@ -29,23 +39,21 @@ import {
 } from "./world.ts";
 import type { FuelKind } from "./types.ts";
 
-void _unused;
-
-const ship = (
-  fuel = SHIP_FUEL_CAPACITY,
-  fuelCapacity = SHIP_FUEL_CAPACITY,
-  fuelKind: FuelKind = DEFAULT_FUEL_KIND,
-) => {
+const ship = (fuel = SHIP_FUEL_CAPACITY, fuelKind: FuelKind = DEFAULT_FUEL_KIND) => {
   const s = {
     fuel,
-    fuelCapacity,
+    fuelCapacity: SHIP_FUEL_CAPACITY,
     fuelKind,
+    engineKind: DEFAULT_ENGINE_KIND,
+    tankKind: DEFAULT_TANK_KIND,
     dryMass: SHIP_MASS,
     mass: SHIP_MASS,
     engineIsp: DEFAULT_ENGINE_ISP,
     engineThrust: DEFAULT_ENGINE_THRUST,
   };
-  syncFuelMass(s);
+  applyLoadout(s);
+  s.fuel = Math.min(fuel, s.fuelCapacity);
+  applyLoadout(s);
   return s;
 };
 const idle = { forward: false, reverse: false, aimThrust: false };
@@ -68,6 +76,17 @@ test("empty tank never arms an engine", () => {
   assert.equal(armedEngine(dry, { ...idle, aimThrust: true }), null);
 });
 
+test("starter loadout is V1 + Fuel Tank 100 L and dry mass 1", () => {
+  const s = ship();
+  assert.equal(s.engineKind, "v1");
+  assert.equal(engineGrade(s.engineKind).hud, "V1");
+  assert.equal(s.tankKind, "fuel");
+  assert.equal(tankGrade(s.tankKind).hud, "Fuel Tank");
+  assert.equal(s.fuelCapacity, 100);
+  assert.ok(Math.abs(s.dryMass - SHIP_MASS) < 1e-9);
+  assert.ok(Math.abs(HULL_MASS + 0.15 + 0.1 - SHIP_MASS) < 1e-9);
+});
+
 test("CH4 drains a starting tank in FUEL_MAIN_SECONDS", () => {
   const s = ship();
   const force = engineForce(s, "main");
@@ -81,7 +100,7 @@ test("CH4 drains a starting tank in FUEL_MAIN_SECONDS", () => {
 test("volume burn follows thrust / (isp × density)", () => {
   for (const kind of Object.keys(FUEL_GRADES) as FuelKind[]) {
     const grade = fuelGrade(kind);
-    const s = ship(SHIP_FUEL_CAPACITY, SHIP_FUEL_CAPACITY, kind);
+    const s = ship(SHIP_FUEL_CAPACITY, kind);
     burnFuel(s, FUEL_MAIN_SECONDS, engineForce(s, "main"));
     const usedFrac = grade.thrust / (grade.isp * grade.density);
     const expected = Math.max(0, SHIP_FUEL_CAPACITY * (1 - usedFrac));
@@ -108,22 +127,30 @@ test("burn clamps at empty", () => {
 });
 
 test("landing refill restores current tank volume", () => {
-  const s = ship(18, 200);
+  const s = ship(18);
+  s.tankKind = "cryo";
+  applyLoadout(s);
+  s.fuel = 18;
+  applyLoadout(s);
   refillFuel(s);
   assert.equal(s.fuel, 200);
   assert.equal(s.fuelKind, "ch4");
 });
 
 test("fillGrade swaps the kind and tops the tank", () => {
-  const s = ship(10, 100, "he3");
+  const s = ship(10, "he3");
   fillGrade(s, "ch4");
   assert.equal(s.fuelKind, "ch4");
   assert.equal(s.fuel, 100);
 });
 
 test("a bigger tank holds more volume at the same burn", () => {
-  const small = ship(100, 100);
-  const big = ship(200, 200);
+  const small = ship();
+  const big = ship();
+  big.tankKind = "cryo";
+  applyLoadout(big);
+  big.fuel = big.fuelCapacity;
+  applyLoadout(big);
   burnFuel(small, FUEL_MAIN_SECONDS, engineForce(small, "main"));
   burnFuel(big, FUEL_MAIN_SECONDS, engineForce(big, "main"));
   assert.equal(small.fuel, 0);
@@ -136,7 +163,7 @@ test("wet mass tracks fuel volume and density", () => {
   assert.ok(Math.abs(fuelMass(full) - CH4_FULL_MASS) < 1e-9);
   const empty = ship(0);
   assert.ok(Math.abs(empty.mass - SHIP_MASS) < 1e-9);
-  const hydro = ship(SHIP_FUEL_CAPACITY, SHIP_FUEL_CAPACITY, "h2");
+  const hydro = ship(SHIP_FUEL_CAPACITY, "h2");
   assert.ok(fuelMass(hydro) < fuelMass(full));
   assert.ok(hydro.mass < full.mass);
 });
@@ -153,16 +180,35 @@ test("engine Isp upgrade drains the tank slower", () => {
 });
 
 test("HUSH does not sip in deep space and does sip in a well", () => {
-  const deep = ship(100, 100, "hush");
+  const deep = ship(100, "hush");
   sipField(deep, 1, 0);
   sipField(deep, 1, HUSH_WELL_FLOOR);
   assert.equal(deep.fuel, 100);
-  const well = ship(100, 100, "hush");
+  const well = ship(100, "hush");
   sipField(well, 1, 15);
   assert.ok(well.fuel < 100);
-  const methane = ship(100, 100, "ch4");
+  const methane = ship(100, "ch4");
   sipField(methane, 1, 15);
   assert.equal(methane.fuel, 100);
+});
+
+test("dev cycles wrap fuel, engine, and tank", () => {
+  const s = ship();
+  cycleFuelKind(s, 1);
+  assert.equal(s.fuelKind, FUEL_KIND_ORDER[1]);
+  cycleFuelKind(s, -1);
+  assert.equal(s.fuelKind, "ch4");
+  cycleEngine(s, 1);
+  assert.equal(s.engineKind, ENGINE_ORDER[1]);
+  assert.equal(s.engineIsp, engineGrade("v2").isp);
+  cycleEngine(s, -1);
+  assert.equal(s.engineKind, "v1");
+  cycleTank(s, 1);
+  assert.equal(s.tankKind, TANK_ORDER[1]);
+  assert.equal(s.fuelCapacity, tankGrade("long").volume);
+  cycleTank(s, -1);
+  assert.equal(s.tankKind, "fuel");
+  assert.equal(s.fuelCapacity, 100);
 });
 
 test("HUD labels and names", () => {

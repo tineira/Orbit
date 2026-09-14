@@ -81,14 +81,14 @@ import {
 } from "./world";
 import {
   armedEngine,
+  applyLoadout,
   burnFuel,
   engineForce,
   fillGrade,
   sipField,
-  syncFuelMass,
-  DEFAULT_ENGINE_ISP,
-  DEFAULT_ENGINE_THRUST,
+  DEFAULT_ENGINE_KIND,
   DEFAULT_FUEL_KIND,
+  DEFAULT_TANK_KIND,
 } from "./fuel";
 
 export type Sim = {
@@ -267,12 +267,14 @@ function freshShip(): Ship {
     fuel: SHIP_FUEL_CAPACITY,
     fuelCapacity: SHIP_FUEL_CAPACITY,
     fuelKind: DEFAULT_FUEL_KIND,
-    engineIsp: DEFAULT_ENGINE_ISP,
-    engineThrust: DEFAULT_ENGINE_THRUST,
+    engineKind: DEFAULT_ENGINE_KIND,
+    tankKind: DEFAULT_TANK_KIND,
+    engineIsp: 1,
+    engineThrust: 1,
     thrusting: false,
     reverse: false,
   };
-  syncFuelMass(ship);
+  applyLoadout(ship);
   return ship;
 }
 
