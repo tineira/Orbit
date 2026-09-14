@@ -5,16 +5,19 @@ export const G = 1;
 /** Default well strength. 1× on the gravity knob is this multiple of the raw G M / r². */
 export const GRAVITY_BASE = 4;
 
+/** Dry hull mass. Wet mass is dry + fuel (volume × density). */
 export const SHIP_MASS = 1;
 export const SHIP_HULL = 9;
 export const THRUST_FORCE = 22;
 export const RETRO_FORCE = 10;
-/** Starting tank size in fuel units. A bigger tank later is more units; engine burn stays the same. */
+/** Starting tank volume. Fuel is stored by volume; density decides how much mass fits. */
 export const SHIP_FUEL_CAPACITY = 100;
-/** Seconds of main burn for the starting tank. Retro drains by thrust ratio. */
+/** Seconds to empty a full CH4 tank at 1× thrust / 1× Isp. */
 export const FUEL_MAIN_SECONDS = 90;
-/** Units burned per second at full main thrust. Independent of tank size. */
+/** Volume burned per second for that CH4 baseline. */
 export const FUEL_BURN_MAIN = SHIP_FUEL_CAPACITY / FUEL_MAIN_SECONDS;
+/** Mass of a full starting tank of CH4. Empty vs full should feel different, not break T/W. */
+export const CH4_FULL_MASS = 0.35;
 export const TURN_RATE = 2.85;
 export const LAND_SPEED = 20;
 export const STEP = 1 / 60;
@@ -70,6 +73,8 @@ export const WARP_STREAK_SPEED_CAP = 2400;
 export const WARP_FLIGHT_STREAK = 12.3;
 /** Extra starfield rush at jump, same old-1050 feel (mul = 1 + spool × this). */
 export const WARP_FLIGHT_RUSH = 0.95;
+/** Warp loop once inside the tunnel. Spool still peaks at jump, then this. */
+export const WARP_TRANSIT_VOL = 0.1;
 export const WARP_TUNNEL_STREAK = 170;
 /** Launch ramp: flight look → full tunnel. Rapid, but long enough to read. */
 export const WARP_LAUNCH = 1.35;

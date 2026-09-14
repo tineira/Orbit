@@ -362,11 +362,8 @@ function rumbleFromSpeed(speed: number) {
 
 function warpRumbleStrength(sim: Sim) {
   if (sim.reducedMotion) return 0;
-  const peak = rumbleFromSpeed(WARP_RUMBLE_REF_SPEED);
-  if (sim.phase === "transit" && !sim.transitPunched) return peak;
-  if (sim.phase === "transit" && sim.transitPunched) {
-    return peak * transitArriveU(sim.transitAge, sim.reducedMotion);
-  }
+  // In-flight spool only. Transit is a smooth ride — no camera rumble.
+  if (sim.phase === "transit") return 0;
   const sp = Math.hypot(sim.ship.vx, sim.ship.vy);
   if (sp <= WARP_FX_SPEED) return 0;
   const t = Math.min(1, (sp - WARP_FX_SPEED) / (WARP_JUMP_SPEED - WARP_FX_SPEED));

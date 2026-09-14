@@ -47,13 +47,11 @@ import {
   debugWarpDir,
   pickLostCopy,
   WARP_AIM_DEG,
-  RETRO_FORCE,
   SHIP_FUEL_CAPACITY,
   SHIP_HULL,
   SHIP_MASS,
   STEP,
   TAKEOFF_SPEED,
-  THRUST_FORCE,
   TURN_RATE,
   WARP_BAR_SPEED,
   WARP_BOOM_TIMES,
@@ -81,7 +79,17 @@ import {
   transitArriveU,
   WARP_FLIGHT_RUSH,
 } from "./world";
-import { armedEngine, burnFuel, refillFuel } from "./fuel";
+import {
+  armedEngine,
+  burnFuel,
+  engineForce,
+  fillGrade,
+  sipField,
+  syncFuelMass,
+  DEFAULT_ENGINE_ISP,
+  DEFAULT_ENGINE_THRUST,
+  DEFAULT_FUEL_KIND,
+} from "./fuel";
 
 export type Sim = {
   ship: Ship;
@@ -248,18 +256,24 @@ export function createSim(): Sim {
 
 function freshShip(): Ship {
   const start = getStart();
-  return {
+  const ship: Ship = {
     x: start.x,
     y: start.y,
     vx: start.vx,
     vy: start.vy,
     yaw: start.yaw,
     mass: SHIP_MASS,
+    dryMass: SHIP_MASS,
     fuel: SHIP_FUEL_CAPACITY,
     fuelCapacity: SHIP_FUEL_CAPACITY,
+    fuelKind: DEFAULT_FUEL_KIND,
+    engineIsp: DEFAULT_ENGINE_ISP,
+    engineThrust: DEFAULT_ENGINE_THRUST,
     thrusting: false,
     reverse: false,
   };
+  syncFuelMass(ship);
+  return ship;
 }
 
 export type SimViewPrefs = {
@@ -394,6 +408,8 @@ export function enterWarp(sim: Sim, lost = false) {
   sim.nearest = null;
   sim.transitBoomed = false;
   sim.transitBoomN = 0;
+  sim.camera.trauma = 0;
+  sim.camera.shake = 0;
   if (lost) return;
   if (sim.reducedMotion) {
     punchWarp(sim, true);
@@ -481,7 +497,7 @@ function stepTransit(sim: Sim, dt: number) {
       sim.transitBoomN < WARP_LAUNCH_BOOMS.length &&
       nextAge >= WARP_LAUNCH_BOOMS[sim.transitBoomN]!
     ) {
-      pushWarpRing(sim, 0.4, "launch");
+      pushWarpRing(sim, 0, "launch");
       sim.transitBoomN += 1;
     }
   }
@@ -1017,6 +1033,7 @@ function stepLockedLagrange(
   sim.status = "lagrange";
   sim.orbitHint = lagrangeHint(pt, true);
   emitIonTrail(sim);
+  sipWell(sim, dt);
   return true;
 }
 
@@ -1355,7 +1372,7 @@ function landOnHome(sim: Sim) {
   if (!home) return;
   sim.landedId = home.id;
   sim.landedAngle = 0;
-  refillFuel(sim.ship);
+  fillGrade(sim.ship, DEFAULT_FUEL_KIND);
   sim.ship.thrusting = false;
   sim.ship.reverse = false;
   stickToPlanet(sim, home);
@@ -1761,7 +1778,13 @@ function stepLockedOrbit(
   sim.status = "orbit";
   sim.orbitHint = lockHint(p.name, k.e);
   emitIonTrail(sim);
+  sipWell(sim, dt);
   return true;
+}
+
+function sipWell(sim: Sim, dt: number) {
+  const g = gravityAt(sim.ship.x, sim.ship.y, sim.planets, sim.gravityScale);
+  sipField(sim.ship, dt, Math.hypot(g.ax, g.ay));
 }
 
 export function stepSim(
@@ -1847,6 +1870,7 @@ export function stepSim(
       stickToPlanet(sim, p);
       faceRadial(sim);
       ship.thrusting = false;
+      sipWell(sim, dt);
     }
     sim.warpCharge = 0;
     sim.warpApproach = 0;
@@ -1908,18 +1932,21 @@ export function stepSim(
     dist,
   } = gravityAt(ship.x, ship.y, sim.planets, sim.gravityScale);
   const drag = dragNear(ship.x, ship.y, ship.vx, ship.vy, sim.planets, sim.atmoScale);
+  sipField(ship, dt, Math.hypot(gx, gy));
 
   let tx = 0;
   let ty = 0;
   if (ship.thrusting) {
-    burnFuel(ship, dt, THRUST_FORCE);
-    const a = THRUST_FORCE / ship.mass;
+    const force = engineForce(ship, "main");
+    burnFuel(ship, dt, force);
+    const a = force / ship.mass;
     tx += f.x * a;
     ty += f.y * a;
     emitExhaust(sim, f, 1);
   } else if (ship.reverse) {
-    burnFuel(ship, dt, RETRO_FORCE);
-    const a = RETRO_FORCE / ship.mass;
+    const force = engineForce(ship, "retro");
+    burnFuel(ship, dt, force);
+    const a = force / ship.mass;
     tx -= f.x * a;
     ty -= f.y * a;
     emitExhaust(sim, { x: -f.x, y: -f.y }, 0.45);
@@ -2271,7 +2298,7 @@ function collidePlanets(sim: Sim) {
       sim.lagrangeDwell = 0;
       s.vx = p.vx;
       s.vy = p.vy;
-      refillFuel(s);
+      fillGrade(s, DEFAULT_FUEL_KIND);
       faceRadial(sim);
       sim.camera.trauma = Math.min(1, sim.camera.trauma + 0.18);
       return;
@@ -2338,9 +2365,9 @@ export function verboseDiag(sim: Sim): VerboseDiag {
   const accelG = Math.hypot(g.ax, g.ay);
   const accelDrag = Math.hypot(dragVec.ax, dragVec.ay);
   const accelThrust = ship.thrusting
-    ? THRUST_FORCE / ship.mass
+    ? engineForce(ship, "main") / ship.mass
     : ship.reverse
-      ? RETRO_FORCE / ship.mass
+      ? engineForce(ship, "retro") / ship.mass
       : 0;
 
   const info = host ? inspectKepler(host, ship, sim.gravityScale, sim.planets) : null;

@@ -405,8 +405,8 @@ export function createAudio(): AudioApi {
       const b2 = 0.5 + 0.5 * Math.sin(t * 41.7 + 1.3);
       const buffet = 1 - buffetAmt + buffetAmt * (0.35 + 0.65 * b1 * b2);
       const spray = Math.max(0, (u - 0.45) / 0.55);
-      atmoGain.gain.setTargetAtTime((0.027 + u * 0.066) * buffet, t, 0.06);
-      atmoSprayGain.gain.setTargetAtTime(spray * spray * 0.023 * buffet, t, 0.08);
+      atmoGain.gain.setTargetAtTime((0.03 + u * 0.05) * buffet, t, 0.06);
+      atmoSprayGain.gain.setTargetAtTime(spray * spray * 0.02 * buffet, t, 0.08);
       atmoHp.frequency.setTargetAtTime(320 - u * 140, t, 0.12);
       atmoLp.frequency.setTargetAtTime(1680 - u * 1080, t, 0.1);
       atmoSprayLp.frequency.setTargetAtTime(3200 - spray * 1400, t, 0.12);

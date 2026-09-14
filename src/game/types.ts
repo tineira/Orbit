@@ -31,6 +31,8 @@ export type Planet = {
   deny?: string;
 };
 
+export type FuelKind = "ch4" | "nh3" | "h2" | "ntr" | "d" | "he3" | "lumen" | "hush";
+
 export type Ship = {
   x: number;
   y: number;
@@ -38,8 +40,12 @@ export type Ship = {
   vy: number;
   yaw: number;
   mass: number;
+  dryMass: number;
   fuel: number;
   fuelCapacity: number;
+  fuelKind: FuelKind;
+  engineIsp: number;
+  engineThrust: number;
   thrusting: boolean;
   reverse: boolean;
 };
@@ -167,6 +173,9 @@ export type HudSnapshot = {
   mass: number;
   fuel: number;
   fuelCapacity: number;
+  fuelKind: FuelKind;
+  engineIsp: number;
+  engineThrust: number;
   nearestId: string | null;
   nearestName: string | null;
   altitude: number | null;

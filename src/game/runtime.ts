@@ -27,11 +27,13 @@ import {
   createSystem,
   devToolsFromSearch,
   getSystem,
+  SHIP_FUEL_CAPACITY,
   transitBeat,
   transitArriveU,
   warpSpool,
   WARP_LOST_FADE,
   WARP_LOST_FADE_REDUCED,
+  WARP_TRANSIT_VOL,
 } from "./world";
 
 export type GameHandle = {
@@ -130,7 +132,11 @@ const CREATING_HUD: HudSnapshot = {
   drag: 0,
   headingDeg: 0,
   mass: 1,
-  fuel: 1,
+  fuel: SHIP_FUEL_CAPACITY,
+  fuelCapacity: SHIP_FUEL_CAPACITY,
+  fuelKind: "ch4",
+  engineIsp: 1,
+  engineThrust: 1,
   nearestId: null,
   nearestName: null,
   altitude: null,
@@ -246,6 +252,10 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       headingDeg: ((wrapPi(s.yaw) * 180) / Math.PI + 360) % 360,
       mass: s.mass,
       fuel: s.fuel,
+      fuelCapacity: s.fuelCapacity,
+      fuelKind: s.fuelKind,
+      engineIsp: s.engineIsp,
+      engineThrust: s.engineThrust,
       nearestId: sim.nearest?.id ?? null,
       nearestName: sim.nearest?.name ?? null,
       altitude: sim.altitude,
@@ -568,15 +578,15 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     const beat = sim.phase === "transit" ? transitBeat(sim.transitAge, sim.reducedMotion) : "off";
     const lostFade = sim.reducedMotion ? WARP_LOST_FADE_REDUCED : WARP_LOST_FADE;
     if (sim.warpLost) {
-      const vol =
+      const fade =
         sim.phase === "transit" ? Math.max(0, 1 - sim.transitAge / lostFade) : 0;
-      audio.setWarp(vol > 0.02, vol, 1);
+      audio.setWarp(fade > 0.02, fade * WARP_TRANSIT_VOL, 1);
     } else {
       const spool =
         beat === "tunnel" || beat === "streak"
-          ? 1
+          ? WARP_TRANSIT_VOL
           : beat === "brake"
-            ? transitArriveU(sim.transitAge, sim.reducedMotion)
+            ? transitArriveU(sim.transitAge, sim.reducedMotion) * WARP_TRANSIT_VOL
             : warpSpool(Math.hypot(sim.ship.vx, sim.ship.vy));
       audio.setWarp(spool > 0.02, spool);
     }
@@ -664,7 +674,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     window.__controlsTest = {
       getYaw: () => 0,
       getSpeed: () => 0,
-      getFuel: () => 1,
+      getFuel: () => SHIP_FUEL_CAPACITY,
       getPhase: () => "creating",
       getLanded: () => null,
       getCrashed: () => null,

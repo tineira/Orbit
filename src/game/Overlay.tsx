@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Minus, Plus, Volume2, VolumeX } from "lucide-react";
-import type { HudSnapshot, VerboseDiag } from "./types";
+import type { FuelKind, HudSnapshot, VerboseDiag } from "./types";
+import { fuelGrade } from "./fuel";
 import { ATMO_STEPS, GRAVITY_STEPS, getPlanets, isGhostBody, planetById } from "./world";
 import { cn } from "@/lib/utils";
 
@@ -144,10 +145,17 @@ export function Overlay({
                   </p>
                   <p className="mt-0.5 font-mono text-xs tabular-nums text-muted">
                     HDG {hud.headingDeg.toFixed(0).padStart(3, "0")}°
-                    {dev ? ` · MASS ${hud.mass.toFixed(1)}` : ""}
+                    <span className="mx-2 text-subtle">·</span>
+                    MASS {hud.mass.toFixed(2)}
                   </p>
-                  <FuelBar fuel={hud.fuel} />
                 </div>
+                <FuelPanel
+                  fuel={hud.fuel}
+                  capacity={hud.fuelCapacity}
+                  kind={hud.fuelKind}
+                  engineIsp={hud.engineIsp}
+                  engineThrust={hud.engineThrust}
+                />
                 {dev && hud.physicsMenu ? (
                   <PhysicsKnobs
                     gravityScale={hud.gravityScale}
@@ -854,35 +862,74 @@ const FUEL_PIPS = 8;
 const FUEL_CAUTION = 0.55;
 const FUEL_WARN = 0.28;
 
-function fuelTone(fuel: number) {
-  if (fuel > FUEL_CAUTION) return "ok" as const;
-  if (fuel > FUEL_WARN) return "caution" as const;
+function fuelTone(frac: number) {
+  if (frac > FUEL_CAUTION) return "ok" as const;
+  if (frac > FUEL_WARN) return "caution" as const;
   return "warn" as const;
 }
 
-function FuelBar({ fuel }: { fuel: number }) {
-  const t = Math.max(0, Math.min(1, fuel));
+function fmtStat(n: number) {
+  if (n >= 10) return n.toFixed(0);
+  return n.toFixed(2);
+}
+
+function FuelPanel({
+  fuel,
+  capacity,
+  kind,
+  engineIsp,
+  engineThrust,
+}: {
+  fuel: number;
+  capacity: number;
+  kind: FuelKind;
+  engineIsp: number;
+  engineThrust: number;
+}) {
+  const grade = fuelGrade(kind);
+  const max = Math.max(0, capacity);
+  const t = max > 0 ? Math.max(0, Math.min(1, fuel / max)) : 0;
   const filled = Math.round(t * FUEL_PIPS);
   const tone = fuelTone(t);
   const pip =
     tone === "ok" ? "bg-ok" : tone === "caution" ? "bg-caution" : "bg-warn";
-  const label =
+  const countColor =
     tone === "ok" ? "text-muted" : tone === "caution" ? "text-caution" : "text-warn";
+  const shown = Math.round(Math.max(0, fuel));
+  const cap = Math.round(max);
+  const isp = grade.isp * engineIsp;
+  const thrust = grade.thrust * engineThrust;
+  const reading = `${grade.hud} ${shown} / ${cap}`;
   return (
-    <div
-      className="mt-1.5 flex items-center justify-end gap-2"
-      role="meter"
-      aria-label="Fuel"
-      aria-valuemin={0}
-      aria-valuemax={1}
-      aria-valuenow={Number(t.toFixed(2))}
-    >
-      <span className="flex h-3 items-center gap-px rounded-sm bg-bg px-px">
-        {Array.from({ length: FUEL_PIPS }, (_, i) => (
-          <span key={i} className={cn("h-2 w-1.5", i < filled ? pip : "bg-surface-2")} />
-        ))}
-      </span>
-      <span className={cn("font-mono text-[10px] tracking-[0.16em] uppercase", label)}>Fuel</span>
+    <div className="text-right">
+      <p className="font-mono text-xs tracking-[0.18em] uppercase text-muted">Fuel</p>
+      <p className="mt-1 font-mono text-sm tabular-nums leading-tight">
+        <span className="text-fg">{grade.hud}</span>
+        <span className="ml-2 text-muted">{grade.name}</span>
+      </p>
+      <div
+        className="mt-1.5 flex items-center justify-end gap-2"
+        role="meter"
+        aria-label="Fuel"
+        aria-valuemin={0}
+        aria-valuemax={cap}
+        aria-valuenow={shown}
+        aria-valuetext={reading}
+      >
+        <span className="flex h-3 items-center gap-px rounded-sm bg-bg px-px">
+          {Array.from({ length: FUEL_PIPS }, (_, i) => (
+            <span key={i} className={cn("h-2 w-1.5", i < filled ? pip : "bg-surface-2")} />
+          ))}
+        </span>
+        <span className={cn("font-mono text-[10px] tabular-nums", countColor)}>
+          {shown} / {cap}
+        </span>
+      </div>
+      <p className="mt-0.5 font-mono text-[10px] tabular-nums text-muted">
+        Isp {fmtStat(isp)}
+        <span className="mx-1.5 text-subtle">·</span>
+        T {fmtStat(thrust)}
+      </p>
     </div>
   );
 }
