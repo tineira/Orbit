@@ -1098,26 +1098,28 @@ export function createAudio(): AudioApi {
       if (!ctx || !sfx) return;
       void ctx.resume();
       const t = ctx.currentTime;
-      const chirp = (type: OscillatorType, freq: number, at: number, dur: number, gain: number) => {
+      // 8-bit coin: a short square-wave blip that jumps up a fourth
+      // (B5 -> E6) and lets the second note ring out with a soft decay.
+      const note = (freq: number, at: number, dur: number, peak: number, tail: number) => {
         const osc = ctx!.createOscillator();
         const g = ctx!.createGain();
-        osc.type = type;
+        osc.type = "square";
         osc.frequency.setValueAtTime(freq, t + at);
-        osc.frequency.exponentialRampToValueAtTime(freq * 0.78, t + at + dur);
         g.gain.setValueAtTime(0.0001, t + at);
-        g.gain.exponentialRampToValueAtTime(gain, t + at + 0.006);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + at + dur);
+        g.gain.exponentialRampToValueAtTime(peak, t + at + 0.004);
+        g.gain.setValueAtTime(peak, t + at + dur);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + at + dur + tail);
         osc.connect(g);
         g.connect(sfx!);
         osc.start(t + at);
-        osc.stop(t + at + dur + 0.02);
+        osc.stop(t + at + dur + tail + 0.02);
         osc.onended = () => {
           osc.disconnect();
           g.disconnect();
         };
       };
-      chirp("square", 1680, 0, 0.05, 0.032);
-      chirp("square", 920, 0.04, 0.09, 0.024);
+      note(987.77, 0, 0.075, 0.05, 0.01); // B5 pickup
+      note(1318.51, 0.075, 0.06, 0.05, 0.45); // E6 ring-out
     },
     spectroPower(on) {
       ensure();
