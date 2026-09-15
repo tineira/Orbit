@@ -20,9 +20,9 @@ export type BeltScan = {
 
 const TWO_PI = Math.PI * 2;
 const V_SILENT = 10;
-const CHIP_COOL = 0.32;
-const PEBBLE_COOL = 0.55;
-const TICK_GAP = 0.065;
+const CHIP_COOL = 0.2;
+const PEBBLE_COOL = 0.38;
+const TICK_GAP = 0.04;
 const ANG_PAD = 0.95;
 
 export function beltHash(n: number) {
@@ -87,11 +87,11 @@ function tickVolume(sz: number, closing: number, kind: BeltTickKind) {
   const speedW = Math.log1p(u * u) / Math.log1p(4);
   if (kind === "pebble") {
     const sizeHeavy = Math.min(1, Math.max(0, (sz - 5) / 10));
-    const cap = 0.38 + sizeHeavy * 0.4;
-    return Math.min(cap, (0.28 + sizeHeavy * 0.72) * Math.max(0.4, speedW));
+    const cap = 0.46 + sizeHeavy * 0.42;
+    return Math.min(cap, (0.34 + sizeHeavy * 0.76) * Math.max(0.45, speedW));
   }
   const sizeW = Math.sqrt(Math.max(0.35, Math.min(1, sz / 14)));
-  return Math.min(0.16, sizeW * speedW * 0.2);
+  return Math.min(0.22, sizeW * speedW * 0.26);
 }
 
 function beltOmega(lead: Planet, parent: Planet) {
@@ -115,19 +115,19 @@ function scatterBeltRain(rel: number, depth: number, dt: number, rainWait: numbe
   const speed = Math.max(0, rel - V_SILENT);
   if (speed <= 0 || dt <= 0) return { ticks, rainWait };
   const speedW = Math.min(1, speed / 40);
-  const rate = speedW * (3.2 + depth * 11);
+  const rate = speedW * (6.5 + depth * 22);
   if (rate < 0.45) return { ticks, rainWait };
   let wait = rainWait - dt;
   let n = 0;
-  while (wait <= 0 && n < 3) {
+  while (wait <= 0 && n < 5) {
     const jitter = Math.random();
     ticks.push({
       kind: "dust",
-      volume: 0.016 + speedW * 0.04 + jitter * 0.022,
-      bright: 0.28 + speedW * 0.5 + Math.random() * 0.22,
+      volume: 0.028 + speedW * 0.06 + jitter * 0.03,
+      bright: 0.2 + speedW * 0.42 + Math.random() * 0.2,
       ring: 0.006 + jitter * 0.02,
       pan: (Math.random() * 2 - 1) * (0.3 + Math.random() * 0.7),
-      delay: n * (0.01 + Math.random() * 0.03),
+      delay: n * (0.008 + Math.random() * 0.024),
     });
     n++;
     wait += rainGap(rate);
@@ -269,7 +269,7 @@ export function scanBeltHull(
       if (dv) return dv;
       return (b.tick.kind === "pebble" ? 1 : 0) - (a.tick.kind === "pebble" ? 1 : 0);
     });
-    const n = Math.min(found[0]!.tick.kind === "pebble" ? 1 : 2, found.length);
+    const n = Math.min(found[0]!.tick.kind === "pebble" ? 2 : 3, found.length);
     for (let i = 0; i < n; i++) {
       const pick = found[i]!;
       cool.set(pick.key, pick.cool);

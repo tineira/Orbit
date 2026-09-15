@@ -29,7 +29,7 @@ function makePinkBuffer(ctx: AudioContext, seconds: number) {
   return buf;
 }
 
-/** Sparse dry grains — gravel on a windshield, not a hiss. */
+/** Dense storm rattle — relentless hail on a car body, not a hiss. */
 function makeGravelBuffer(ctx: AudioContext, seconds: number) {
   const sr = ctx.sampleRate;
   const length = Math.floor(sr * seconds);
@@ -39,15 +39,15 @@ function makeGravelBuffer(ctx: AudioContext, seconds: number) {
     let left = 0;
     let amp = 0;
     for (let i = 0; i < length; i++) {
-      if (left <= 0 && Math.random() < 8 / sr) {
-        left = Math.floor(sr * (0.003 + Math.random() * 0.006));
-        amp = 0.55 + Math.random() * 0.45;
+      if (left <= 0 && Math.random() < 34 / sr) {
+        left = Math.floor(sr * (0.004 + Math.random() * 0.011));
+        amp = 0.4 + Math.random() * 0.6;
         data[i] = (Math.random() < 0.5 ? 1 : -1) * amp;
         left--;
         continue;
       }
       if (left > 0) {
-        const u = left / (sr * 0.01);
+        const u = left / (sr * 0.015);
         data[i] = (Math.random() * 2 - 1) * amp * u * u;
         left--;
       }
@@ -121,21 +121,21 @@ function fireHullPlate(
 
   // Roof vs windshield: bigger stones land heavier on the panel.
   const roof = 0.48 + size * 0.4 + Math.random() * 0.12;
-  const tail = 0.065 + size * 0.055;
-  const f0 = (118 + (1 - size) * 50 + b * 12) * (0.94 + Math.random() * 0.12);
+  const tail = 0.1 + size * 0.09;
+  const f0 = (96 + (1 - size) * 42 + b * 10) * (0.94 + Math.random() * 0.12);
 
   const click = ctx.createBufferSource();
   click.buffer = clickBuf;
   const iceHp = push(ctx.createBiquadFilter());
   iceHp.type = "highpass";
-  iceHp.frequency.value = 2200 + b * 900;
+  iceHp.frequency.value = 1500 + b * 700;
   const iceLp = push(ctx.createBiquadFilter());
   iceLp.type = "lowpass";
-  iceLp.frequency.value = 6200 + b * 1800;
+  iceLp.frequency.value = 5200 + b * 1600;
   const iceG = push(ctx.createGain());
-  click.playbackRate.value = 0.75 + Math.random() * 0.35;
-  iceG.gain.setValueAtTime(vol * (0.45 + (1 - roof) * 1.15 + b * 0.35), t);
-  iceG.gain.exponentialRampToValueAtTime(0.0001, t + 0.01);
+  click.playbackRate.value = 0.6 + Math.random() * 0.3;
+  iceG.gain.setValueAtTime(vol * (0.5 + (1 - roof) * 1.0 + b * 0.3), t);
+  iceG.gain.exponentialRampToValueAtTime(0.0001, t + 0.012);
   click.connect(iceHp);
   iceHp.connect(iceLp);
   iceLp.connect(iceG);
@@ -150,26 +150,26 @@ function fireHullPlate(
 
   const crackBp = push(ctx.createBiquadFilter());
   crackBp.type = "bandpass";
-  crackBp.frequency.value = 900 + b * 700;
-  crackBp.Q.value = 1.15;
+  crackBp.frequency.value = 620 + b * 520;
+  crackBp.Q.value = 0.85;
   const crackG = push(ctx.createGain());
   crackG.gain.setValueAtTime(0.0001, t);
-  crackG.gain.linearRampToValueAtTime(vol * 1.05, t + 0.002);
-  crackG.gain.exponentialRampToValueAtTime(0.0001, t + 0.022);
+  crackG.gain.linearRampToValueAtTime(vol * 1.5, t + 0.002);
+  crackG.gain.exponentialRampToValueAtTime(0.0001, t + 0.032);
   src.connect(crackBp);
   crackBp.connect(crackG);
   crackG.connect(bus);
 
   const thunkHp = push(ctx.createBiquadFilter());
   thunkHp.type = "highpass";
-  thunkHp.frequency.value = 70;
+  thunkHp.frequency.value = 58;
   const thunkLp = push(ctx.createBiquadFilter());
   thunkLp.type = "lowpass";
-  thunkLp.frequency.value = 210 + size * 40;
+  thunkLp.frequency.value = 260 + size * 90;
   const thunkG = push(ctx.createGain());
   thunkG.gain.setValueAtTime(0.0001, t);
-  thunkG.gain.linearRampToValueAtTime(vol * (1.15 + roof * 0.7), t + 0.004);
-  thunkG.gain.exponentialRampToValueAtTime(0.0001, t + 0.05 + size * 0.03);
+  thunkG.gain.linearRampToValueAtTime(vol * (1.6 + roof * 0.9), t + 0.0035);
+  thunkG.gain.exponentialRampToValueAtTime(0.0001, t + 0.075 + size * 0.055);
   src.connect(thunkHp);
   thunkHp.connect(thunkLp);
   thunkLp.connect(thunkG);
@@ -191,8 +191,9 @@ function fireHullPlate(
     osc.stop(t + life + 0.02);
     push(osc);
   };
-  tone(f0, vol * (0.85 + roof * 0.55), tail);
-  tone(f0 * 1.65, vol * 0.22 * roof, tail * 0.55);
+  tone(f0, vol * (1.2 + roof * 0.7), tail);
+  tone(f0 * 1.65, vol * 0.3 * roof, tail * 0.55);
+  tone(f0 * 0.52, vol * (0.5 + size * 0.6), tail * 1.25);
 
   src.start(t, Math.random() * 0.5);
   src.stop(t + tail + 0.04);
@@ -230,15 +231,15 @@ function fireHullStone(
   click.buffer = clickBuf;
   const clickHp = push(ctx.createBiquadFilter());
   clickHp.type = "highpass";
-  clickHp.frequency.value = micro ? 4300 : 3600;
+  clickHp.frequency.value = micro ? 2600 : 1900;
   clickHp.Q.value = 0.75;
   const clickLp = push(ctx.createBiquadFilter());
   clickLp.type = "lowpass";
-  clickLp.frequency.value = micro ? 9800 : 12000;
+  clickLp.frequency.value = micro ? 7200 : 8600;
   const clickG = push(ctx.createGain());
-  click.playbackRate.value = micro ? 1.05 + Math.random() * 0.55 : 0.92 + Math.random() * 0.4;
-  clickG.gain.setValueAtTime(vol * (micro ? 1.65 : 2.35), t);
-  clickG.gain.exponentialRampToValueAtTime(0.0001, t + (micro ? 0.0046 : 0.0065));
+  click.playbackRate.value = micro ? 0.9 + Math.random() * 0.45 : 0.75 + Math.random() * 0.35;
+  clickG.gain.setValueAtTime(vol * (micro ? 1.75 : 2.5), t);
+  clickG.gain.exponentialRampToValueAtTime(0.0001, t + (micro ? 0.006 : 0.009));
   click.connect(clickHp);
   clickHp.connect(clickLp);
   clickLp.connect(clickG);
@@ -247,11 +248,27 @@ function fireHullStone(
   click.stop(t + 0.03);
   push(click);
 
+  // Panel body: even small stones land with a dull knock, not just a tick.
+  const knock = ctx.createOscillator();
+  knock.type = "sine";
+  const kf = (micro ? 300 : 210) * (0.9 + Math.random() * 0.2);
+  knock.frequency.setValueAtTime(kf, t);
+  knock.frequency.exponentialRampToValueAtTime(kf * 0.72, t + 0.045);
+  const knockG = push(ctx.createGain());
+  knockG.gain.setValueAtTime(0.0001, t);
+  knockG.gain.linearRampToValueAtTime(vol * (micro ? 0.6 : 1.1), t + 0.003);
+  knockG.gain.exponentialRampToValueAtTime(0.0001, t + (micro ? 0.035 : 0.055));
+  knock.connect(knockG);
+  knockG.connect(pan);
+  knock.start(t);
+  knock.stop(t + 0.08);
+  push(knock);
+
   const src = ctx.createBufferSource();
   src.buffer = whiteBuf;
   const hp = push(ctx.createBiquadFilter());
   hp.type = "highpass";
-  hp.frequency.value = micro ? 3400 + b * 1400 : 2800 + b * 1600;
+  hp.frequency.value = micro ? 2200 + b * 1100 : 1700 + b * 1200;
   hp.Q.value = 0.7;
   const drive = push(ctx.createWaveShaper());
   drive.curve = makeDriveCurve();
@@ -261,9 +278,9 @@ function fireHullStone(
   push(src);
 
   const jitter = 0.93 + Math.random() * 0.14;
-  const f1 = (3200 + b * 2000) * jitter;
+  const f1 = (2300 + b * 1500) * jitter;
   const f2 = f1 * 1.72;
-  const ring = 0.012 + b * 0.01;
+  const ring = 0.014 + b * 0.012;
   const mode = (freq: number, q: number, peak: number, life: number) => {
     const bp = push(ctx.createBiquadFilter());
     bp.type = "bandpass";
@@ -614,6 +631,8 @@ export function createAudio(): AudioApi {
   let gritBp: BiquadFilterNode | null = null;
   let gritLp: BiquadFilterNode | null = null;
   let gritGain: GainNode | null = null;
+  let beltRoarLp: BiquadFilterNode | null = null;
+  let beltRoarGain: GainNode | null = null;
   let specStaticHp: BiquadFilterNode | null = null;
   let specStaticLp: BiquadFilterNode | null = null;
   let specStaticGain: GainNode | null = null;
@@ -843,17 +862,18 @@ export function createAudio(): AudioApi {
 
     clickBuf = makeContactClick(ctx);
     gravelSrc = startLoop(ctx, makeGravelBuffer(ctx, 2.6));
+    // Hailstorm rattle: dense mid-band clatter on the hull...
     gritHp = ctx.createBiquadFilter();
     gritHp.type = "highpass";
-    gritHp.frequency.value = 2200;
-    gritHp.Q.value = 0.65;
+    gritHp.frequency.value = 340;
+    gritHp.Q.value = 0.6;
     gritBp = ctx.createBiquadFilter();
     gritBp.type = "bandpass";
-    gritBp.frequency.value = 3400;
-    gritBp.Q.value = 1.7;
+    gritBp.frequency.value = 1200;
+    gritBp.Q.value = 0.65;
     gritLp = ctx.createBiquadFilter();
     gritLp.type = "lowpass";
-    gritLp.frequency.value = 7800;
+    gritLp.frequency.value = 4600;
     gritLp.Q.value = 0.55;
     gritGain = ctx.createGain();
     gritGain.gain.value = 0;
@@ -862,6 +882,17 @@ export function createAudio(): AudioApi {
     gritBp.connect(gritLp);
     gritLp.connect(gritGain);
     gritGain.connect(sfx);
+
+    // ...plus a low storm roar underneath, like sitting inside the car.
+    beltRoarLp = ctx.createBiquadFilter();
+    beltRoarLp.type = "lowpass";
+    beltRoarLp.frequency.value = 380;
+    beltRoarLp.Q.value = 0.6;
+    beltRoarGain = ctx.createGain();
+    beltRoarGain.gain.value = 0;
+    gravelSrc.connect(beltRoarLp);
+    beltRoarLp.connect(beltRoarGain);
+    beltRoarGain.connect(sfx);
 
     // Mass spec: high hiss when the panel is on. A lock reads as a low
     // motor vibration (detuned squares + AM), not a flute sweep.
@@ -992,15 +1023,16 @@ export function createAudio(): AudioApi {
       atmoSprayLp.frequency.setTargetAtTime(3200 - spray * 1400, t, 0.12);
     },
     setBeltDust(amount, bright) {
-      if (!ctx || !gritHp || !gritBp || !gritLp || !gritGain) return;
+      if (!ctx || !gritHp || !gritBp || !gritLp || !gritGain || !beltRoarGain) return;
       const t = ctx.currentTime;
       const u = Math.max(0, Math.min(1, amount));
       const b = Math.max(0, Math.min(1, bright ?? 0.4));
-      gritGain.gain.setTargetAtTime(u > 0.02 ? 0.03 + u * 0.08 : 0, t, 0.045);
+      gritGain.gain.setTargetAtTime(u > 0.02 ? 0.05 + u * 0.13 : 0, t, 0.045);
+      beltRoarGain.gain.setTargetAtTime(u > 0.02 ? u * (0.06 + u * 0.1) : 0, t, 0.06);
       if (u > 0.02) {
-        gritHp.frequency.setTargetAtTime(1800 + b * 1400, t, 0.1);
-        gritBp.frequency.setTargetAtTime(3000 + b * 1600, t, 0.1);
-        gritLp.frequency.setTargetAtTime(6200 + b * 2800, t, 0.1);
+        gritHp.frequency.setTargetAtTime(300 + b * 260, t, 0.1);
+        gritBp.frequency.setTargetAtTime(950 + b * 750, t, 0.1);
+        gritLp.frequency.setTargetAtTime(3800 + b * 2200, t, 0.1);
       }
     },
     hullTick(tick) {

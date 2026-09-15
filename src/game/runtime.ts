@@ -636,9 +636,11 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       Math.min(1, Math.hypot(sim.ship.vx, sim.ship.vy) / 120),
     );
     audio.setAtmo(playing() ? atmoDrag(sim) : 0);
-    audio.setBeltDust(0);
     if (playing() && sim.phase === "flight") {
+      audio.setBeltDust(sim.beltDust, sim.beltDustBright);
       for (const tick of sim.beltTicks) audio.hullTick(tick);
+    } else {
+      audio.setBeltDust(0);
     }
     const specVoice = playing() ? spectroVoice(sim) : "off";
     audio.setSpectro(specVoice, spectroScanProgress(sim), sim.reducedMotion);
