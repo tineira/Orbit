@@ -1,7 +1,15 @@
 import { createAudio } from "./audio";
 import { padHasFuel } from "./asteroid";
 import { drawFrame } from "./draw";
-import { createInput, enterHeld, held, steerFrom, thrustFrom } from "./input";
+import {
+  consumePress,
+  createInput,
+  dropHeldPresses,
+  enterHeld,
+  held,
+  steerFrom,
+  thrustFrom,
+} from "./input";
 import {
   adjustAtmoScale,
   adjustGravityScale,
@@ -360,43 +368,37 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   };
 
   const consumeOrbitShell = () => {
-    const down = held(input.state).has("KeyO");
-    const pressed = down && !oWasDown;
+    const { pressed, down } = consumePress(input.state, "KeyO", oWasDown);
     oWasDown = down;
     return pressed;
   };
 
   const consumeLagrange = () => {
-    const down = held(input.state).has("KeyL");
-    const pressed = down && !lWasDown;
+    const { pressed, down } = consumePress(input.state, "KeyL", lWasDown);
     lWasDown = down;
     return pressed;
   };
 
   const consumePhysics = () => {
-    const down = held(input.state).has("KeyP");
-    const pressed = down && !pWasDown;
+    const { pressed, down } = consumePress(input.state, "KeyP", pWasDown);
     pWasDown = down;
     return pressed;
   };
 
   const consumeGravityGrid = () => {
-    const down = held(input.state).has("KeyG");
-    const pressed = down && !gWasDown;
+    const { pressed, down } = consumePress(input.state, "KeyG", gWasDown);
     gWasDown = down;
     return pressed;
   };
 
   const consumeVerbose = () => {
-    const down = held(input.state).has("KeyV");
-    const pressed = down && !vWasDown;
+    const { pressed, down } = consumePress(input.state, "KeyV", vWasDown);
     vWasDown = down;
     return pressed;
   };
 
   const consumeSpectro = () => {
-    const down = held(input.state).has("KeyM");
-    const pressed = down && !mWasDown;
+    const { pressed, down } = consumePress(input.state, "KeyM", mWasDown);
     mWasDown = down;
     return pressed;
   };
@@ -411,8 +413,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   };
 
   const consumeNewWorld = () => {
-    const down = held(input.state).has("KeyN");
-    const pressed = down && !nWasDown;
+    const { pressed, down } = consumePress(input.state, "KeyN", nWasDown);
     nWasDown = down;
     return pressed;
   };
@@ -567,7 +568,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       sim.showLagrange = !sim.showLagrange;
       publish();
     }
-    if (devTools && consumePhysics()) {
+    if (consumePhysics() && devTools) {
       sim.showPhysics = !sim.showPhysics;
       publish();
     }
@@ -575,7 +576,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       sim.showGravityGrid = !sim.showGravityGrid;
       publish();
     }
-    if (devTools && consumeVerbose()) {
+    if (consumeVerbose() && devTools) {
       sim.showVerbose = !sim.showVerbose;
       publish();
     }
@@ -609,6 +610,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     sim.viewCssH = canvas.clientHeight;
 
     const live = sim;
+    let stepped = false;
     const stepOnce = () => {
       const steer = playing() ? steerFrom(input.state) : 0;
       const thr = playing()
@@ -623,6 +625,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         aimYaw: aim,
         aimThrust,
       });
+      stepped = true;
     };
     while (acc >= STEP) {
       stepOnce();
@@ -633,6 +636,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       stepOnce();
       acc = 0;
     }
+    if (stepped) dropHeldPresses(input.state);
 
     audio.setThrust(
       sim.ship.thrusting && playing(),
@@ -721,7 +725,15 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     prevCrashed = null;
     prevTrauma = 0;
     prevSpectroVoice = "off";
-    nWasDown = held(input.state).has("KeyN");
+    const keys = held(input.state);
+    oWasDown = keys.has("KeyO");
+    lWasDown = keys.has("KeyL");
+    pWasDown = keys.has("KeyP");
+    gWasDown = keys.has("KeyG");
+    vWasDown = keys.has("KeyV");
+    mWasDown = keys.has("KeyM");
+    nWasDown = keys.has("KeyN");
+    input.state.presses.clear();
     publish();
     raf = requestAnimationFrame(frame);
   };
@@ -735,6 +747,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     audio.unlock();
     input.state.qaKeys = null;
     input.state.qaSteer = null;
+    input.state.presses.clear();
     window.clearTimeout(bootTimer);
     cancelAnimationFrame(raf);
     sim = null;
@@ -810,6 +823,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       rebootToPad();
       input.state.qaKeys = null;
       input.state.qaSteer = null;
+      input.state.presses.clear();
       publish();
     },
     newWorld() {

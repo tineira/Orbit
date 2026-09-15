@@ -278,6 +278,8 @@ export type HudSnapshot = {
 
 export type InputState = {
   keys: Set<string>;
+  /** keydown edges waiting for a poll; survives a keyup before the next frame. */
+  presses: Set<string>;
   qaKeys: string[] | null;
   qaSteer: number | null;
   pointer: { x: number; y: number; down: boolean } | null;
