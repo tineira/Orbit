@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   AIRLOCK_DELAY_MS,
+  AIRLOCK_FADE_AT,
   FOOD_MONTH_MS,
   FOOD_MONTHS_MAX,
   FOOD_MONTHS_MIN,
   beginAdrift,
+  airlockScreenFade,
   splitFoodClock,
 } from "./adrift.ts";
 import { createSim, openAirLock, stepSim } from "./sim.ts";
@@ -30,6 +32,7 @@ function flightOn(sim: ReturnType<typeof createSim>) {
   sim.adrift = false;
   sim.adriftStartedAt = 0;
   sim.foodUntil = 0;
+  sim.airlockSeqAt = 0;
 }
 
 function homeOf(sim: ReturnType<typeof createSim>) {
@@ -49,6 +52,14 @@ test("food clock splits years months days hours minutes seconds", () => {
   assert.equal(parts.hours, 8);
   assert.equal(parts.minutes, 7);
   assert.equal(parts.seconds, 6);
+});
+
+test("airlock screen fade stays dark until the hatch, then fills to black", () => {
+  const t0 = 1_000_000;
+  assert.equal(airlockScreenFade(0, t0), 0);
+  assert.equal(airlockScreenFade(t0, t0 + AIRLOCK_FADE_AT), 0);
+  assert.ok(airlockScreenFade(t0, t0 + AIRLOCK_FADE_AT + 100) > 0);
+  assert.equal(airlockScreenFade(t0, t0 + AIRLOCK_FADE_AT + 20_000), 1);
 });
 
 test("empty tank in flight starts a rations clock between 8 and 12 months", () => {
@@ -152,6 +163,22 @@ test("open air lock is dead until a minute has passed", () => {
   assert.equal(sim.phase, "flight");
   sim.adriftStartedAt = Date.now() - AIRLOCK_DELAY_MS;
   assert.equal(openAirLock(sim), true);
+  assert.equal(sim.phase, "flight");
+  assert.ok(sim.airlockSeqAt > 0);
+});
+
+test("the airlock sequence ends in an airlock death", () => {
+  createSystem(3);
+  const sim = createSim();
+  flightOn(sim);
+  sim.ship.fuel = 0;
+  sim.ship.x = 8000;
+  sim.ship.y = 8000;
+  beginAdrift(sim, Date.now(), () => 0);
+  sim.adriftStartedAt = Date.now() - AIRLOCK_DELAY_MS;
+  assert.equal(openAirLock(sim), true);
+  sim.airlockSeqAt = Date.now() - 20_000;
+  stepSim(sim, 1 / 60, idle);
   assert.equal(sim.phase, "crashed");
   assert.equal(sim.crashKind, "airlock");
   assert.ok(sim.lostCopy);

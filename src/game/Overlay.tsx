@@ -12,7 +12,7 @@ import { engineGrade, fuelGrade, tankGrade } from "./fuel";
 import { HULL_MAX } from "./hull";
 import { bodyReadout, SCAN_SECONDS } from "./matter";
 import { ATMO_STEPS, GRAVITY_STEPS, getPlanets, isGhostBody, planetById } from "./world";
-import { AIRLOCK_DELAY_MS, splitFoodClock, usesLostCard } from "./adrift";
+import { AIRLOCK_DELAY_MS, airlockScreenFade, splitFoodClock, usesLostCard } from "./adrift";
 import { cn } from "@/lib/utils";
 
 const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
@@ -239,9 +239,7 @@ export function Overlay({
               )}
             </button>
             <p className="font-mono text-xs leading-relaxed text-muted">
-              {hud.adrift ? (
-                <span>No propellant. The craft coasts.</span>
-              ) : (
+              {hud.adrift ? null : (
                 <>
                   <span className="hidden sm:inline">
                     Left / right yaw. Up burns. Down retro. + / − or scroll to zoom.
@@ -293,7 +291,7 @@ export function Overlay({
                 Mass spec
               </p>
             ) : null}
-            {hud.orbitHint && hud.phase !== "crashed" ? (
+            {hud.orbitHint && hud.phase !== "crashed" && !hud.adrift ? (
               <p
                 className={cn(
                   "mt-2 font-mono text-xs tracking-wide uppercase",
@@ -347,6 +345,7 @@ export function Overlay({
         <AdriftCard
           startedAt={hud.adriftStartedAt}
           foodUntil={hud.foodUntil}
+          sealing={hud.airlockSeqAt > 0}
           onAirlock={onOpenAirLock}
         />
       ) : null}
@@ -354,6 +353,12 @@ export function Overlay({
       {hud.phase === "landed" && landed ? (
         <LandingCard planet={landed} onTakeoff={onTakeoff} />
       ) : null}
+
+      <AirlockVeil
+        startedAt={hud.airlockSeqAt}
+        hold={hud.crashKind === "airlock"}
+        reduced={hud.reducedMotion}
+      />
 
       {hud.phase === "crashed" && usesLostCard(hud.crashKind) && hud.lostCopy ? (
         <LostCard copy={hud.lostCopy} onReboot={onReboot} onNewWorld={onNewWorld} />
@@ -592,13 +597,75 @@ function LandingCard({
   );
 }
 
+function AirlockVeil({
+  startedAt,
+  hold,
+  reduced,
+}: {
+  startedAt: number;
+  hold: boolean;
+  reduced: boolean;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (hold || startedAt <= 0) return;
+    const id = window.setInterval(() => setNow(Date.now()), 40);
+    return () => window.clearInterval(id);
+  }, [hold, startedAt]);
+  const fade = hold ? 1 : airlockScreenFade(startedAt, now, reduced);
+  if (fade <= 0.001) return null;
+  return <div className="absolute inset-0 bg-black" style={{ opacity: fade }} aria-hidden />;
+}
+
+function CircuitDigits({ value, width }: { value: number; width: number }) {
+  const shown = String(Math.max(0, value)).padStart(width, "0");
+  return (
+    <span className="time-circuit-digits relative inline-block">
+      <span className="time-circuit-ghost absolute inset-0" aria-hidden>
+        {"8".repeat(width)}
+      </span>
+      <span className="relative">{shown}</span>
+    </span>
+  );
+}
+
+function CircuitCell({
+  label,
+  value,
+  width,
+}: {
+  label: string;
+  value: number;
+  width: number;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col items-center gap-1">
+      <span className="time-circuit-label">{label}</span>
+      <div className={cn("time-circuit-window", width >= 4 && "time-circuit-window-year")}>
+        <CircuitDigits value={value} width={width} />
+      </div>
+    </div>
+  );
+}
+
+function CircuitColon() {
+  return (
+    <div className="time-circuit-colon mb-1.5 hidden sm:flex" aria-hidden>
+      <span />
+      <span />
+    </div>
+  );
+}
+
 function AdriftCard({
   startedAt,
   foodUntil,
+  sealing,
   onAirlock,
 }: {
   startedAt: number;
   foodUntil: number;
+  sealing: boolean;
   onAirlock: () => void;
 }) {
   const [now, setNow] = useState(() => Date.now());
@@ -608,46 +675,24 @@ function AdriftCard({
   }, []);
   const remaining = Math.max(0, foodUntil - now);
   const parts = splitFoodClock(remaining);
-  const canOpen = now - startedAt >= AIRLOCK_DELAY_MS;
-  const cells = [
-    { n: parts.years, label: "Years" },
-    { n: parts.months, label: "Months" },
-    { n: parts.days, label: "Days" },
-    { n: parts.hours, label: "Hours" },
-    { n: parts.minutes, label: "Min" },
-    { n: parts.seconds, label: "Sec" },
-  ];
+  const canOpen = !sealing && now - startedAt >= AIRLOCK_DELAY_MS;
   return (
-    <div className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
-      <article className="w-full max-w-xl rounded-xl border border-border bg-surface/85 px-4 py-5 shadow-lg backdrop-blur-sm sm:px-6">
-        <p className="font-mono text-xs tracking-[0.22em] uppercase text-warn">Rations remaining</p>
-        <div className="mt-4 flex items-end justify-between gap-1 sm:gap-2">
-          {cells.map((cell, i) => (
-            <div key={cell.label} className="flex min-w-0 flex-1 items-end justify-center gap-1 sm:gap-2">
-              {i > 0 ? (
-                <span className="mb-5 hidden font-mono text-lg text-subtle sm:mb-6 sm:inline sm:text-2xl">
-                  :
-                </span>
-              ) : null}
-              <div className="min-w-0 text-center">
-                <p className="font-mono text-2xl tabular-nums leading-none tracking-wider text-fg sm:text-4xl">
-                  {String(cell.n).padStart(2, "0")}
-                </p>
-                <p className="mt-2 font-mono text-[9px] tracking-[0.16em] uppercase text-muted sm:text-[10px]">
-                  {cell.label}
-                </p>
-              </div>
-            </div>
-          ))}
+    <div className="absolute inset-0 flex items-end justify-center p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 sm:pb-5 pointer-events-none">
+      <article className="time-circuit w-full max-w-2xl">
+        <div className="flex items-end justify-between gap-1 sm:gap-2">
+          <CircuitCell label="Year" value={parts.years} width={4} />
+          <CircuitCell label="Month" value={parts.months} width={2} />
+          <CircuitCell label="Day" value={parts.days} width={2} />
+          <CircuitCell label="Hour" value={parts.hours} width={2} />
+          <CircuitColon />
+          <CircuitCell label="Min" value={parts.minutes} width={2} />
+          <CircuitColon />
+          <CircuitCell label="Sec" value={parts.seconds} width={2} />
         </div>
+        <p className="time-circuit-strip">Rations remaining</p>
         {canOpen ? (
-          <div className="mt-6 flex justify-center pointer-events-auto">
-            <button
-              type="button"
-              data-ui
-              onClick={onAirlock}
-              className="h-11 px-5 rounded-md border border-warn/40 bg-transparent text-sm font-medium text-warn hover:bg-warn/10 active:scale-[0.98] transition-[background,transform] duration-[var(--motion-quick)] ease-[var(--ease-out)]"
-            >
+          <div className="mt-3 flex justify-center pointer-events-auto">
+            <button type="button" data-ui onClick={onAirlock} className="time-circuit-hatch">
               open air lock
             </button>
           </div>

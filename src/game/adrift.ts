@@ -5,6 +5,10 @@ export const FOOD_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 export const FOOD_MONTHS_MIN = 8;
 export const FOOD_MONTHS_MAX = 12;
 export const AIRLOCK_DELAY_MS = 60_000;
+export const AIRLOCK_HATCH_AT = 2200;
+export const AIRLOCK_FADE_AT = 2800;
+export const AIRLOCK_FADE_MS = 3800;
+export const AIRLOCK_HOLD_MS = 500;
 export const FUEL_EMPTY = 1e-9;
 
 export type FoodClock = {
@@ -20,6 +24,7 @@ export type AdriftHost = {
   adrift: boolean;
   adriftStartedAt: number;
   foodUntil: number;
+  airlockSeqAt: number;
   phase: string;
   ship: { fuel: number; thrusting: boolean; reverse: boolean };
 };
@@ -97,6 +102,7 @@ export function beginAdrift(sim: AdriftHost, now = Date.now(), rng = Math.random
   sim.adrift = true;
   sim.adriftStartedAt = now;
   sim.foodUntil = now + foodSpanMs(rng);
+  sim.airlockSeqAt = 0;
   sim.ship.thrusting = false;
   sim.ship.reverse = false;
 }
@@ -105,6 +111,7 @@ export function endAdrift(sim: AdriftHost) {
   sim.adrift = false;
   sim.adriftStartedAt = 0;
   sim.foodUntil = 0;
+  sim.airlockSeqAt = 0;
 }
 
 export function maybeBeginAdrift(sim: AdriftHost, now = Date.now()) {
@@ -119,7 +126,48 @@ export function adriftStarved(sim: AdriftHost, now = Date.now()) {
 }
 
 export function canOpenAirLock(sim: AdriftHost, now = Date.now()) {
-  return sim.adrift && sim.phase === "flight" && now - sim.adriftStartedAt >= AIRLOCK_DELAY_MS;
+  return (
+    sim.adrift &&
+    sim.phase === "flight" &&
+    !sim.airlockSeqAt &&
+    now - sim.adriftStartedAt >= AIRLOCK_DELAY_MS
+  );
+}
+
+export function airlockHatchAt(reduced: boolean) {
+  return reduced ? 160 : AIRLOCK_HATCH_AT;
+}
+
+export function airlockFadeAt(reduced: boolean) {
+  return reduced ? 220 : AIRLOCK_FADE_AT;
+}
+
+export function airlockFadeMs(reduced: boolean) {
+  return reduced ? 480 : AIRLOCK_FADE_MS;
+}
+
+export function airlockSeqMs(reduced: boolean) {
+  if (reduced) return 800;
+  return AIRLOCK_FADE_AT + AIRLOCK_FADE_MS + AIRLOCK_HOLD_MS;
+}
+
+export function airlockScreenFade(startedAt: number, now = Date.now(), reduced = false) {
+  if (startedAt <= 0) return 0;
+  const t = now - startedAt;
+  const at = airlockFadeAt(reduced);
+  const ms = airlockFadeMs(reduced);
+  if (t <= at) return 0;
+  return Math.max(0, Math.min(1, (t - at) / ms));
+}
+
+export function airlockSeqDone(sim: AdriftHost, now = Date.now(), reduced = false) {
+  return sim.airlockSeqAt > 0 && sim.phase === "flight" && now - sim.airlockSeqAt >= airlockSeqMs(reduced);
+}
+
+export function beginAirLock(sim: AdriftHost, now = Date.now()) {
+  if (!canOpenAirLock(sim, now)) return false;
+  sim.airlockSeqAt = now;
+  return true;
 }
 
 export function pickAirlockCopy(rng = Math.random): LostCopy {

@@ -57,6 +57,8 @@ const INITIAL: HudSnapshot = {
   adrift: false,
   adriftStartedAt: 0,
   foodUntil: 0,
+  airlockSeqAt: 0,
+  reducedMotion: false,
 };
 
 export function SpaceGame() {

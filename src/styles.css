@@ -92,3 +92,113 @@
   animation: creating-pulse 1.8s var(--ease-in-out, ease-in-out) infinite;
 }
 
+.time-circuit {
+  --led: #ff3a18;
+  padding: 0.7rem 0.8rem 0.55rem;
+  border: 1px solid #9aa0a8;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #8d929a 0%, #5c6168 22%, #3c4046 62%, #2f3338 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -2px 5px rgba(0, 0, 0, 0.4),
+    0 10px 28px rgba(0, 0, 0, 0.45);
+}
+
+.time-circuit-label {
+  background: #b31f18;
+  color: #f3e4d2;
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  text-transform: uppercase;
+  padding: 0.18rem 0.42rem 0.14rem;
+  border-radius: 1px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35);
+}
+
+.time-circuit-window {
+  background: #120605;
+  padding: 0.32rem 0.42rem 0.22rem;
+  min-width: 2.4rem;
+  text-align: center;
+  box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.88);
+}
+
+.time-circuit-window-year {
+  min-width: 4.35rem;
+}
+
+.time-circuit-digits {
+  font-family: var(--font-mono);
+  font-size: clamp(1.15rem, 2.4vw, 1.85rem);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--led);
+  text-shadow:
+    0 0 6px rgba(255, 58, 24, 0.9),
+    0 0 16px rgba(255, 40, 10, 0.45);
+}
+
+.time-circuit-ghost {
+  color: #4a1210;
+  opacity: 0.62;
+  text-shadow: none;
+}
+
+.time-circuit-colon {
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.35rem;
+  padding-bottom: 0.55rem;
+}
+
+.time-circuit-colon span {
+  width: 0.32rem;
+  height: 0.32rem;
+  border-radius: 999px;
+  background: #f0c040;
+  box-shadow: 0 0 6px rgba(240, 192, 64, 0.7);
+}
+
+.time-circuit-strip {
+  margin-top: 0.55rem;
+  background: #101010;
+  color: #eceae4;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 0.28rem 0.5rem;
+}
+
+.time-circuit-hatch {
+  height: 2.5rem;
+  padding: 0 1.25rem;
+  border: 1px solid color-mix(in oklab, #b31f18 55%, #2a1210);
+  border-radius: 3px;
+  background: linear-gradient(180deg, #6a2a24 0%, #3a1412 100%);
+  color: #f3e4d2;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.time-circuit-hatch:hover {
+  background: linear-gradient(180deg, #7a322c 0%, #4a1a16 100%);
+}
+
+.time-circuit-hatch:active {
+  transform: scale(0.98);
+}
+

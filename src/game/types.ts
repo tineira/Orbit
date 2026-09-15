@@ -282,6 +282,8 @@ export type HudSnapshot = {
   adrift: boolean;
   adriftStartedAt: number;
   foodUntil: number;
+  airlockSeqAt: number;
+  reducedMotion: boolean;
 };
 
 export type InputState = {

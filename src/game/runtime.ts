@@ -210,6 +210,8 @@ const CREATING_HUD: HudSnapshot = {
   adrift: false,
   adriftStartedAt: 0,
   foodUntil: 0,
+  airlockSeqAt: 0,
+  reducedMotion: false,
 };
 
 export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameHandle {
@@ -244,6 +246,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let prevSpectroVoice: SpectroVoice = "off";
   let prevPunched = false;
   let prevBoomed = false;
+  let prevAirlockSeq = 0;
   let lastBeepSec = -1;
   let enterWasDown = false;
   let enterNeedsUp = false;
@@ -352,6 +355,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       adrift: sim.adrift,
       adriftStartedAt: sim.adriftStartedAt,
       foodUntil: sim.foodUntil,
+      airlockSeqAt: sim.airlockSeqAt,
+      reducedMotion: sim.reducedMotion,
     };
     onUi(hud);
   };
@@ -478,6 +483,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         s.adrift = false;
         s.adriftStartedAt = 0;
         s.foodUntil = 0;
+        s.airlockSeqAt = 0;
         s.orbitLockId = null;
         s.orbitDwell = 0;
         s.orbitLockCooldown = 0;
@@ -688,7 +694,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     } else {
       audio.setBeltDust(0);
     }
-    if (sim.adrift && sim.phase === "flight") {
+    if (sim.adrift && sim.phase === "flight" && !sim.airlockSeqAt) {
       const sec = Math.floor(Date.now() / 1000);
       if (sec !== lastBeepSec) {
         lastBeepSec = sec;
@@ -732,10 +738,14 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       (sim.crashKind === "lost" || sim.crashKind === "airlock" || sim.crashKind === "starve"
         ? sim.crashKind
         : null);
-    if (crashKey && crashKey !== prevCrashed && sim.crashKind !== "lost" && sim.crashKind !== "starve") {
+    if (crashKey && crashKey !== prevCrashed && sim.crashKind !== "lost" && sim.crashKind !== "starve" && sim.crashKind !== "airlock") {
       audio.crash();
     }
     prevCrashed = crashKey;
+    if (prevAirlockSeq && !sim.airlockSeqAt && sim.crashKind !== "airlock") {
+      audio.cancelAirlockSequence();
+    }
+    prevAirlockSeq = sim.airlockSeqAt;
     if (sim.orbitDragAlarm) {
       audio.warn();
       sim.orbitDragAlarm = false;
@@ -755,7 +765,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     });
 
     hudTick += dt;
-    if (hudTick > 0.08) {
+    if (sim.airlockSeqAt || hudTick > 0.08) {
       hudTick = 0;
       publish();
     }
@@ -780,6 +790,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     prevCrashed = null;
     prevTrauma = 0;
     prevSpectroVoice = "off";
+    prevAirlockSeq = 0;
     const keys = held(input.state);
     oWasDown = keys.has("KeyO");
     lWasDown = keys.has("KeyL");
@@ -800,6 +811,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     if (sim.phase !== "title" && sim.phase !== "crashed") return;
     pendingPrefs = simViewPrefs(sim);
     audio.unlock();
+    audio.cancelAirlockSequence();
     input.state.qaKeys = null;
     input.state.qaSteer = null;
     input.state.presses.clear();
@@ -875,6 +887,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     reboot() {
       if (!sim) return;
       audio.unlock();
+      audio.cancelAirlockSequence();
       rebootToPad();
       input.state.qaKeys = null;
       input.state.qaSteer = null;
@@ -884,7 +897,10 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     openAirLock() {
       if (!sim) return;
       audio.unlock();
-      if (openAirLock(sim)) publish();
+      if (openAirLock(sim)) {
+        audio.airlockSequence(sim.reducedMotion);
+        publish();
+      }
     },
     newWorld() {
       chartNewWorld();

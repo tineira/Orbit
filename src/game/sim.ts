@@ -102,7 +102,8 @@ import {
 import { HULL_MAX, hullRepairRate, type HullRepairKind } from "./hull.ts";
 import {
   adriftStarved,
-  canOpenAirLock,
+  airlockSeqDone,
+  beginAirLock,
   endAdrift,
   isCoastDeath,
   maybeBeginAdrift,
@@ -191,6 +192,7 @@ export type Sim = {
   adrift: boolean;
   adriftStartedAt: number;
   foodUntil: number;
+  airlockSeqAt: number;
 };
 
 export const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
@@ -304,6 +306,7 @@ export function createSim(): Sim {
     adrift: false,
     adriftStartedAt: 0,
     foodUntil: 0,
+    airlockSeqAt: 0,
   };
   landOnHome(sim);
   return sim;
@@ -2081,6 +2084,7 @@ export function stepSim(
 
   if (sim.phase === "flight") {
     maybeBeginAdrift(sim);
+    if (airlockSeqDone(sim, Date.now(), sim.reducedMotion)) completeAirLock(sim);
     if (adriftStarved(sim)) starveAdrift(sim);
   }
 
@@ -2311,15 +2315,19 @@ function loseInSpace(sim: Sim) {
 
 export function starveAdrift(sim: Sim) {
   if (!sim.adrift || sim.phase !== "flight") return;
+  if (sim.airlockSeqAt) return;
   clearFlightLocks(sim);
   finishCoastDeath(sim, "starve", pickStarveCopy());
 }
 
 export function openAirLock(sim: Sim, now = Date.now()) {
-  if (!canOpenAirLock(sim, now)) return false;
+  return beginAirLock(sim, now);
+}
+
+function completeAirLock(sim: Sim) {
+  if (sim.phase !== "flight") return;
   clearFlightLocks(sim);
   finishCoastDeath(sim, "airlock", pickAirlockCopy());
-  return true;
 }
 
 function finishCoastDeath(sim: Sim, kind: CrashKind, copy: NonNullable<Sim["lostCopy"]>) {

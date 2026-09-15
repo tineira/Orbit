@@ -1,4 +1,5 @@
 import { WARP_BOOM_TIMES } from "./world";
+import { airlockFadeAt, airlockFadeMs, airlockHatchAt } from "./adrift";
 
 function fillPink(data: Float32Array) {
   let b0 = 0;
@@ -589,6 +590,8 @@ type AudioApi = {
   crash: () => void;
   warn: () => void;
   clockBeep: () => void;
+  airlockSequence: (reduced?: boolean) => void;
+  cancelAirlockSequence: () => void;
   setMuted: (muted: boolean) => void;
   destroy: () => void;
 };
@@ -596,6 +599,7 @@ type AudioApi = {
 export function createAudio(): AudioApi {
   let ctx: AudioContext | null = null;
   let master: GainNode | null = null;
+  let worldGain: GainNode | null = null;
   let sfx: GainNode | null = null;
   let thrustGain: GainNode | null = null;
   let rumbleHp: BiquadFilterNode | null = null;
@@ -655,6 +659,7 @@ export function createAudio(): AudioApi {
   let voidIR: AudioBuffer | null = null;
   let muted = false;
   let thrustOn = false;
+  let airlockNodes: AudioNode[] = [];
   // CRT TV power on/off clip for the mass spec panel. On = the degauss
   // thunk at the head of the clip, off = the double pop at the tail.
   let tvLoad: Promise<AudioBuffer> | null = null;
@@ -680,9 +685,12 @@ export function createAudio(): AudioApi {
     const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     ctx = new AC({ latencyHint: "interactive" });
     master = ctx.createGain();
+    worldGain = ctx.createGain();
+    worldGain.gain.value = 1;
     sfx = ctx.createGain();
     sfx.gain.value = 0.7;
-    sfx.connect(master);
+    sfx.connect(worldGain);
+    worldGain.connect(master);
     master.connect(ctx.destination);
     master.gain.value = muted ? 0 : 0.9;
 
@@ -995,6 +1003,158 @@ export function createAudio(): AudioApi {
   document.addEventListener("visibilitychange", onVis);
   window.addEventListener("pointerdown", onGesture);
   window.addEventListener("keydown", onGesture);
+
+  const stopAirlockNodes = () => {
+    for (const n of airlockNodes) {
+      try {
+        if ("stop" in n && typeof (n as OscillatorNode).stop === "function") {
+          (n as OscillatorNode).stop();
+        }
+        n.disconnect();
+      } catch {
+        /* already gone */
+      }
+    }
+    airlockNodes = [];
+  };
+
+  const restoreWorldGain = () => {
+    if (!ctx || !worldGain) return;
+    const t = ctx.currentTime;
+    worldGain.gain.cancelScheduledValues(t);
+    worldGain.gain.setTargetAtTime(1, t, 0.04);
+  };
+
+  const playAirlockSequence = (reduced: boolean) => {
+    ensure();
+    if (!ctx || !sfx || !worldGain || !whiteBuf) return;
+    stopAirlockNodes();
+    const t = ctx.currentTime;
+    const dest = sfx;
+    const hatchAt = airlockHatchAt(reduced) / 1000;
+    const fadeAt = airlockFadeAt(reduced) / 1000;
+    const fadeDur = airlockFadeMs(reduced) / 1000;
+    const keep = <T extends AudioNode>(n: T) => {
+      airlockNodes.push(n);
+      return n;
+    };
+
+    const whoops = reduced ? 1 : 4;
+    for (let i = 0; i < whoops; i++) {
+      const at = t + i * 0.52;
+      const osc = keep(ctx.createOscillator());
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(430, at);
+      osc.frequency.exponentialRampToValueAtTime(980, at + 0.34);
+      const osc2 = keep(ctx.createOscillator());
+      osc2.type = "square";
+      osc2.frequency.setValueAtTime(215, at);
+      osc2.frequency.exponentialRampToValueAtTime(490, at + 0.34);
+      const g = keep(ctx.createGain());
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(0.14, at + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.4);
+      const lp = keep(ctx.createBiquadFilter());
+      lp.type = "lowpass";
+      lp.frequency.value = 1800;
+      osc.connect(g);
+      osc2.connect(g);
+      g.connect(lp);
+      lp.connect(dest);
+      osc.start(at);
+      osc2.start(at);
+      osc.stop(at + 0.42);
+      osc2.stop(at + 0.42);
+    }
+
+    const hatch = t + hatchAt;
+    const thunk = keep(ctx.createOscillator());
+    thunk.type = "sine";
+    thunk.frequency.setValueAtTime(78, hatch);
+    thunk.frequency.exponentialRampToValueAtTime(32, hatch + 0.28);
+    const thunkG = keep(ctx.createGain());
+    thunkG.gain.setValueAtTime(0.0001, hatch);
+    thunkG.gain.exponentialRampToValueAtTime(0.22, hatch + 0.012);
+    thunkG.gain.exponentialRampToValueAtTime(0.0001, hatch + 0.32);
+    thunk.connect(thunkG);
+    thunkG.connect(dest);
+    thunk.start(hatch);
+    thunk.stop(hatch + 0.34);
+
+    const scrape = ctx.createBufferSource();
+    scrape.buffer = whiteBuf;
+    keep(scrape);
+    const scrapeHp = keep(ctx.createBiquadFilter());
+    scrapeHp.type = "highpass";
+    scrapeHp.frequency.value = 700;
+    const scrapeBp = keep(ctx.createBiquadFilter());
+    scrapeBp.type = "bandpass";
+    scrapeBp.frequency.value = 1400;
+    scrapeBp.Q.value = 0.9;
+    const scrapeG = keep(ctx.createGain());
+    scrapeG.gain.setValueAtTime(0.0001, hatch);
+    scrapeG.gain.linearRampToValueAtTime(0.16, hatch + 0.04);
+    scrapeG.gain.exponentialRampToValueAtTime(0.0001, hatch + 0.22);
+    scrape.connect(scrapeHp);
+    scrapeHp.connect(scrapeBp);
+    scrapeBp.connect(scrapeG);
+    scrapeG.connect(dest);
+    scrape.start(hatch);
+    scrape.stop(hatch + 0.24);
+
+    if (clickBuf) {
+      const click = ctx.createBufferSource();
+      click.buffer = clickBuf;
+      keep(click);
+      const clickG = keep(ctx.createGain());
+      clickG.gain.value = 0.35;
+      click.connect(clickG);
+      clickG.connect(dest);
+      click.start(hatch + 0.03);
+      click.stop(hatch + 0.08);
+    }
+
+    const rush = ctx.createBufferSource();
+    rush.buffer = whiteBuf;
+    rush.loop = true;
+    keep(rush);
+    const rushHp = keep(ctx.createBiquadFilter());
+    rushHp.type = "highpass";
+    rushHp.frequency.setValueAtTime(180, hatch);
+    rushHp.frequency.exponentialRampToValueAtTime(90, hatch + 3.2);
+    const rushLp = keep(ctx.createBiquadFilter());
+    rushLp.type = "lowpass";
+    rushLp.frequency.setValueAtTime(4200, hatch);
+    rushLp.frequency.exponentialRampToValueAtTime(280, hatch + 3.6);
+    const rushG = keep(ctx.createGain());
+    rushG.gain.setValueAtTime(0.0001, hatch);
+    rushG.gain.linearRampToValueAtTime(0.2, hatch + 0.12);
+    rushG.gain.exponentialRampToValueAtTime(0.0001, hatch + 4.2);
+    rush.connect(rushHp);
+    rushHp.connect(rushLp);
+    rushLp.connect(rushG);
+    rushG.connect(dest);
+    rush.start(hatch);
+    rush.stop(hatch + 4.4);
+
+    const drop = keep(ctx.createOscillator());
+    drop.type = "sine";
+    drop.frequency.setValueAtTime(210, hatch + 0.06);
+    drop.frequency.exponentialRampToValueAtTime(38, hatch + 2.8);
+    const dropG = keep(ctx.createGain());
+    dropG.gain.setValueAtTime(0.0001, hatch + 0.06);
+    dropG.gain.linearRampToValueAtTime(0.07, hatch + 0.18);
+    dropG.gain.exponentialRampToValueAtTime(0.0001, hatch + 3.0);
+    drop.connect(dropG);
+    dropG.connect(dest);
+    drop.start(hatch + 0.06);
+    drop.stop(hatch + 3.1);
+
+    worldGain.gain.cancelScheduledValues(t);
+    worldGain.gain.setValueAtTime(1, t);
+    worldGain.gain.setValueAtTime(1, t + fadeAt);
+    worldGain.gain.exponentialRampToValueAtTime(0.0001, t + fadeAt + fadeDur);
+  };
 
   return {
     unlock,
@@ -1359,6 +1519,13 @@ export function createAudio(): AudioApi {
         g.disconnect();
       };
     },
+    airlockSequence(reduced = false) {
+      playAirlockSequence(reduced);
+    },
+    cancelAirlockSequence() {
+      stopAirlockNodes();
+      restoreWorldGain();
+    },
     crash() {
       if (!ctx || !sfx) return;
       const t = ctx.currentTime;
@@ -1386,6 +1553,7 @@ export function createAudio(): AudioApi {
       osc2.stop(t + 0.22);
     },
     destroy() {
+      stopAirlockNodes();
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("pointerdown", onGesture);
       window.removeEventListener("keydown", onGesture);
