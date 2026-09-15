@@ -322,7 +322,14 @@ export function Overlay({
         <CrashCard
           burned={hud.burned}
           crashKind={hud.crashKind}
-          detail={crashDetail(crashed?.name ?? null, hud.burned, hud.burnCause, hud.crashKind, crashed)}
+          detail={crashDetail(
+            crashed?.name ?? null,
+            hud.burned,
+            hud.burnCause,
+            hud.crashKind,
+            crashed,
+            hud.wreckSeed,
+          )}
           onReboot={onReboot}
           onNewWorld={onNewWorld}
         />
@@ -551,19 +558,52 @@ function crashDetail(
   cause: HudSnapshot["burnCause"],
   kind: HudSnapshot["crashKind"],
   body: NonNullable<ReturnType<typeof planetById>> | null,
+  seed: number,
 ) {
+  // Seed is fixed per crash, so the variant is stable across renders but rotates between crashes.
+  const pick = (pool: string[]) => pool[Math.floor(seed) % pool.length]!;
   if (kind === "wreck" && !body) {
-    return "The belt wore through the hull. Nothing left to hold the dark out.";
+    return pick([
+      "The belt wore through the hull. Nothing left to hold the dark out.",
+      "Rock after rock, the belt collected its toll. The hull ran out first.",
+      "The belt does not aim. It does not need to.",
+    ]);
   }
-  if (kind === "sink") return `The craft fell into ${name ?? "the clouds"}. The clouds closed.`;
+  if (kind === "sink") {
+    const where = name ?? "the clouds";
+    return pick([
+      `The craft fell into ${where}. The clouds closed. No wreck, no crater — no proof you were ever there.`,
+      `${where} has no ground to hit. You fell until falling stopped meaning anything.`,
+      `The clouds of ${where} parted for you once. They will not part again.`,
+    ]);
+  }
   if (!burned) {
     if (body?.kind === "asteroid" && !body.landable) {
-      return `${name} is too small to land. The hull took the hit.`;
+      return pick([
+        `${name} is too small to land on and too hard to forgive. The hull took the hit.`,
+        `${name} is barely a place. It was still enough to end the flight.`,
+      ]);
     }
-    return `The approach into ${name ?? "the well"} was too fast. The well won. Bring the craft back and try a slower pass — or catch an orbit first.`;
+    const well = name ?? "the well";
+    return pick([
+      `The approach into ${well} was too fast. The well always wins. Try a slower pass — or catch an orbit first.`,
+      `${well} came up faster than the retros could answer. Bleed speed early next time — or catch an orbit first.`,
+      `The ground of ${well} did not move. You did — too fast. Try a slower pass, or let an orbit tame the fall.`,
+    ]);
   }
-  if (cause === "flare") return `A flare from ${name ?? "the star"} reached the craft.`;
-  return `Too close to ${name ?? "the star"}. The hull cooked.`;
+  const star = name ?? "the star";
+  if (cause === "flare") {
+    return pick([
+      `The star exhaled. The flare crossed the distance in silence, and the craft was in its way.`,
+      `A flare from ${star} reached the craft. It was not aimed. It did not need to be.`,
+      `You never saw it leave ${star}. Light does not warn.`,
+    ]);
+  }
+  return pick([
+    `Too close to ${star}. The hull cooked.`,
+    `${star} did not reach for you. You reached for it. The hull gave first.`,
+    `Past a certain line, ${star} is not a light in the sky. It is the whole sky. The hull cooked.`,
+  ]);
 }
 
 function LostCard({

@@ -627,7 +627,7 @@ const LOST_COPY: LostCopy[] = [
   {
     kicker: "Cold",
     title: "The well closed",
-    body: "Whatever you were leaving did not follow. Whatever you wanted is not out here.",
+    body: "The last gravity that knew your name has let go.",
   },
   {
     kicker: "Silence",
@@ -652,17 +652,27 @@ const LOST_COPY: LostCopy[] = [
   {
     kicker: "Gone",
     title: "The chart ran out",
-    body: "You flew off the edge of the last true thing.",
+    body: "Every map ends somewhere. You are past the last one ever drawn.",
   },
   {
     kicker: "Void",
     title: "Nothing will catch you",
-    body: "The craft is a grain. The dark is the rest of the sentence.",
+    body: "No well ahead. No well behind. The dark does not end — you do.",
   },
   {
     kicker: "Spent",
     title: "Fuel for nowhere",
     body: "You burned everything to arrive at the absence of a place.",
+  },
+  {
+    kicker: "Alone",
+    title: "No one saw you leave",
+    body: "No one will see you stop. The distance keeps both secrets.",
+  },
+  {
+    kicker: "Adrift",
+    title: "The engine noise was company",
+    body: "Now it is just you, the hum of the hull, and the hum will fade first.",
   },
 ];
 

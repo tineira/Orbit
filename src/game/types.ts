@@ -257,6 +257,8 @@ export type HudSnapshot = {
   burned: boolean;
   burnCause: BurnCause | null;
   crashKind: CrashKind | null;
+  /** Random per-crash seed; keeps the crash-copy variant stable across renders. */
+  wreckSeed: number;
   lostCopy: LostCopy | null;
   muted: boolean;
   touching: boolean;
