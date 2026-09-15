@@ -108,6 +108,8 @@ export type Sim = {
   camera: Camera;
   phase: "creating" | "title" | "flight" | "landed" | "crashed" | "transit";
   landedId: string | null;
+  /** Close-up on the pad; zoom-out stays locked until the first takeoff. */
+  padZoomLock: boolean;
   takeoffIgnoreId: string | null;
   crashedId: string | null;
   landedAngle: number;
@@ -208,8 +210,8 @@ export function createSim(): Sim {
     camera: {
       x: start.x,
       y: start.y,
-      zoom: 0.96,
-      zoomAuto: 0.96,
+      zoom: padZoomFromView(1280, 800),
+      zoomAuto: padZoomFromView(1280, 800),
       userZoom: 1,
       shake: 0,
       starDriftX: 0,
@@ -218,6 +220,7 @@ export function createSim(): Sim {
     },
     phase: "title",
     landedId: null,
+    padZoomLock: true,
     takeoffIgnoreId: null,
     crashedId: null,
     landedAngle: 0,
@@ -349,8 +352,11 @@ export function applySimViewPrefs(sim: Sim, prefs: SimViewPrefs) {
   sim.showGravityGrid = prefs.showGravityGrid;
   sim.showVerbose = prefs.showVerbose;
   sim.showSpectro = !!prefs.showSpectro;
-  sim.camera.userZoom = prefs.userZoom;
-  sim.camera.zoom = sim.camera.zoomAuto * prefs.userZoom;
+  if (sim.padZoomLock) lockPadCamera(sim);
+  else {
+    sim.camera.userZoom = prefs.userZoom;
+    sim.camera.zoom = sim.camera.zoomAuto * prefs.userZoom;
+  }
 }
 
 export function rebootSim(sim: Sim) {
@@ -396,8 +402,6 @@ export function rebootSim(sim: Sim) {
   sim.beltTickWait = 0;
   sim.beltRainWait = 0;
   landOnHome(sim);
-  sim.camera.zoomAuto = 0.96;
-  sim.camera.zoom = 0.96 * sim.camera.userZoom;
   sim.camera.trauma = 0;
   sim.camera.shake = 0;
   sim.camera.starDriftX = 0;
@@ -1260,6 +1264,7 @@ export function applyDebugWarp(sim: Sim, search = typeof window !== "undefined" 
   sim.landedId = null;
   sim.takeoffIgnoreId = null;
   sim.phase = "flight";
+  sim.padZoomLock = false;
   sim.camera.x = sim.ship.x;
   sim.camera.y = sim.ship.y;
   sim.warpCharge = warpCharge(flags.warp);
@@ -1292,6 +1297,7 @@ export function takeoff(sim: Sim) {
   sim.phase = "flight";
   sim.takeoffIgnoreId = p.id;
   sim.landedId = null;
+  unlockPadCamera(sim);
   sim.status = "approach";
   sim.orbitLockId = null;
   sim.orbitDwell = 0;
@@ -1444,6 +1450,7 @@ function landOnHome(sim: Sim) {
   sim.status = "landed";
   sim.camera.x = sim.ship.x;
   sim.camera.y = sim.ship.y;
+  lockPadCamera(sim);
 }
 
 function copyPlanets(planets: Planet[]): Planet[] {
@@ -2763,15 +2770,48 @@ function decayParticles(sim: Sim, dt: number) {
 
 export const USER_ZOOM_MIN = 0.12;
 export const USER_ZOOM_MAX = 3.4;
+/** Craft kite is ~24 world units; fill ~26% of the short screen axis on the pad. */
+const PAD_ZOOM_SHIP_H = 24;
+const PAD_ZOOM_FILL = 0.26;
+const PAD_ZOOM_MIN = 6.4;
+const PAD_ZOOM_MAX = 9.2;
+
+function padZoomFromView(cssW: number, cssH: number) {
+  const view = Math.min(cssW || 1280, cssH || 800);
+  return Math.max(PAD_ZOOM_MIN, Math.min(PAD_ZOOM_MAX, (view * PAD_ZOOM_FILL) / PAD_ZOOM_SHIP_H));
+}
+
+function padZoomAuto(sim: Sim) {
+  return padZoomFromView(sim.viewCssW, sim.viewCssH);
+}
+
+function lockPadCamera(sim: Sim) {
+  sim.padZoomLock = true;
+  sim.camera.userZoom = 1;
+  sim.camera.zoomAuto = padZoomAuto(sim);
+  sim.camera.zoom = sim.camera.zoomAuto;
+}
+
+/** Pad is closer than play zoom. Ease out to the player's max (+ / pinch) instead of the whole chart. */
+function unlockPadCamera(sim: Sim) {
+  if (!sim.padZoomLock) return;
+  const z = sim.camera.zoomAuto * sim.camera.userZoom;
+  sim.padZoomLock = false;
+  sim.camera.userZoom = USER_ZOOM_MAX;
+  sim.camera.zoomAuto = z / USER_ZOOM_MAX;
+  sim.camera.zoom = z;
+}
+
+function userZoomFloor(sim: Sim) {
+  return sim.padZoomLock ? 1 : USER_ZOOM_MIN;
+}
 
 export function applyUserZoom(sim: Sim, factor: number) {
-  const next = sim.camera.userZoom * factor;
-  sim.camera.userZoom = Math.min(USER_ZOOM_MAX, Math.max(USER_ZOOM_MIN, next));
-  sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
+  setUserZoom(sim, sim.camera.userZoom * factor);
 }
 
 export function setUserZoom(sim: Sim, value: number) {
-  sim.camera.userZoom = Math.min(USER_ZOOM_MAX, Math.max(USER_ZOOM_MIN, value));
+  sim.camera.userZoom = Math.min(USER_ZOOM_MAX, Math.max(userZoomFloor(sim), value));
   sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
 }
 
@@ -2829,10 +2869,13 @@ function zoomFromSpeed(speed: number) {
 
 /** Keep the destination on-screen: speed-zoom alone pulls in as you brake and throws the star off the edge. */
 function zoomToHoldStar(sim: Sim) {
+  const near = sim.nearest;
+  if (near && near.kind !== "star") {
+    const alt = Math.hypot(sim.ship.x - near.x, sim.ship.y - near.y) - near.radius;
+    if (alt < 1200) return 1;
+  }
   const body =
-    sim.nearest?.kind === "star"
-      ? sim.nearest
-      : (sim.planets.find((p) => p.kind === "star") ?? sim.nearest);
+    near?.kind === "star" ? near : (sim.planets.find((p) => p.kind === "star") ?? near);
   if (!body) return 1;
   const dist = Math.hypot(sim.ship.x - body.x, sim.ship.y - body.y) - body.radius;
   if (dist < 420) return 1;
@@ -2881,11 +2924,13 @@ function updateCamera(sim: Sim, dt: number) {
       }
     }
   }
-  const zWant =
-    beat === "tunnel" || lostCoast
+  const zWant = sim.padZoomLock
+    ? padZoomAuto(sim)
+    : beat === "tunnel" || lostCoast
       ? 0.15
       : Math.min(zoomFromSpeed(speed), zoomToHoldStar(sim));
-  sim.camera.zoomAuto += (zWant - sim.camera.zoomAuto) * (1 - Math.exp(-0.7 * dt));
+  if (sim.padZoomLock) sim.camera.zoomAuto = zWant;
+  else sim.camera.zoomAuto += (zWant - sim.camera.zoomAuto) * (1 - Math.exp(-0.7 * dt));
   sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
   sim.camera.trauma = Math.max(0, sim.camera.trauma - dt * 1.6);
   sim.camera.shake = sim.reducedMotion ? 0 : sim.camera.trauma * sim.camera.trauma;
