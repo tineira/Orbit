@@ -1990,16 +1990,11 @@ function minimapLayout(cssW: number, cssH: number) {
   return { desktop, size, pad, x, y };
 }
 
-function spectroLayout(cssW: number, cssH: number, phase: Sim["phase"]) {
+function spectroLayout(cssW: number, cssH: number) {
   const map = minimapLayout(cssW, cssH);
-  const w = map.desktop ? Math.max(200, map.size + 22) : map.size;
-  const h = map.desktop ? 124 : 96;
-  const stack =
-    !map.desktop || phase === "title" || phase === "crashed" || phase === "landed";
-  if (stack) {
-    return { x: map.x, y: Math.max(map.pad, map.y - h - 8), w, h };
-  }
-  return { x: Math.max(map.pad, map.x - w - 10), y: map.y + map.size - h, w, h };
+  const w = map.size;
+  const h = map.desktop ? Math.round(map.size * 0.72) : 96;
+  return { x: map.x, y: Math.max(map.pad, map.y - h - 8), w, h };
 }
 
 function spectroProgress(sim: Sim, body: Planet | null) {
@@ -2018,7 +2013,7 @@ function peakReveal(progress: number, mz: number) {
 }
 
 function drawSpectrograph(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH: number) {
-  const { x, y, w, h } = spectroLayout(cssW, cssH, sim.phase);
+  const { x, y, w, h } = spectroLayout(cssW, cssH);
   const body = spectroFocus(sim);
   const progress = spectroProgress(sim, body);
   const now = performance.now();
