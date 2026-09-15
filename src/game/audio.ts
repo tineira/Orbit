@@ -72,6 +72,29 @@ function makeContactClick(ctx: AudioContext) {
   return buf;
 }
 
+/** 5s stock alarm: repeating square beep, the YouTube "alarm sound effect" loop. */
+function makeAlarmBuffer(ctx: AudioContext) {
+  const sr = ctx.sampleRate;
+  const seconds = 5;
+  const n = Math.floor(sr * seconds);
+  const buf = ctx.createBuffer(1, n, sr);
+  const d = buf.getChannelData(0);
+  const on = 0.16;
+  const off = 0.11;
+  const period = on + off;
+  const f = 1174.7;
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+    const phase = t % period;
+    if (phase >= on) continue;
+    const gate = Math.min(1, phase / 0.006, (on - phase) / 0.01);
+    const sq = Math.sin(2 * Math.PI * f * t) >= 0 ? 1 : -1;
+    const sub = Math.sin(2 * Math.PI * (f * 0.5) * t) >= 0 ? 0.4 : -0.4;
+    d[i] = (sq * 0.72 + sub * 0.28) * 0.16 * gate;
+  }
+  return buf;
+}
+
 type HullTickSpec = {
   kind: "dust" | "chip" | "pebble";
   volume: number;
@@ -591,6 +614,7 @@ type AudioApi = {
   warn: () => void;
   clockBeep: () => void;
   airlockReady: () => void;
+  setAdriftAlarm: (on: boolean) => void;
   airlockSequence: (reduced?: boolean) => void;
   cancelAirlockSequence: () => void;
   setMuted: (muted: boolean) => void;
@@ -663,6 +687,10 @@ export function createAudio(): AudioApi {
   let airlockNodes: AudioNode[] = [];
   // Adrift clock escapement: alternates so seconds read tick / tock.
   let clockTock = false;
+  let alarmBuf: AudioBuffer | null = null;
+  let alarmSrc: AudioBufferSourceNode | null = null;
+  let alarmGain: GainNode | null = null;
+  let adriftAlarmOn = false;
   // CRT TV power on/off clip for the mass spec panel. On = the degauss
   // thunk at the head of the clip, off = the double pop at the tail.
   let tvLoad: Promise<AudioBuffer> | null = null;
@@ -1028,12 +1056,32 @@ export function createAudio(): AudioApi {
     worldGain.gain.setTargetAtTime(1, t, 0.04);
   };
 
+  const stopAdriftAlarm = () => {
+    if (alarmSrc) {
+      try {
+        alarmSrc.stop();
+        alarmSrc.disconnect();
+      } catch {
+        /* already gone */
+      }
+      alarmSrc = null;
+    }
+    if (alarmGain) {
+      try {
+        alarmGain.disconnect();
+      } catch {
+        /* already gone */
+      }
+      alarmGain = null;
+    }
+    adriftAlarmOn = false;
+  };
+
   const playAirlockSequence = (reduced: boolean) => {
     ensure();
-    if (!ctx || !sfx || !worldGain || !whiteBuf) return;
+    if (!ctx || !sfx || !worldGain || !master || !whiteBuf) return;
     stopAirlockNodes();
     const t = ctx.currentTime;
-    const dest = sfx;
     const hatchAt = airlockHatchAt(reduced) / 1000;
     const fadeAt = airlockFadeAt(reduced) / 1000;
     const fadeDur = airlockFadeMs(reduced) / 1000;
@@ -1041,117 +1089,181 @@ export function createAudio(): AudioApi {
       airlockNodes.push(n);
       return n;
     };
+    // Own bus into master so the leak is the last thing heard as the world drops out.
+    const dest = keep(ctx.createGain());
+    dest.gain.value = 1;
+    dest.connect(master);
 
-    const whoops = reduced ? 1 : 4;
-    for (let i = 0; i < whoops; i++) {
-      const at = t + i * 0.52;
-      const osc = keep(ctx.createOscillator());
-      osc.type = "sawtooth";
-      osc.frequency.setValueAtTime(430, at);
-      osc.frequency.exponentialRampToValueAtTime(980, at + 0.34);
-      const osc2 = keep(ctx.createOscillator());
-      osc2.type = "square";
-      osc2.frequency.setValueAtTime(215, at);
-      osc2.frequency.exponentialRampToValueAtTime(490, at + 0.34);
-      const g = keep(ctx.createGain());
-      g.gain.setValueAtTime(0.0001, at);
-      g.gain.exponentialRampToValueAtTime(0.14, at + 0.03);
-      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.4);
-      const lp = keep(ctx.createBiquadFilter());
+    const startNoise = (at: number, dur: number) => {
+      const src = ctx!.createBufferSource();
+      src.buffer = whiteBuf;
+      src.loop = true;
+      keep(src);
+      src.start(at);
+      src.stop(at + dur);
+      return src;
+    };
+
+    const playHatch = (hatch: number) => {
+      if (reduced) {
+        const kn = keep(ctx!.createOscillator());
+        kn.type = "sine";
+        kn.frequency.setValueAtTime(88, hatch);
+        kn.frequency.exponentialRampToValueAtTime(36, hatch + 0.18);
+        const kg = keep(ctx!.createGain());
+        kg.gain.setValueAtTime(0.0001, hatch);
+        kg.gain.exponentialRampToValueAtTime(0.18, hatch + 0.008);
+        kg.gain.exponentialRampToValueAtTime(0.0001, hatch + 0.2);
+        kn.connect(kg);
+        kg.connect(dest);
+        kn.start(hatch);
+        kn.stop(hatch + 0.22);
+        const hiss = startNoise(hatch, 0.22);
+        const hp = keep(ctx!.createBiquadFilter());
+        hp.type = "highpass";
+        hp.frequency.value = 1400;
+        const hg = keep(ctx!.createGain());
+        hg.gain.setValueAtTime(0.1, hatch);
+        hg.gain.exponentialRampToValueAtTime(0.0001, hatch + 0.2);
+        hiss.connect(hp);
+        hp.connect(hg);
+        hg.connect(dest);
+        return;
+      }
+
+      // Pneumatic dump as the seals crack.
+      const dump = startNoise(hatch, 0.55);
+      const dumpHp = keep(ctx!.createBiquadFilter());
+      dumpHp.type = "highpass";
+      dumpHp.frequency.value = 1100;
+      const dumpG = keep(ctx!.createGain());
+      dumpG.gain.setValueAtTime(0.0001, hatch);
+      dumpG.gain.exponentialRampToValueAtTime(0.16, hatch + 0.03);
+      dumpG.gain.exponentialRampToValueAtTime(0.0001, hatch + 0.5);
+      dump.connect(dumpHp);
+      dumpHp.connect(dumpG);
+      dumpG.connect(dest);
+
+      // Three latch bolts.
+      for (const d of [0.16, 0.34, 0.54]) {
+        const at = hatch + d;
+        const kn = keep(ctx!.createOscillator());
+        kn.type = "sine";
+        kn.frequency.setValueAtTime(155, at);
+        kn.frequency.exponentialRampToValueAtTime(46, at + 0.13);
+        const kg = keep(ctx!.createGain());
+        kg.gain.setValueAtTime(0.0001, at);
+        kg.gain.exponentialRampToValueAtTime(0.2, at + 0.006);
+        kg.gain.exponentialRampToValueAtTime(0.0001, at + 0.15);
+        kn.connect(kg);
+        kg.connect(dest);
+        kn.start(at);
+        kn.stop(at + 0.17);
+        if (clickBuf) {
+          const c = ctx!.createBufferSource();
+          c.buffer = clickBuf;
+          keep(c);
+          const cg = keep(ctx!.createGain());
+          cg.gain.value = 0.3;
+          c.connect(cg);
+          cg.connect(dest);
+          c.start(at);
+          c.stop(at + 0.05);
+        }
+      }
+
+      // Motorized slide.
+      const motor = keep(ctx!.createOscillator());
+      motor.type = "sawtooth";
+      motor.frequency.setValueAtTime(205, hatch + 0.58);
+      motor.frequency.exponentialRampToValueAtTime(68, hatch + 3.7);
+      const motorLp = keep(ctx!.createBiquadFilter());
+      motorLp.type = "lowpass";
+      motorLp.frequency.setValueAtTime(920, hatch + 0.58);
+      motorLp.frequency.exponentialRampToValueAtTime(260, hatch + 3.7);
+      const motorG = keep(ctx!.createGain());
+      motorG.gain.setValueAtTime(0.0001, hatch + 0.58);
+      motorG.gain.linearRampToValueAtTime(0.065, hatch + 0.82);
+      motorG.gain.setValueAtTime(0.055, hatch + 3.25);
+      motorG.gain.exponentialRampToValueAtTime(0.0001, hatch + 3.95);
+      motor.connect(motorLp);
+      motorLp.connect(motorG);
+      motorG.connect(dest);
+      motor.start(hatch + 0.58);
+      motor.stop(hatch + 4.05);
+
+      const scrape = startNoise(hatch + 0.62, 3.5);
+      const scrapeBp = keep(ctx!.createBiquadFilter());
+      scrapeBp.type = "bandpass";
+      scrapeBp.frequency.setValueAtTime(1550, hatch + 0.62);
+      scrapeBp.frequency.exponentialRampToValueAtTime(620, hatch + 3.9);
+      scrapeBp.Q.value = 1.05;
+      const scrapeG = keep(ctx!.createGain());
+      scrapeG.gain.setValueAtTime(0.0001, hatch + 0.62);
+      scrapeG.gain.linearRampToValueAtTime(0.085, hatch + 0.95);
+      scrapeG.gain.exponentialRampToValueAtTime(0.0001, hatch + 4.05);
+      scrape.connect(scrapeBp);
+      scrapeBp.connect(scrapeG);
+      scrapeG.connect(dest);
+
+      // Door hits the stop.
+      const stopAt = hatch + 4.08;
+      const thunk = keep(ctx!.createOscillator());
+      thunk.type = "sine";
+      thunk.frequency.setValueAtTime(72, stopAt);
+      thunk.frequency.exponentialRampToValueAtTime(26, stopAt + 0.36);
+      const thunkG = keep(ctx!.createGain());
+      thunkG.gain.setValueAtTime(0.0001, stopAt);
+      thunkG.gain.exponentialRampToValueAtTime(0.24, stopAt + 0.01);
+      thunkG.gain.exponentialRampToValueAtTime(0.0001, stopAt + 0.4);
+      thunk.connect(thunkG);
+      thunkG.connect(dest);
+      thunk.start(stopAt);
+      thunk.stop(stopAt + 0.42);
+    };
+
+    const playLeak = (at: number, dur: number) => {
+      // Tire-puncture / tank-dump hiss: bright noise plus a falling whistle.
+      const rush = startNoise(at, dur + 0.05);
+      const hp = keep(ctx!.createBiquadFilter());
+      hp.type = "highpass";
+      hp.frequency.setValueAtTime(reduced ? 1600 : 2400, at);
+      hp.frequency.exponentialRampToValueAtTime(220, at + dur);
+      const bp = keep(ctx!.createBiquadFilter());
+      bp.type = "bandpass";
+      bp.frequency.setValueAtTime(reduced ? 2200 : 3600, at);
+      bp.frequency.exponentialRampToValueAtTime(700, at + dur);
+      bp.Q.value = 0.8;
+      const lp = keep(ctx!.createBiquadFilter());
       lp.type = "lowpass";
-      lp.frequency.value = 1800;
-      osc.connect(g);
-      osc2.connect(g);
-      g.connect(lp);
-      lp.connect(dest);
-      osc.start(at);
-      osc2.start(at);
-      osc.stop(at + 0.42);
-      osc2.stop(at + 0.42);
-    }
+      lp.frequency.setValueAtTime(reduced ? 5000 : 9500, at);
+      lp.frequency.exponentialRampToValueAtTime(1100, at + dur);
+      const g = keep(ctx!.createGain());
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.linearRampToValueAtTime(reduced ? 0.14 : 0.24, at + 0.07);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+      rush.connect(hp);
+      hp.connect(bp);
+      bp.connect(lp);
+      lp.connect(g);
+      g.connect(dest);
 
-    const hatch = t + hatchAt;
-    const thunk = keep(ctx.createOscillator());
-    thunk.type = "sine";
-    thunk.frequency.setValueAtTime(78, hatch);
-    thunk.frequency.exponentialRampToValueAtTime(32, hatch + 0.28);
-    const thunkG = keep(ctx.createGain());
-    thunkG.gain.setValueAtTime(0.0001, hatch);
-    thunkG.gain.exponentialRampToValueAtTime(0.22, hatch + 0.012);
-    thunkG.gain.exponentialRampToValueAtTime(0.0001, hatch + 0.32);
-    thunk.connect(thunkG);
-    thunkG.connect(dest);
-    thunk.start(hatch);
-    thunk.stop(hatch + 0.34);
+      const whistle = keep(ctx!.createOscillator());
+      whistle.type = "sine";
+      whistle.frequency.setValueAtTime(reduced ? 1800 : 2680, at);
+      whistle.frequency.exponentialRampToValueAtTime(380, at + dur);
+      const wg = keep(ctx!.createGain());
+      wg.gain.setValueAtTime(0.0001, at);
+      wg.gain.linearRampToValueAtTime(reduced ? 0.02 : 0.038, at + 0.1);
+      wg.gain.exponentialRampToValueAtTime(0.0001, at + dur * 0.9);
+      whistle.connect(wg);
+      wg.connect(dest);
+      whistle.start(at);
+      whistle.stop(at + dur);
+    };
 
-    const scrape = ctx.createBufferSource();
-    scrape.buffer = whiteBuf;
-    keep(scrape);
-    const scrapeHp = keep(ctx.createBiquadFilter());
-    scrapeHp.type = "highpass";
-    scrapeHp.frequency.value = 700;
-    const scrapeBp = keep(ctx.createBiquadFilter());
-    scrapeBp.type = "bandpass";
-    scrapeBp.frequency.value = 1400;
-    scrapeBp.Q.value = 0.9;
-    const scrapeG = keep(ctx.createGain());
-    scrapeG.gain.setValueAtTime(0.0001, hatch);
-    scrapeG.gain.linearRampToValueAtTime(0.16, hatch + 0.04);
-    scrapeG.gain.exponentialRampToValueAtTime(0.0001, hatch + 0.22);
-    scrape.connect(scrapeHp);
-    scrapeHp.connect(scrapeBp);
-    scrapeBp.connect(scrapeG);
-    scrapeG.connect(dest);
-    scrape.start(hatch);
-    scrape.stop(hatch + 0.24);
-
-    if (clickBuf) {
-      const click = ctx.createBufferSource();
-      click.buffer = clickBuf;
-      keep(click);
-      const clickG = keep(ctx.createGain());
-      clickG.gain.value = 0.35;
-      click.connect(clickG);
-      clickG.connect(dest);
-      click.start(hatch + 0.03);
-      click.stop(hatch + 0.08);
-    }
-
-    const rush = ctx.createBufferSource();
-    rush.buffer = whiteBuf;
-    rush.loop = true;
-    keep(rush);
-    const rushHp = keep(ctx.createBiquadFilter());
-    rushHp.type = "highpass";
-    rushHp.frequency.setValueAtTime(180, hatch);
-    rushHp.frequency.exponentialRampToValueAtTime(90, hatch + 3.2);
-    const rushLp = keep(ctx.createBiquadFilter());
-    rushLp.type = "lowpass";
-    rushLp.frequency.setValueAtTime(4200, hatch);
-    rushLp.frequency.exponentialRampToValueAtTime(280, hatch + 3.6);
-    const rushG = keep(ctx.createGain());
-    rushG.gain.setValueAtTime(0.0001, hatch);
-    rushG.gain.linearRampToValueAtTime(0.2, hatch + 0.12);
-    rushG.gain.exponentialRampToValueAtTime(0.0001, hatch + 4.2);
-    rush.connect(rushHp);
-    rushHp.connect(rushLp);
-    rushLp.connect(rushG);
-    rushG.connect(dest);
-    rush.start(hatch);
-    rush.stop(hatch + 4.4);
-
-    const drop = keep(ctx.createOscillator());
-    drop.type = "sine";
-    drop.frequency.setValueAtTime(210, hatch + 0.06);
-    drop.frequency.exponentialRampToValueAtTime(38, hatch + 2.8);
-    const dropG = keep(ctx.createGain());
-    dropG.gain.setValueAtTime(0.0001, hatch + 0.06);
-    dropG.gain.linearRampToValueAtTime(0.07, hatch + 0.18);
-    dropG.gain.exponentialRampToValueAtTime(0.0001, hatch + 3.0);
-    drop.connect(dropG);
-    dropG.connect(dest);
-    drop.start(hatch + 0.06);
-    drop.stop(hatch + 3.1);
+    playHatch(t + hatchAt);
+    playLeak(t + fadeAt, Math.max(0.35, fadeDur + 0.4));
 
     worldGain.gain.cancelScheduledValues(t);
     worldGain.gain.setValueAtTime(1, t);
@@ -1549,29 +1661,28 @@ export function createAudio(): AudioApi {
       };
     },
     airlockReady() {
-      // The moment the hatch button unlocks. A low minor-third swell —
-      // solemn invitation, not a reward chime and not an alarm.
+      // Kept for the API; the looping adrift alarm is the cue now.
+    },
+    setAdriftAlarm(on) {
+      if (on === adriftAlarmOn) return;
+      if (!on) {
+        stopAdriftAlarm();
+        return;
+      }
+      ensure();
       if (!ctx || !sfx) return;
-      const t = ctx.currentTime;
-      const tone = (freq: number, at: number, vol: number, dur: number) => {
-        const osc = ctx!.createOscillator();
-        const g = ctx!.createGain();
-        osc.type = "sine";
-        osc.frequency.value = freq;
-        g.gain.setValueAtTime(0.0001, t + at);
-        g.gain.exponentialRampToValueAtTime(vol, t + at + 0.06);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + at + dur);
-        osc.connect(g);
-        g.connect(sfx!);
-        osc.start(t + at);
-        osc.stop(t + at + dur + 0.05);
-        osc.onended = () => {
-          osc.disconnect();
-          g.disconnect();
-        };
-      };
-      tone(196, 0, 0.055, 1.0);
-      tone(233.1, 0.05, 0.035, 1.2);
+      stopAdriftAlarm();
+      if (!alarmBuf) alarmBuf = makeAlarmBuffer(ctx);
+      adriftAlarmOn = true;
+      alarmGain = ctx.createGain();
+      alarmGain.gain.value = 0.0001;
+      alarmGain.connect(sfx);
+      alarmSrc = ctx.createBufferSource();
+      alarmSrc.buffer = alarmBuf;
+      alarmSrc.loop = true;
+      alarmSrc.connect(alarmGain);
+      alarmSrc.start();
+      alarmGain.gain.exponentialRampToValueAtTime(1, ctx.currentTime + 0.06);
     },
     airlockSequence(reduced = false) {
       playAirlockSequence(reduced);
@@ -1608,6 +1719,7 @@ export function createAudio(): AudioApi {
     },
     destroy() {
       stopAirlockNodes();
+      stopAdriftAlarm();
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("pointerdown", onGesture);
       window.removeEventListener("keydown", onGesture);

@@ -3,11 +3,13 @@ import { test } from "node:test";
 import {
   AIRLOCK_DELAY_MS,
   AIRLOCK_FADE_AT,
+  CLOCK_REVEAL_MS,
   FOOD_MONTH_MS,
   FOOD_MONTHS_MAX,
   FOOD_MONTHS_MIN,
   beginAdrift,
   airlockScreenFade,
+  rationsClockVisible,
   splitFoodClock,
 } from "./adrift.ts";
 import { createSim, openAirLock, stepSim } from "./sim.ts";
@@ -149,6 +151,16 @@ test("adrift does not warp even at jump speed", () => {
   stepSim(sim, 1 / 60, idle);
   assert.equal(sim.phase, "flight");
   assert.equal(sim.adrift, true);
+});
+
+test("rations clock stays hidden for ten seconds after the tank empties", () => {
+  createSystem(3);
+  const sim = createSim();
+  flightOn(sim);
+  const t0 = 5_000_000;
+  beginAdrift(sim, t0, () => 0);
+  assert.equal(rationsClockVisible(sim, t0 + CLOCK_REVEAL_MS - 1), false);
+  assert.equal(rationsClockVisible(sim, t0 + CLOCK_REVEAL_MS), true);
 });
 
 test("open air lock is dead until a minute has passed", () => {

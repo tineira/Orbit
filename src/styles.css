@@ -256,6 +256,24 @@
   text-shadow: 0 0 5px rgba(88, 215, 130, 0.5);
 }
 
+.time-circuit-hatch-float {
+  pointer-events: auto;
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (min-width: 640px) {
+  .time-circuit-hatch-float {
+    position: absolute;
+    left: calc(100% + 1rem);
+    top: 50%;
+    margin-top: 0;
+    transform: translateY(-50%);
+    justify-content: flex-start;
+  }
+}
+
 .time-circuit-hatch-frame {
   padding: 0.28rem;
   border-radius: 5px;

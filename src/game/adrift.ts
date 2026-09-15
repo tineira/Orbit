@@ -4,10 +4,12 @@ import type { CrashKind, LostCopy } from "./types.ts";
 export const FOOD_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 export const FOOD_MONTHS_MIN = 8;
 export const FOOD_MONTHS_MAX = 12;
+export const CLOCK_REVEAL_MS = 10_000;
 export const AIRLOCK_DELAY_MS = 60_000;
-export const AIRLOCK_HATCH_AT = 2200;
-export const AIRLOCK_FADE_AT = 2800;
-export const AIRLOCK_FADE_MS = 3800;
+export const AIRLOCK_HATCH_AT = 80;
+/** Seal breaks about two seconds into the hatch slide. */
+export const AIRLOCK_FADE_AT = 2200;
+export const AIRLOCK_FADE_MS = 4800;
 export const AIRLOCK_HOLD_MS = 500;
 export const FUEL_EMPTY = 1e-9;
 
@@ -123,6 +125,10 @@ export function maybeBeginAdrift(sim: AdriftHost, now = Date.now()) {
 
 export function adriftStarved(sim: AdriftHost, now = Date.now()) {
   return sim.adrift && sim.phase === "flight" && now >= sim.foodUntil;
+}
+
+export function rationsClockVisible(sim: AdriftHost, now = Date.now()) {
+  return sim.adrift && sim.phase === "flight" && now - sim.adriftStartedAt >= CLOCK_REVEAL_MS;
 }
 
 export function canOpenAirLock(sim: AdriftHost, now = Date.now()) {
