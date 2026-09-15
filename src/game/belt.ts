@@ -219,8 +219,9 @@ export function scanBeltHull(
 
       if (m.kind === "dust") {
         const near = 1 - Math.min(1, d / gritR);
+        // Fully speed-relative: co-orbiting with the belt is silent.
         const speed = Math.max(0, (rel - 6) / 40);
-        dust += near * (0.25 + speed);
+        dust += near * speed * 1.25;
         dustBright += speed;
         const hitR = SHIP_HULL + Math.max(3, m.sz);
         if (d > hitR) continue;

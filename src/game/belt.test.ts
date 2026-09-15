@@ -86,6 +86,7 @@ test("co-orbiting through grit stays quiet", () => {
   sim.ship.vy = parent.vy + Math.cos(chip.theta) * chip.rad * omega;
   const hit = scanBeltHull(sim.ship, sim.planets, new Map(), 0, 0.05, 0);
   assert.equal(hit.ticks.length, 0);
+  assert.ok(hit.dust < 0.02, `co-orbiting dust bed should be silent, got ${hit.dust}`);
 });
 
 test("away from the belt there is no grit", () => {
