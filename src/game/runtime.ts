@@ -1,3 +1,4 @@
+import { AIRLOCK_DELAY_MS } from "./adrift";
 import { createAudio } from "./audio";
 import { padHasFuel } from "./asteroid";
 import { drawFrame } from "./draw";
@@ -248,6 +249,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let prevBoomed = false;
   let prevAirlockSeq = 0;
   let lastBeepSec = -1;
+  let airlockCued = false;
   let enterWasDown = false;
   let enterNeedsUp = false;
   let oWasDown = false;
@@ -700,8 +702,13 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         lastBeepSec = sec;
         audio.clockBeep();
       }
+      if (!airlockCued && Date.now() - sim.adriftStartedAt >= AIRLOCK_DELAY_MS) {
+        airlockCued = true;
+        audio.airlockReady();
+      }
     } else {
       lastBeepSec = -1;
+      airlockCued = false;
     }
     const specVoice = playing() ? spectroVoice(sim) : "off";
     audio.setSpectro(specVoice, spectroScanProgress(sim), sim.reducedMotion);

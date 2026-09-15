@@ -590,6 +590,7 @@ type AudioApi = {
   crash: () => void;
   warn: () => void;
   clockBeep: () => void;
+  airlockReady: () => void;
   airlockSequence: (reduced?: boolean) => void;
   cancelAirlockSequence: () => void;
   setMuted: (muted: boolean) => void;
@@ -660,6 +661,8 @@ export function createAudio(): AudioApi {
   let muted = false;
   let thrustOn = false;
   let airlockNodes: AudioNode[] = [];
+  // Adrift clock escapement: alternates so seconds read tick / tock.
+  let clockTock = false;
   // CRT TV power on/off clip for the mass spec panel. On = the degauss
   // thunk at the head of the clip, off = the double pop at the tail.
   let tvLoad: Promise<AudioBuffer> | null = null;
@@ -1501,23 +1504,74 @@ export function createAudio(): AudioApi {
       chirp(520, 0.14, 0.16, 0.11);
     },
     clockBeep() {
+      if (!ctx || !sfx || !clickBuf) return;
+      const t = ctx.currentTime;
+      clockTock = !clockTock;
+      const tock = clockTock;
+
+      // Mechanical escapement, not an alarm: a filtered click (the pawl)
+      // plus a tiny resonant knock (the case). Tick sits higher, tock lower,
+      // like a wall clock — quiet enough to live under for a long wait.
+      const click = ctx.createBufferSource();
+      click.buffer = clickBuf;
+      click.playbackRate.value = (tock ? 0.8 : 1) * (0.97 + Math.random() * 0.06);
+      const bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.value = tock ? 1900 : 2900;
+      bp.Q.value = 1.8;
+      const cg = ctx.createGain();
+      cg.gain.setValueAtTime(0.075, t);
+      cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.035);
+      click.connect(bp);
+      bp.connect(cg);
+      cg.connect(sfx);
+      click.start(t);
+      click.stop(t + 0.05);
+
+      const knock = ctx.createOscillator();
+      knock.type = "sine";
+      knock.frequency.setValueAtTime(tock ? 440 : 620, t);
+      knock.frequency.exponentialRampToValueAtTime(tock ? 300 : 420, t + 0.05);
+      const kg = ctx.createGain();
+      kg.gain.setValueAtTime(0.0001, t);
+      kg.gain.exponentialRampToValueAtTime(0.02, t + 0.004);
+      kg.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+      knock.connect(kg);
+      kg.connect(sfx);
+      knock.start(t);
+      knock.stop(t + 0.09);
+      knock.onended = () => {
+        click.disconnect();
+        bp.disconnect();
+        cg.disconnect();
+        knock.disconnect();
+        kg.disconnect();
+      };
+    },
+    airlockReady() {
+      // The moment the hatch button unlocks. A low minor-third swell —
+      // solemn invitation, not a reward chime and not an alarm.
       if (!ctx || !sfx) return;
       const t = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const g = ctx.createGain();
-      osc.type = "square";
-      osc.frequency.value = 1240;
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.045, t + 0.006);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.045);
-      osc.connect(g);
-      g.connect(sfx);
-      osc.start(t);
-      osc.stop(t + 0.06);
-      osc.onended = () => {
-        osc.disconnect();
-        g.disconnect();
+      const tone = (freq: number, at: number, vol: number, dur: number) => {
+        const osc = ctx!.createOscillator();
+        const g = ctx!.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        g.gain.setValueAtTime(0.0001, t + at);
+        g.gain.exponentialRampToValueAtTime(vol, t + at + 0.06);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + at + dur);
+        osc.connect(g);
+        g.connect(sfx!);
+        osc.start(t + at);
+        osc.stop(t + at + dur + 0.05);
+        osc.onended = () => {
+          osc.disconnect();
+          g.disconnect();
+        };
       };
+      tone(196, 0, 0.055, 1.0);
+      tone(233.1, 0.05, 0.035, 1.2);
     },
     airlockSequence(reduced = false) {
       playAirlockSequence(reduced);

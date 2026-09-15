@@ -648,9 +648,13 @@ function CircuitCell({
   );
 }
 
-function CircuitColon() {
+function CircuitColon({ on }: { on: boolean }) {
   return (
-    <div className="time-circuit-colon mb-1.5 hidden sm:flex" aria-hidden>
+    <div
+      className="time-circuit-colon mb-1.5 hidden sm:flex"
+      data-on={on ? "true" : "false"}
+      aria-hidden
+    >
       <span />
       <span />
     </div>
@@ -676,25 +680,32 @@ function AdriftCard({
   const remaining = Math.max(0, foodUntil - now);
   const parts = splitFoodClock(remaining);
   const canOpen = !sealing && now - startedAt >= AIRLOCK_DELAY_MS;
+  // Colons blink with second parity so the panel keeps time with the tick-tock.
+  const colonOn = Math.floor(now / 1000) % 2 === 0;
   return (
     <div className="absolute inset-0 flex items-end justify-center p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 sm:pb-5 pointer-events-none">
       <article className="time-circuit w-full max-w-2xl">
-        <div className="flex items-end justify-between gap-1 sm:gap-2">
-          <CircuitCell label="Year" value={parts.years} width={4} />
-          <CircuitCell label="Month" value={parts.months} width={2} />
-          <CircuitCell label="Day" value={parts.days} width={2} />
-          <CircuitCell label="Hour" value={parts.hours} width={2} />
-          <CircuitColon />
-          <CircuitCell label="Min" value={parts.minutes} width={2} />
-          <CircuitColon />
-          <CircuitCell label="Sec" value={parts.seconds} width={2} />
+        <div className="time-circuit-glass">
+          <div className="flex items-end justify-between gap-1 sm:gap-2">
+            <CircuitCell label="Year" value={parts.years} width={4} />
+            <CircuitCell label="Month" value={parts.months} width={2} />
+            <CircuitCell label="Day" value={parts.days} width={2} />
+            <CircuitCell label="Hour" value={parts.hours} width={2} />
+            <CircuitColon on={colonOn} />
+            <CircuitCell label="Min" value={parts.minutes} width={2} />
+            <CircuitColon on={colonOn} />
+            <CircuitCell label="Sec" value={parts.seconds} width={2} />
+          </div>
+          <p className="time-circuit-strip">Rations remaining</p>
+          <span className="time-circuit-band" aria-hidden />
         </div>
-        <p className="time-circuit-strip">Rations remaining</p>
         {canOpen ? (
-          <div className="mt-3 flex justify-center pointer-events-auto">
-            <button type="button" data-ui onClick={onAirlock} className="time-circuit-hatch">
-              open air lock
-            </button>
+          <div className="mt-3 mb-1.5 flex justify-center pointer-events-auto">
+            <div className="time-circuit-hatch-frame">
+              <button type="button" data-ui onClick={onAirlock} className="time-circuit-hatch">
+                open air lock
+              </button>
+            </div>
           </div>
         ) : null}
       </article>
