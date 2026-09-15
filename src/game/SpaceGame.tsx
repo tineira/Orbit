@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Overlay } from "./Overlay";
 import { startGame, type GameHandle } from "./runtime";
 import type { HudSnapshot } from "./types";
+import { HULL_MAX } from "./hull";
 import { SHIP_FUEL_CAPACITY } from "./world";
 
 const INITIAL: HudSnapshot = {
@@ -14,6 +15,8 @@ const INITIAL: HudSnapshot = {
   fuelCapacity: SHIP_FUEL_CAPACITY,
   fuelKind: "ch4",
   refueling: false,
+  hull: HULL_MAX,
+  repairing: false,
   engineKind: "v1",
   tankKind: "fuel",
   engineIsp: 1,

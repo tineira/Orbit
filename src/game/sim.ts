@@ -99,6 +99,7 @@ import {
   DEFAULT_FUEL_KIND,
   DEFAULT_TANK_KIND,
 } from "./fuel.ts";
+import { HULL_MAX, hullRepairRate, type HullRepairKind } from "./hull.ts";
 
 export type Sim = {
   ship: Ship;
@@ -312,6 +313,7 @@ function freshShip(): Ship {
     engineThrust: 1,
     thrusting: false,
     reverse: false,
+    hull: HULL_MAX,
   };
   applyLoadout(ship);
   return ship;
@@ -1953,8 +1955,57 @@ export function spectroScanProgress(sim: Sim) {
   return Math.max(0, Math.min(1, sim.spectroScanT / SCAN_SECONDS));
 }
 
+function hullSafeKind(sim: Sim): HullRepairKind | null {
+  if (sim.phase === "landed" && sim.landedId) return "landed";
+  if (sim.phase !== "flight") return null;
+  if (sim.lagrangeLockKey) return "lagrange";
+  if (sim.orbitLockId) return "orbit";
+  return null;
+}
+
+function repairShipHull(sim: Sim, dt: number) {
+  const kind = hullSafeKind(sim);
+  if (!kind) return;
+  if (sim.ship.hull >= HULL_MAX) return;
+  sim.ship.hull = Math.min(HULL_MAX, sim.ship.hull + hullRepairRate(kind) * dt);
+}
+
+function breachHull(sim: Sim) {
+  const s = sim.ship;
+  const sp = Math.hypot(s.vx, s.vy);
+  const nx = sp > 1e-6 ? s.vx / sp : 0;
+  const ny = sp > 1e-6 ? s.vy / sp : 0;
+  s.hull = 0;
+  sim.phase = "crashed";
+  sim.crashedId = null;
+  sim.crashKind = "wreck";
+  sim.lostCopy = null;
+  sim.crashAge = 0;
+  sim.wreckSeed = Math.random() * 1000;
+  sim.burned = false;
+  sim.burnCause = null;
+  sim.landedId = null;
+  sim.takeoffIgnoreId = null;
+  sim.orbitLockId = null;
+  sim.orbitDwell = 0;
+  sim.lagrangeLockKey = null;
+  sim.lagrangeDwell = 0;
+  sim.lagrangeDwellKey = null;
+  sim.status = "crashed";
+  sim.orbitHint = null;
+  sim.warpCharge = 0;
+  sim.warpApproach = 0;
+  sim.transitPunched = false;
+  sim.transitBoomed = false;
+  s.thrusting = false;
+  s.reverse = false;
+  sim.camera.trauma = 1;
+  burstWreck(sim, nx, ny, "wreck");
+}
+
 function applyBeltHull(sim: Sim, dt: number) {
-  if (sim.phase !== "flight") {
+  const parked = !!sim.orbitLockId || !!sim.lagrangeLockKey;
+  if (sim.phase !== "flight" || parked) {
     sim.beltTickWait = Math.max(0, sim.beltTickWait - dt);
     sim.beltRainWait = Math.max(0, sim.beltRainWait - dt);
     return;
@@ -1972,6 +2023,13 @@ function applyBeltHull(sim: Sim, dt: number) {
   sim.beltDustBright = scan.dustBright;
   sim.beltTickWait = scan.tickWait;
   sim.beltRainWait = scan.rainWait;
+
+  let hit = 0;
+  for (const tick of scan.ticks) hit += tick.damage;
+  if (hit <= 0) return;
+  sim.ship.hull = Math.max(0, sim.ship.hull - hit);
+  sim.camera.trauma = Math.min(1, sim.camera.trauma + Math.min(0.45, hit * 0.014));
+  if (sim.ship.hull <= 0) breachHull(sim);
 }
 
 export function stepSim(
@@ -2029,6 +2087,10 @@ export function stepSim(
         sim.nearest = p;
         sim.altitude = SHIP_HULL * 0.85;
       }
+    } else {
+      sim.crashAge += dt;
+      ship.x += ship.vx * dt;
+      ship.y += ship.vy * dt;
     }
     decayParticles(sim, dt);
     updateCamera(sim, dt);
@@ -2049,6 +2111,7 @@ export function stepSim(
       faceRadial(sim);
       ship.thrusting = false;
       if (padHasFuel(p)) pumpPadRefill(ship, dt);
+      repairShipHull(sim, dt);
       sipWell(sim, dt);
     }
     sim.warpCharge = 0;
@@ -2085,6 +2148,7 @@ export function stepSim(
     if (stepLockedLagrange(sim, dt, controls)) {
       if (shipHitsFlare(sim)) burnInFlare(sim);
       applyBeltHull(sim, dt);
+      repairShipHull(sim, dt);
       decayParticles(sim, dt);
       updateCamera(sim, dt);
       return;
@@ -2095,6 +2159,7 @@ export function stepSim(
     if (stepLockedOrbit(sim, dt, controls)) {
       if (shipHitsFlare(sim)) burnInFlare(sim);
       applyBeltHull(sim, dt);
+      repairShipHull(sim, dt);
       decayParticles(sim, dt);
       updateCamera(sim, dt);
       return;
@@ -2926,7 +2991,7 @@ function updateCamera(sim: Sim, dt: number) {
       : cruiseLook;
   const targetX = s.x + s.vx * look;
   const targetY = s.y + s.vy * look;
-  const k = sim.phase === "title" ? 1.8 : 3.4;
+  const k = 3.4;
   const a = 1 - Math.exp(-k * dt);
   if (lockCam) {
     sim.camera.x = s.x;

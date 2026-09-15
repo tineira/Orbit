@@ -106,6 +106,7 @@ export type Ship = {
   engineThrust: number;
   thrusting: boolean;
   reverse: boolean;
+  hull: number;
 };
 
 export type IonWisp = {
@@ -238,6 +239,8 @@ export type HudSnapshot = {
   fuelCapacity: number;
   fuelKind: FuelKind;
   refueling: boolean;
+  hull: number;
+  repairing: boolean;
   engineKind: EngineKind;
   tankKind: TankKind;
   engineIsp: number;

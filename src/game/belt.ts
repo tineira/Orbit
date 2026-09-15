@@ -1,4 +1,5 @@
 import type { Planet } from "./types.ts";
+import { hullDamage } from "./hull.ts";
 import { beltBands, SHIP_HULL, type BeltBand } from "./world.ts";
 
 export type BeltTickKind = "dust" | "chip" | "pebble";
@@ -10,6 +11,7 @@ export type BeltTick = {
   ring: number;
   pan: number;
   delay?: number;
+  damage: number;
 };
 
 export type BeltScan = {
@@ -128,6 +130,7 @@ function scatterBeltRain(rel: number, depth: number, dt: number, rainWait: numbe
       ring: 0.006 + jitter * 0.02,
       pan: (Math.random() * 2 - 1) * (0.3 + Math.random() * 0.7),
       delay: n * (0.008 + Math.random() * 0.024),
+      damage: 0,
     });
     n++;
     wait += rainGap(rate);
@@ -238,7 +241,14 @@ export function scanBeltHull(
         found.push({
           key,
           cool: 0.2,
-          tick: { kind: "chip", volume: vol, bright, ring: 0.02, pan },
+          tick: {
+            kind: "chip",
+            volume: vol,
+            bright,
+            ring: 0.02,
+            pan,
+            damage: hullDamage("chip", m.sz, closing),
+          },
         });
         continue;
       }
@@ -266,6 +276,7 @@ export function scanBeltHull(
           bright,
           ring: m.kind === "pebble" ? 0.42 + sizeW * 0.58 : 0.04 + sizeW * 0.08,
           pan,
+          damage: hullDamage(m.kind, m.sz, closing),
         },
       });
     }

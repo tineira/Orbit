@@ -37,6 +37,7 @@ import {
   type SpectroVoice,
 } from "./sim";
 import { cycleEngine as stepEngine, cycleFuelKind, cycleTank as stepTank } from "./fuel";
+import { HULL_MAX } from "./hull";
 import type { GameUiHandler, HudSnapshot } from "./types";
 import {
   createSystem,
@@ -159,6 +160,8 @@ const CREATING_HUD: HudSnapshot = {
   fuelCapacity: SHIP_FUEL_CAPACITY,
   fuelKind: "ch4",
   refueling: false,
+  hull: HULL_MAX,
+  repairing: false,
   engineKind: "v1",
   tankKind: "fuel",
   engineIsp: 1,
@@ -294,6 +297,11 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         s.fuel < s.fuelCapacity - 1e-6 &&
         !!pad &&
         padHasFuel(pad),
+      hull: s.hull,
+      repairing:
+        s.hull < HULL_MAX - 1e-6 &&
+        ((sim.phase === "landed" && !!landedId) ||
+          (sim.phase === "flight" && (!!sim.orbitLockId || !!sim.lagrangeLockKey))),
       engineKind: s.engineKind,
       tankKind: s.tankKind,
       engineIsp: s.engineIsp,

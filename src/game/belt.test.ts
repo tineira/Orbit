@@ -53,6 +53,7 @@ test("a fast chip graze ticks the hull without a crash", () => {
   assert.ok(hit.ticks.length >= 1);
   assert.equal(hit.ticks[0]!.kind, "chip");
   assert.ok(hit.ticks[0]!.volume > 0.012);
+  assert.ok(hit.ticks[0]!.damage > 0);
   const again = scanBeltHull(sim.ship, sim.planets, cool, hit.tickWait, 0);
   assert.equal(again.ticks.length, 0);
 

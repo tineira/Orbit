@@ -9,6 +9,7 @@ import type {
   VerboseDiag,
 } from "./types";
 import { engineGrade, fuelGrade, tankGrade } from "./fuel";
+import { HULL_MAX } from "./hull";
 import { bodyReadout, SCAN_SECONDS } from "./matter";
 import { ATMO_STEPS, GRAVITY_STEPS, getPlanets, isGhostBody, planetById } from "./world";
 import { cn } from "@/lib/utils";
@@ -171,6 +172,7 @@ export function Overlay({
                     MASS {hud.mass.toFixed(2)}
                   </p>
                 </div>
+                <HullPanel hull={hud.hull} repairing={hud.repairing} />
                 <FuelPanel
                   fuel={hud.fuel}
                   capacity={hud.fuelCapacity}
@@ -316,11 +318,11 @@ export function Overlay({
       {hud.phase === "crashed" && hud.crashKind === "lost" && hud.lostCopy ? (
         <LostCard copy={hud.lostCopy} onReboot={onReboot} onNewWorld={onNewWorld} />
       ) : null}
-      {hud.phase === "crashed" && crashed && hud.crashKind !== "lost" ? (
+      {hud.phase === "crashed" && hud.crashKind !== "lost" ? (
         <CrashCard
           burned={hud.burned}
           crashKind={hud.crashKind}
-          detail={crashDetail(crashed.name, hud.burned, hud.burnCause, hud.crashKind, crashed)}
+          detail={crashDetail(crashed?.name ?? null, hud.burned, hud.burnCause, hud.crashKind, crashed)}
           onReboot={onReboot}
           onNewWorld={onNewWorld}
         />
@@ -544,21 +546,24 @@ function LandingCard({
 }
 
 function crashDetail(
-  name: string,
+  name: string | null,
   burned: boolean,
   cause: HudSnapshot["burnCause"],
   kind: HudSnapshot["crashKind"],
   body: NonNullable<ReturnType<typeof planetById>> | null,
 ) {
-  if (kind === "sink") return `The craft fell into ${name}. The clouds closed.`;
+  if (kind === "wreck" && !body) {
+    return "The belt wore through the hull. Nothing left to hold the dark out.";
+  }
+  if (kind === "sink") return `The craft fell into ${name ?? "the clouds"}. The clouds closed.`;
   if (!burned) {
     if (body?.kind === "asteroid" && !body.landable) {
       return `${name} is too small to land. The hull took the hit.`;
     }
-    return `The approach into ${name} was too fast. The well won. Bring the craft back and try a slower pass — or catch an orbit first.`;
+    return `The approach into ${name ?? "the well"} was too fast. The well won. Bring the craft back and try a slower pass — or catch an orbit first.`;
   }
-  if (cause === "flare") return `A flare from ${name} reached the craft.`;
-  return `Too close to ${name}. The hull cooked.`;
+  if (cause === "flare") return `A flare from ${name ?? "the star"} reached the craft.`;
+  return `Too close to ${name ?? "the star"}. The hull cooked.`;
 }
 
 function LostCard({
@@ -1001,6 +1006,43 @@ function fuelTone(frac: number) {
   if (frac > FUEL_CAUTION) return "ok" as const;
   if (frac > FUEL_WARN) return "caution" as const;
   return "warn" as const;
+}
+
+function HullPanel({ hull, repairing }: { hull: number; repairing: boolean }) {
+  const max = HULL_MAX;
+  const t = Math.max(0, Math.min(1, hull / max));
+  const filled = Math.round(t * FUEL_PIPS);
+  const tone = fuelTone(t);
+  const pip =
+    tone === "ok" ? "bg-ok" : tone === "caution" ? "bg-caution" : "bg-warn";
+  const countColor =
+    tone === "ok" ? "text-muted" : tone === "caution" ? "text-caution" : "text-warn";
+  const shown = Math.round(Math.max(0, hull));
+  const reading = `${shown} / ${max}`;
+  return (
+    <div className="text-right">
+      <p className="font-mono text-xs tracking-[0.18em] uppercase text-muted">Hull</p>
+      <div
+        className="mt-1.5 flex items-center justify-end gap-2"
+        role="meter"
+        aria-label="Hull integrity"
+        aria-valuemin={0}
+        aria-valuemax={max}
+        aria-valuenow={shown}
+        aria-valuetext={reading}
+      >
+        <span className="flex h-3 items-center gap-px rounded-sm bg-bg px-px">
+          {Array.from({ length: FUEL_PIPS }, (_, i) => (
+            <span key={i} className={cn("h-2 w-1.5", i < filled ? pip : "bg-surface-2")} />
+          ))}
+        </span>
+        <span className={cn("font-mono text-[10px] tabular-nums", countColor)}>{reading}</span>
+      </div>
+      {repairing ? (
+        <p className="mt-0.5 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">Repair</p>
+      ) : null}
+    </div>
+  );
 }
 
 function fmtStat(n: number) {
