@@ -405,6 +405,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     if (!sim) return;
     sim.showSpectro = !sim.showSpectro;
     if (!sim.showSpectro) clearSpectroScan(sim);
+    audio.spectroPower(sim.showSpectro);
   };
 
   const consumeNewWorld = () => {

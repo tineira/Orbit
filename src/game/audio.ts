@@ -581,6 +581,7 @@ type AudioApi = {
   }) => void;
   setSpectro: (mode: "off" | "idle" | "scan" | "done", scanProgress?: number, reduced?: boolean) => void;
   spectroPing: () => void;
+  spectroPower: (on: boolean) => void;
   warpJump: () => void;
   sonicBooms: (times?: readonly number[]) => void;
   bump: (amount: number) => void;
@@ -653,6 +654,25 @@ export function createAudio(): AudioApi {
   let voidIR: AudioBuffer | null = null;
   let muted = false;
   let thrustOn = false;
+  // CRT TV power on/off clip for the mass spec panel. On = the degauss
+  // thunk at the head of the clip, off = the double pop at the tail.
+  let tvLoad: Promise<AudioBuffer> | null = null;
+
+  const loadTvClip = () => {
+    if (!ctx) return null;
+    if (!tvLoad) {
+      const dec = async (url: string) => {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await ctx!.decodeAudioData(await res.arrayBuffer());
+      };
+      tvLoad = dec("/sounds/tv-onoff.webm").catch(() => dec("/sounds/tv-onoff.m4a"));
+      tvLoad.catch(() => {
+        tvLoad = null;
+      });
+    }
+    return tvLoad;
+  };
 
   const ensure = () => {
     if (ctx) return;
@@ -964,6 +984,7 @@ export function createAudio(): AudioApi {
   const unlock = () => {
     ensure();
     if (ctx && ctx.state === "suspended") void ctx.resume();
+    void loadTvClip();
   };
 
   const onVis = () => {
@@ -1097,6 +1118,38 @@ export function createAudio(): AudioApi {
       };
       chirp("square", 1680, 0, 0.05, 0.032);
       chirp("square", 920, 0.04, 0.09, 0.024);
+    },
+    spectroPower(on) {
+      ensure();
+      if (!ctx || !sfx) return;
+      void ctx.resume();
+      const load = loadTvClip();
+      if (!load) return;
+      void load.then((buf) => {
+        if (!ctx || !sfx) return;
+        const t = ctx.currentTime;
+        // On: head of the clip (CRT switch + degauss thunk). Off: the
+        // double power-down pop near the tail, before the silence.
+        const dur = on ? 0.6 : 0.75;
+        const offset = on ? 0 : Math.max(0, Math.min(2.88, buf.duration - dur));
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        const g = ctx.createGain();
+        const peak = 0.62;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(peak, t + 0.012);
+        g.gain.setValueAtTime(peak, t + dur - 0.12);
+        g.gain.linearRampToValueAtTime(0.0001, t + dur);
+        src.connect(g);
+        g.connect(sfx);
+        src.start(t, offset, dur);
+        src.onended = () => {
+          src.disconnect();
+          g.disconnect();
+        };
+      }).catch(() => {
+        /* clip unavailable — stay silent */
+      });
     },
     setWarp(on, intensity, pitch) {
       if (
