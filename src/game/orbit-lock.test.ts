@@ -117,6 +117,43 @@ test("moon lock rings stay inside the parent well", () => {
   }
 });
 
+test("a circular coast around a rocky planet locks", () => {
+  createSystem(1, { belt: true });
+  const sim = createSim();
+  const planet = sim.planets.find((p) => p.kind === "rocky")!;
+  const { minAlt, maxAlt } = orbitShellAlts(planet, sim.planets);
+  circularAround(sim, live(sim, planet.id), (minAlt + maxAlt) / 2);
+  coast(sim, ORBIT_LOCK_DWELL + 0.2);
+  assert.equal(sim.orbitLockId, planet.id);
+});
+
+test("a planetary ellipse with apo outside the lock ring still captures", () => {
+  createSystem(1, { belt: true });
+  const sim = createSim();
+  const planet = sim.planets.find((p) => p.kind === "rocky")!;
+  const { minAlt, maxAlt } = orbitShellAlts(planet, sim.planets);
+  const periAlt = (minAlt + maxAlt) / 2;
+  const apoAlt = Math.min(planet.radius * 3.2, maxAlt + 80);
+  assert.ok(apoAlt > maxAlt, `need apo ${apoAlt} past shell ${maxAlt}`);
+  const rp = planet.radius + periAlt;
+  const ra = planet.radius + apoAlt;
+  const a = (rp + ra) / 2;
+  const mu = bodyMu(planet, sim.gravityScale);
+  sim.ship.x = planet.x + rp;
+  sim.ship.y = planet.y;
+  const v = Math.sqrt(Math.max(0, mu * (2 / rp - 1 / a)));
+  sim.ship.vx = planet.vx;
+  sim.ship.vy = planet.vy + v;
+  sim.phase = "flight";
+  sim.landedId = null;
+  sim.orbitLockId = null;
+  sim.orbitLockCooldown = 0;
+  sim.orbitDwell = 0;
+  sim.crashedId = null;
+  coast(sim, ORBIT_LOCK_DWELL + 0.2);
+  assert.equal(sim.orbitLockId, planet.id);
+});
+
 test("a circular coast in a moon lock shell captures", () => {
   createSystem(1, { belt: true });
   const sim = createSim();

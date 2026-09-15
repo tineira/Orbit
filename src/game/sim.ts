@@ -40,6 +40,8 @@ import {
   GAS_CLOUD_DENSITY,
   KEPLER_STAR_APO_FACTOR,
   KEPLER_STAR_APO_CAP,
+  KEPLER_APO_FACTOR,
+  KEPLER_APO_CAP,
   FLARE_CAP,
   FLARE_LONG_CHANCE,
   getStart,
@@ -1572,7 +1574,10 @@ function inspectKepler(
   let maxApo =
     p.kind === "star"
       ? p.radius + Math.min(p.radius * KEPLER_STAR_APO_FACTOR, KEPLER_STAR_APO_CAP)
-      : p.radius + shell.maxAlt;
+      : p.radius + Math.min(p.radius * KEPLER_APO_FACTOR, KEPLER_APO_CAP);
+  if (p.kind === "moon" || p.kind === "asteroid") {
+    maxApo = Math.min(maxApo, p.radius + shell.maxAlt);
+  }
   const sibling = twinOf(p, planets);
   if (sibling) {
     const sep = Math.hypot(p.x - sibling.x, p.y - sibling.y);
@@ -2940,7 +2945,10 @@ export function relativePathTarget(sim: Sim): Planet | null {
   const dist = Math.hypot(sim.ship.x - p.x, sim.ship.y - p.y);
   const alt = dist - p.radius;
   const { maxAlt } = orbitShellAlts(p, sim.planets);
-  const near = Math.max(maxAlt * 1.35, approachRadius(p) - p.radius + 24);
+  const near =
+    p.kind === "moon" || p.kind === "asteroid"
+      ? Math.max(maxAlt * 1.35, approachRadius(p) - p.radius + 24)
+      : Math.max(maxAlt * 2.4, approachRadius(p) - p.radius + 40, 220);
   if (alt > near || alt < -2) return null;
   return p;
 }
