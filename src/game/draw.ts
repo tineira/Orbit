@@ -2326,7 +2326,7 @@ function drawSpectrograph(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number,
 }
 
 function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH: number) {
-  const { size, x, y } = minimapLayout(cssW, cssH);
+  const { desktop, size, x, y } = minimapLayout(cssW, cssH);
   ctx.save();
   ctx.globalAlpha = 0.92;
   roundRect(ctx, x, y, size, size, 12);
@@ -2339,7 +2339,8 @@ function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH
   const worldR = getMinimapWorldR();
   const cx = x + size / 2;
   const cy = y + size / 2;
-  const scale = (size * 0.42) / worldR;
+  // Desktop: fill more of the square, leaving a thin ring for nearby names.
+  const scale = (size * (desktop ? 0.47 : 0.42)) / worldR;
 
   const radius = 12;
   ctx.save();
