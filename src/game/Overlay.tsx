@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Minus, Plus, Volume2, VolumeX } from "lucide-react";
 import type {
   CompositionReadout,
@@ -159,34 +159,54 @@ export function Overlay({
                 {hud.spectroScanning ? <ScanPips frac={hud.spectroScan} /> : null}
               </div>
               <div className="flex flex-col items-end gap-3">
-                <div className="text-right">
-                  <p className="font-mono text-xs tracking-[0.18em] uppercase text-muted">Ship</p>
-                  <p className="mt-1 font-mono text-sm tabular-nums text-fg">
-                    {fmt(hud.speed)} <span className="text-muted">u/s</span>
-                    <span className="mx-2 text-subtle">·</span>
-                    {fmt(hud.drag)} <span className="text-muted">drag</span>
-                  </p>
-                  <p className="mt-0.5 font-mono text-xs tabular-nums text-muted">
-                    HDG {hud.headingDeg.toFixed(0).padStart(3, "0")}°
-                    <span className="mx-2 text-subtle">·</span>
-                    MASS {hud.mass.toFixed(2)}
-                  </p>
+                <div
+                  data-ui
+                  className="pointer-events-auto w-64 rounded-lg border border-border bg-surface/80 p-3 backdrop-blur-sm sm:w-[28rem]"
+                >
+                  <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <PanelRow label="Speed">
+                        {fmt(hud.speed)} <span className="text-muted">u/s</span>
+                      </PanelRow>
+                      <PanelRow label="Drag">{fmt(hud.drag)}</PanelRow>
+                      <PanelRow label="Heading">
+                        {hud.headingDeg.toFixed(0).padStart(3, "0")}°
+                      </PanelRow>
+                      <PanelRow label="Mass">{hud.mass.toFixed(2)}</PanelRow>
+                    </div>
+                    <div className="mt-2.5 border-t border-border pt-2.5 sm:mt-0 sm:border-t-0 sm:border-l sm:pl-4 sm:pt-0">
+                      <FuelPanel
+                        kind={hud.fuelKind}
+                        engineKind={hud.engineKind}
+                        tankKind={hud.tankKind}
+                        engineIsp={hud.engineIsp}
+                        engineThrust={hud.engineThrust}
+                        dev={dev}
+                        onCycleFuel={onCycleFuel}
+                        onCycleEngine={onCycleEngine}
+                        onCycleTank={onCycleTank}
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-2.5 grid grid-cols-1 gap-x-4 gap-y-1.5 border-t border-border pt-2.5 sm:grid-cols-2">
+                    <GaugeRow
+                      label="Hull"
+                      ariaLabel="Hull integrity"
+                      value={hud.hull}
+                      max={HULL_MAX}
+                      unit=""
+                      note={hud.repairing ? "Repair" : null}
+                    />
+                    <GaugeRow
+                      label="Fuel"
+                      ariaLabel="Fuel"
+                      value={hud.fuel}
+                      max={hud.fuelCapacity}
+                      unit=" L"
+                      note={hud.refueling ? "Refuel" : null}
+                    />
+                  </div>
                 </div>
-                <HullPanel hull={hud.hull} repairing={hud.repairing} />
-                <FuelPanel
-                  fuel={hud.fuel}
-                  capacity={hud.fuelCapacity}
-                  kind={hud.fuelKind}
-                  refueling={hud.refueling}
-                  engineKind={hud.engineKind}
-                  tankKind={hud.tankKind}
-                  engineIsp={hud.engineIsp}
-                  engineThrust={hud.engineThrust}
-                  dev={dev}
-                  onCycleFuel={onCycleFuel}
-                  onCycleEngine={onCycleEngine}
-                  onCycleTank={onCycleTank}
-                />
                 {dev && hud.physicsMenu ? (
                   <PhysicsKnobs
                     gravityScale={hud.gravityScale}
@@ -1048,39 +1068,95 @@ function fuelTone(frac: number) {
   return "warn" as const;
 }
 
-function HullPanel({ hull, repairing }: { hull: number; repairing: boolean }) {
-  const max = HULL_MAX;
-  const t = Math.max(0, Math.min(1, hull / max));
+function PanelRow({
+  label,
+  className,
+  children,
+}: {
+  label: ReactNode;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={cn("flex min-h-5 items-center justify-between gap-3", className)}>
+      <span className="shrink-0 font-mono text-[10px] tracking-[0.16em] uppercase text-muted">
+        {label}
+      </span>
+      <span className="flex items-center gap-2 text-right font-mono text-xs tabular-nums text-fg">
+        {children}
+      </span>
+    </div>
+  );
+}
+
+function GaugePips({ frac }: { frac: number }) {
+  const t = Math.max(0, Math.min(1, frac));
   const filled = Math.round(t * FUEL_PIPS);
   const tone = fuelTone(t);
   const pip =
     tone === "ok" ? "bg-ok" : tone === "caution" ? "bg-caution" : "bg-warn";
-  const countColor =
-    tone === "ok" ? "text-muted" : tone === "caution" ? "text-caution" : "text-warn";
-  const shown = Math.round(Math.max(0, hull));
-  const reading = `${shown} / ${max}`;
   return (
-    <div className="text-right">
-      <p className="font-mono text-xs tracking-[0.18em] uppercase text-muted">Hull</p>
-      <div
-        className="mt-1.5 flex items-center justify-end gap-2"
-        role="meter"
-        aria-label="Hull integrity"
-        aria-valuemin={0}
-        aria-valuemax={max}
-        aria-valuenow={shown}
-        aria-valuetext={reading}
+    <span className="flex h-3 items-center gap-px rounded-sm bg-bg px-px">
+      {Array.from({ length: FUEL_PIPS }, (_, i) => (
+        <span key={i} className={cn("h-2 w-1.5", i < filled ? pip : "bg-surface-2")} />
+      ))}
+    </span>
+  );
+}
+
+function gaugeCountColor(frac: number) {
+  const tone = fuelTone(Math.max(0, Math.min(1, frac)));
+  return tone === "ok" ? "text-muted" : tone === "caution" ? "text-caution" : "text-warn";
+}
+
+function GaugeRow({
+  label,
+  ariaLabel,
+  value,
+  max,
+  unit,
+  note,
+}: {
+  label: string;
+  ariaLabel: string;
+  value: number;
+  max: number;
+  unit: string;
+  note?: string | null;
+}) {
+  const cap = Math.round(Math.max(0, max));
+  const t = cap > 0 ? Math.max(0, Math.min(1, value / cap)) : 0;
+  const shown = Math.round(Math.max(0, value));
+  const reading = `${shown} / ${cap}${unit}`;
+  return (
+    <div
+      className="flex min-h-5 items-center justify-between gap-2"
+      role="meter"
+      aria-label={ariaLabel}
+      aria-valuemin={0}
+      aria-valuemax={cap}
+      aria-valuenow={shown}
+      aria-valuetext={note ? `${reading}, ${note}` : reading}
+    >
+      <span
+        className={cn(
+          "shrink-0 font-mono text-[10px] tracking-[0.16em] uppercase",
+          note ? "text-ok" : "text-muted",
+        )}
       >
-        <span className="flex h-3 items-center gap-px rounded-sm bg-bg px-px">
-          {Array.from({ length: FUEL_PIPS }, (_, i) => (
-            <span key={i} className={cn("h-2 w-1.5", i < filled ? pip : "bg-surface-2")} />
-          ))}
+        {note ?? label}
+      </span>
+      <span className="flex items-center gap-2">
+        <GaugePips frac={t} />
+        <span
+          className={cn(
+            "w-[5.5rem] whitespace-nowrap text-right font-mono text-xs tabular-nums",
+            gaugeCountColor(t),
+          )}
+        >
+          {reading}
         </span>
-        <span className={cn("font-mono text-[10px] tabular-nums", countColor)}>{reading}</span>
-      </div>
-      {repairing ? (
-        <p className="mt-0.5 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">Repair</p>
-      ) : null}
+      </span>
     </div>
   );
 }
@@ -1132,10 +1208,7 @@ function MiniStep({
 }
 
 function FuelPanel({
-  fuel,
-  capacity,
   kind,
-  refueling,
   engineKind,
   tankKind,
   engineIsp,
@@ -1145,10 +1218,7 @@ function FuelPanel({
   onCycleEngine,
   onCycleTank,
 }: {
-  fuel: number;
-  capacity: number;
   kind: FuelKind;
-  refueling: boolean;
   engineKind: EngineKind;
   tankKind: TankKind;
   engineIsp: number;
@@ -1161,79 +1231,44 @@ function FuelPanel({
   const grade = fuelGrade(kind);
   const engine = engineGrade(engineKind);
   const tank = tankGrade(tankKind);
-  const max = Math.max(0, capacity);
-  const t = max > 0 ? Math.max(0, Math.min(1, fuel / max)) : 0;
-  const filled = Math.round(t * FUEL_PIPS);
-  const tone = fuelTone(t);
-  const pip =
-    tone === "ok" ? "bg-ok" : tone === "caution" ? "bg-caution" : "bg-warn";
-  const countColor =
-    tone === "ok" ? "text-muted" : tone === "caution" ? "text-caution" : "text-warn";
-  const shown = Math.round(Math.max(0, fuel));
-  const cap = Math.round(max);
   const isp = grade.isp * engineIsp;
   const thrust = grade.thrust * engineThrust;
-  const reading = `${grade.hud} ${shown} / ${cap} L`;
   return (
-    <div className="text-right">
-      <p className="font-mono text-xs tracking-[0.18em] uppercase text-muted">Engine</p>
-      <div className="mt-1 flex items-center justify-end gap-2">
+    <div className="space-y-1.5">
+      <PanelRow label="Engine">
         {dev ? (
           <MiniStep label="engine" onDown={() => onCycleEngine(-1)} onUp={() => onCycleEngine(1)} />
         ) : null}
-        <p className="font-mono text-sm tabular-nums text-fg">{engine.hud}</p>
-      </div>
-      <p className="mt-3 font-mono text-xs tracking-[0.18em] uppercase text-muted">Fuel</p>
-      <div className="mt-1 flex items-center justify-end gap-2">
+        {engine.hud}
+      </PanelRow>
+      <PanelRow label="Fuel">
         {dev ? (
           <MiniStep label="fuel" onDown={() => onCycleFuel(-1)} onUp={() => onCycleFuel(1)} />
         ) : null}
-        <p className="font-mono text-sm tabular-nums leading-tight">
-          <span className="text-fg">{grade.hud}</span>
-          {" "}
-          <span className="text-muted">{grade.name}</span>
-        </p>
-      </div>
-      <div className="mt-3 flex items-center justify-end gap-2">
+        <span>
+          {grade.hud} <span className="text-muted">{grade.name}</span>
+        </span>
+      </PanelRow>
+      <PanelRow label="Tank">
         {dev ? (
           <MiniStep label="tank" onDown={() => onCycleTank(-1)} onUp={() => onCycleTank(1)} />
         ) : null}
-        <p className="font-mono text-sm tabular-nums leading-tight">
-          <span className="text-fg">{tank.hud}</span>
-          {" "}
-          <span className="text-muted">{tank.volume} L</span>
-        </p>
-      </div>
-      <div
-        className="mt-1.5 flex items-center justify-end gap-2"
-        role="meter"
-        aria-label="Fuel"
-        aria-valuemin={0}
-        aria-valuemax={cap}
-        aria-valuenow={shown}
-        aria-valuetext={reading}
-      >
-        <span className="flex h-3 items-center gap-px rounded-sm bg-bg px-px">
-          {Array.from({ length: FUEL_PIPS }, (_, i) => (
-            <span key={i} className={cn("h-2 w-1.5", i < filled ? pip : "bg-surface-2")} />
-          ))}
+        <span>
+          {tank.hud} <span className="text-muted">{tank.volume} L</span>
         </span>
-        <span className={cn("font-mono text-[10px] tabular-nums", countColor)}>
-          {shown} / {cap} L
-        </span>
-      </div>
-      {refueling ? (
-        <p className="mt-0.5 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">Refuel</p>
-      ) : null}
-      <p
-        className="mt-0.5 font-mono text-[10px] tabular-nums text-muted"
-        aria-label={`Specific impulse ${fmtStat(isp)}, thrust ${fmtStat(thrust)}`}
+      </PanelRow>
+      <PanelRow
+        label={
+          <>
+            I<sub className="relative -bottom-px text-[0.8em] tracking-normal">sp</sub>
+          </>
+        }
       >
-        I<sub className="relative -bottom-px text-[0.7em] tracking-normal">sp</sub>{" "}
-        {fmtStat(isp)}
-        <span className="mx-1.5 text-subtle">·</span>
-        T {fmtStat(thrust)}
-      </p>
+        <span className="text-muted">{fmtStat(isp)}</span>
+      </PanelRow>
+      <PanelRow label="Thrust">
+        <span className="text-muted">{fmtStat(thrust)}</span>
+      </PanelRow>
     </div>
   );
 }
