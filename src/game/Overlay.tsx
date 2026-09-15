@@ -661,6 +661,65 @@ function CircuitColon({ on }: { on: boolean }) {
   );
 }
 
+const HATCH_BOLTS = Array.from({ length: 8 }, (_, i) => {
+  const a = (i * Math.PI) / 4;
+  return { x: 36 + 24 * Math.cos(a), y: 36 + 24 * Math.sin(a) };
+});
+
+function HatchGlyph() {
+  return (
+    <svg className="time-circuit-hatch-glyph" viewBox="0 0 72 72" aria-hidden>
+      <g className="time-circuit-hatch-grid">
+        <line x1="36" y1="7" x2="36" y2="65" />
+        <line x1="7" y1="36" x2="65" y2="36" />
+        <circle cx="36" cy="36" r="14.5" />
+      </g>
+      <circle className="time-circuit-hatch-ring" cx="36" cy="36" r="27" />
+      <circle className="time-circuit-hatch-ring-inner" cx="36" cy="36" r="20.5" />
+      {HATCH_BOLTS.map((b) => (
+        <circle key={`${b.x}:${b.y}`} className="time-circuit-hatch-bolt" cx={b.x} cy={b.y} r="1.55" />
+      ))}
+      <circle className="time-circuit-hatch-iris" cx="36" cy="36" r="10" />
+      <g className="time-circuit-hatch-latch">
+        <line x1="22.5" y1="36" x2="49.5" y2="36" />
+        <line x1="36" y1="27.5" x2="36" y2="36" />
+      </g>
+    </svg>
+  );
+}
+
+function HatchCrtButton({
+  colonOn,
+  onAirlock,
+}: {
+  colonOn: boolean;
+  onAirlock: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-ui
+      onClick={onAirlock}
+      className="time-circuit-hatch"
+      data-on={colonOn ? "true" : "false"}
+      aria-label="open air lock"
+    >
+      <span className="time-circuit-glass time-circuit-hatch-glass">
+        <span className="time-circuit-label">hatch</span>
+        <HatchGlyph />
+        <span className="time-circuit-hatch-open">
+          <span className="time-circuit-ghost absolute inset-0" aria-hidden>
+            OPEN
+          </span>
+          <span className="relative">OPEN</span>
+        </span>
+        <p className="time-circuit-strip">air lock</p>
+        <span className="time-circuit-band" aria-hidden />
+      </span>
+    </button>
+  );
+}
+
 function AdriftCard({
   startedAt,
   foodUntil,
@@ -686,7 +745,8 @@ function AdriftCard({
   if (!shown && !sealing) return null;
   return (
     <div className="absolute inset-0 flex items-end justify-center p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 sm:pb-5 pointer-events-none">
-      <div className="relative w-full max-w-2xl">
+      <div className="time-circuit-row">
+        {canOpen ? <HatchCrtButton colonOn={colonOn} onAirlock={onAirlock} /> : null}
         <article className="time-circuit">
           <div className="time-circuit-glass">
             <div className="flex items-end justify-between gap-1 sm:gap-2">
@@ -703,15 +763,6 @@ function AdriftCard({
             <span className="time-circuit-band" aria-hidden />
           </div>
         </article>
-        {canOpen ? (
-          <div className="time-circuit-hatch-float">
-            <div className="time-circuit-hatch-frame">
-              <button type="button" data-ui onClick={onAirlock} className="time-circuit-hatch">
-                open air lock
-              </button>
-            </div>
-          </div>
-        ) : null}
       </div>
     </div>
   );
