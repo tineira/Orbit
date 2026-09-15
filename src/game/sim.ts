@@ -1985,6 +1985,11 @@ export function stepSim(
     aimThrust: boolean;
   },
 ) {
+  if (sim.phase === "title" || sim.padZoomLock) {
+    holdTitleSim(sim, dt);
+    return;
+  }
+
   stepSpectro(sim, dt);
   updateMoons(sim, dt);
   invalidateLagrange(sim);
@@ -1998,25 +2003,6 @@ export function stepSim(
   sim.beltTicks.length = 0;
   sim.beltDust = 0;
   sim.beltDustBright = 0;
-  if (sim.phase === "title") {
-    if (sim.landedId) {
-      const p = sim.planets.find((b) => b.id === sim.landedId);
-      if (p) {
-        carryOnSurface(sim, p, dt);
-        faceRadial(sim);
-        sim.nearest = p;
-        sim.altitude = SHIP_HULL * 0.85;
-        sim.status = "landed";
-      }
-    } else {
-      const g = gravityAt(ship.x, ship.y, sim.planets, sim.gravityScale);
-      sim.nearest = g.nearest;
-      sim.altitude = g.dist - g.nearest.radius;
-    }
-    decayParticles(sim, dt);
-    updateCamera(sim, dt);
-    return;
-  }
 
   if (sim.phase === "crashed") {
     if (sim.crashKind === "lost") {
@@ -2792,6 +2778,31 @@ function lockPadCamera(sim: Sim) {
   sim.camera.zoom = sim.camera.zoomAuto;
 }
 
+/** Pad hold: no orbits, spin, flares, or drift until takeoff. */
+function holdTitleSim(sim: Sim, dt: number) {
+  const ship = sim.ship;
+  ship.thrusting = false;
+  ship.reverse = false;
+  sim.beltTicks.length = 0;
+  sim.beltDust = 0;
+  sim.beltDustBright = 0;
+  if (sim.landedId) {
+    const p = sim.planets.find((b) => b.id === sim.landedId);
+    if (p) {
+      stickToPlanet(sim, p);
+      faceRadial(sim);
+      sim.nearest = p;
+      sim.altitude = SHIP_HULL * 0.85;
+      sim.status = "landed";
+    }
+  } else {
+    const g = gravityAt(ship.x, ship.y, sim.planets, sim.gravityScale);
+    sim.nearest = g.nearest;
+    sim.altitude = g.dist - g.nearest.radius;
+  }
+  updateCamera(sim, dt);
+}
+
 /** Pad is closer than play zoom. Ease out to the player's max (+ / pinch) instead of the whole chart. */
 function unlockPadCamera(sim: Sim) {
   if (!sim.padZoomLock) return;
@@ -2885,6 +2896,15 @@ function zoomToHoldStar(sim: Sim) {
 
 function updateCamera(sim: Sim, dt: number) {
   const s = sim.ship;
+  if (sim.phase === "title" || sim.padZoomLock) {
+    sim.camera.x = s.x;
+    sim.camera.y = s.y;
+    sim.camera.zoomAuto = padZoomAuto(sim);
+    sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
+    sim.camera.trauma = 0;
+    sim.camera.shake = 0;
+    return;
+  }
   const speed = Math.hypot(s.vx, s.vy);
   const rush = starfieldRush(sim);
   sim.camera.starDriftX += (rush.x - s.vx) * dt;

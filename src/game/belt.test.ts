@@ -42,6 +42,7 @@ test("a fast chip graze ticks the hull without a crash", () => {
   }
   assert.equal(chip.kind, "chip");
   sim.phase = "flight";
+  sim.padZoomLock = false;
   sim.landedId = null;
   sim.ship.x = chip.x + 6;
   sim.ship.y = chip.y;

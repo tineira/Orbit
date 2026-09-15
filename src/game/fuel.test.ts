@@ -167,6 +167,7 @@ test("a landing pumps CH4 over time instead of topping off", () => {
   createSystem(1);
   const sim = createSim();
   sim.phase = "landed";
+  sim.padZoomLock = false;
   sim.ship.fuel = 10;
   beginPadRefill(sim.ship);
   stepSim(sim, 1, {

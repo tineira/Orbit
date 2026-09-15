@@ -59,6 +59,24 @@ test("takeoff eases out to the user's max zoom, not the whole chart", () => {
   assert.ok(sim.camera.zoom < padZ, `still eases out from the pad ${sim.camera.zoom} vs ${padZ}`);
 });
 
+test("the title pad freezes the chart until takeoff", () => {
+  createSystem(1);
+  const sim = createSim();
+  const home = sim.planets.find((p) => p.kicker === "Home")!;
+  const rot0 = home.rotate;
+  const a0 = home.orbitA;
+  const x0 = home.x;
+  for (let i = 0; i < 180; i++) stepSim(sim, 1 / 60, idle);
+  assert.equal(home.rotate, rot0);
+  assert.equal(home.orbitA, a0);
+  assert.equal(home.x, x0);
+  takeoff(sim);
+  for (let i = 0; i < 90; i++) stepSim(sim, 1 / 60, idle);
+  const live = sim.planets.find((p) => p.id === home.id)!;
+  assert.ok(Math.abs(live.rotate - rot0) > 1e-4, "spin resumes");
+  assert.ok(Math.abs((live.orbitA ?? 0) - (a0 ?? 0)) > 1e-6, "orbit resumes");
+});
+
 test("rebooting on the pad restores the close zoom lock", () => {
   createSystem(1);
   const sim = createSim();

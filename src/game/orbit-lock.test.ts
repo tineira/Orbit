@@ -41,6 +41,7 @@ function circularAround(sim: ReturnType<typeof createSim>, p: Planet, alt: numbe
   sim.ship.vx = p.vx + -uy * v;
   sim.ship.vy = p.vy + ux * v;
   sim.phase = "flight";
+  sim.padZoomLock = false;
   sim.landedId = null;
   sim.orbitLockId = null;
   sim.orbitLockCooldown = 0;
@@ -145,6 +146,7 @@ test("a planetary ellipse with apo outside the lock ring still captures", () => 
   sim.ship.vx = planet.vx;
   sim.ship.vy = planet.vy + v;
   sim.phase = "flight";
+  sim.padZoomLock = false;
   sim.landedId = null;
   sim.orbitLockId = null;
   sim.orbitLockCooldown = 0;

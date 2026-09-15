@@ -117,6 +117,7 @@ test("a landed craft tracks the body's spin", () => {
   const home = sim.planets.find((p) => p.kicker === "Home");
   assert.ok(home);
   sim.phase = "landed";
+  sim.padZoomLock = false;
   sim.landedId = home!.id;
   const ang0 = sim.landedAngle;
   const rot0 = home!.rotate;
@@ -144,6 +145,7 @@ test("a landed craft stays nested on a spinning asteroid", () => {
   assert.ok(rock);
   rock!.spin = 0.8;
   sim.phase = "landed";
+  sim.padZoomLock = false;
   sim.landedId = rock!.id;
   sim.landedAngle = 0.4;
   stepSim(sim, 1, {
@@ -175,6 +177,7 @@ test("takeoff from an asteroid ignores hull until the craft is clear", () => {
   const rock = sim.planets.find((p) => p.kind === "asteroid" && p.landable);
   assert.ok(rock);
   sim.phase = "landed";
+  sim.padZoomLock = false;
   sim.landedId = rock!.id;
   sim.landedAngle = 0.4;
   stepSim(sim, 0, idle);
@@ -207,6 +210,7 @@ test("a slow hit on a shard still crashes; it is not a pad", () => {
   const shard = sim.planets.find((p) => p.kind === "asteroid" && !p.landable);
   assert.ok(shard);
   sim.phase = "flight";
+  sim.padZoomLock = false;
   sim.landedId = null;
   sim.orbitLockId = null;
   const body = sim.planets.find((p) => p.id === shard!.id)!;
@@ -226,6 +230,7 @@ test("empty rocks do not pump methane; camps do", () => {
   assert.ok(rock);
   rock!.kicker = "Rock";
   sim.phase = "landed";
+  sim.padZoomLock = false;
   sim.landedId = rock!.id;
   sim.ship.fuel = 10;
   stepSim(sim, 1, {
