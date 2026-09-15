@@ -3,8 +3,8 @@ import type { Sim } from "./sim";
 import {
   atmoDrag,
   atmoRadius,
+  bodyMu,
   forwardOf,
-  gravityAt,
   gravityPulls,
   LAGRANGE_CAPTURE_R,
   listLagrangePoints,
@@ -154,8 +154,16 @@ function wrapSpan(v: number, span: number) {
   return ((v % span) + span) % span;
 }
 
-/** World units of mesh slide per unit of acceleration. Linear so the star's gradient reads at planet distance. */
-const GRID_WARP_K = 280;
+/** Well depth as a fraction of a body's surface potential (mu / R). */
+const GRID_WELL_DEPTH_K = 2;
+/** Falloff exponent. Lower reaches farther; below ~1.2 the star visibly drags planet wells sunward. */
+const GRID_WELL_FALLOFF = 1.3;
+/**
+ * Depth cap in body radii. Keeps every vertex displacement under 1.7R so points
+ * that fold past the center still land inside the hidden disc (|r - d| < 0.88R
+ * for any visible vertex with r >= 0.88R), and the body sprite covers them.
+ */
+const GRID_WELL_MAX_R = 1.7;
 
 function gridLod(zoom: number) {
   const target = Math.max(16, 40 / Math.max(0.04, zoom));
@@ -178,15 +186,33 @@ function gridBuried(x: number, y: number, planets: Planet[]) {
   return false;
 }
 
-function warpGridPoint(x: number, y: number, sim: Sim, cellCap: number) {
-  const g = gravityAt(x, y, sim.planets, sim.gravityScale);
-  const mag = Math.hypot(g.ax, g.ay);
-  if (mag < 1e-8) return { x, y };
-  let dist = GRID_WARP_K * mag;
-  const room = Math.max(0, g.dist - g.nearest.radius * 0.9);
-  dist = Math.min(dist, room * 0.84);
-  dist = dist / (1 + dist / cellCap);
-  return { x: x + (g.ax / mag) * dist, y: y + (g.ay / mag) * dist };
+/**
+ * Slide a grid vertex toward each body by d(r) = D * (R / max(r, R))^p, summed
+ * as vectors (p = GRID_WELL_FALLOFF). Each body's depth D is constant in r, so
+ * d(r) is monotonically decreasing and the radial spacing ratio
+ * s'(r) = 1 + p*D*R^p/r^(p+1) stays > 1 everywhere: the mesh always stretches
+ * toward mass (reads as "down"), with no clamp crossover that would invert the
+ * gradient partway in.
+ */
+function warpGridPoint(x: number, y: number, sim: Sim) {
+  let dx = 0;
+  let dy = 0;
+  for (const p of sim.planets) {
+    if (isGhostBody(p) || p.mass <= 0 || p.radius <= 0) continue;
+    const bx = p.x - x;
+    const by = p.y - y;
+    const r = Math.hypot(bx, by);
+    if (r < 1e-6) continue;
+    const depth = Math.min(
+      (GRID_WELL_DEPTH_K * bodyMu(p, sim.gravityScale)) / p.radius,
+      GRID_WELL_MAX_R * p.radius,
+    );
+    const rr = Math.max(r, p.radius);
+    const d = depth * Math.pow(p.radius / rr, GRID_WELL_FALLOFF);
+    dx += (bx / r) * d;
+    dy += (by / r) * d;
+  }
+  return { x: x + dx, y: y + dy };
 }
 
 function strokeGridRun(
@@ -226,7 +252,7 @@ function drawGravityGrid(
   cssH: number,
 ) {
   const zoom = Math.max(0.04, cam.zoom);
-  const { fine: step, coarse, fade, target } = gridLod(zoom);
+  const { fine: step, coarse, fade } = gridLod(zoom);
   const pad = step * 9;
   const halfW = cssW / (2 * zoom) + pad;
   const halfH = cssH / (2 * zoom) + pad;
@@ -238,7 +264,6 @@ function drawGravityGrid(
   const xs = new Float64Array(n);
   const ys = new Float64Array(n);
   const hide = new Uint8Array(n);
-  const cellCap = target * 8;
 
   for (let j = 0; j < rows; j++) {
     const gy = y0 + j * step;
@@ -246,7 +271,7 @@ function drawGravityGrid(
       const gx = x0 + i * step;
       const k = j * cols + i;
       hide[k] = gridBuried(gx, gy, sim.planets) ? 1 : 0;
-      const w = warpGridPoint(gx, gy, sim, cellCap);
+      const w = warpGridPoint(gx, gy, sim);
       xs[k] = w.x;
       ys[k] = w.y;
     }
