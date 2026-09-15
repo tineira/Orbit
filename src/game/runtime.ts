@@ -404,6 +404,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   const flipSpectro = () => {
     if (!sim) return;
     sim.showSpectro = !sim.showSpectro;
+    if (sim.showSpectro) sim.spectroOnAt = performance.now();
+    else sim.spectroOffAt = performance.now();
     if (!sim.showSpectro) clearSpectroScan(sim);
     audio.spectroPower(sim.showSpectro);
   };

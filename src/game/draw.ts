@@ -135,7 +135,9 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   drawWarpAims(ctx, sim, cssW, cssH);
   if (sim.phase !== "transit" && !sim.warpLost) {
     drawMinimap(ctx, sim, cssW, cssH);
-    if (sim.showSpectro) drawSpectrograph(ctx, sim, cssW, cssH);
+    // Keep drawing through the CRT power-off collapse after the panel is toggled off.
+    const specOffAnim = !sim.reducedMotion && performance.now() - sim.spectroOffAt < 700;
+    if (sim.showSpectro || specOffAnim) drawSpectrograph(ctx, sim, cssW, cssH);
   }
   void w;
   void h;
@@ -2015,23 +2017,53 @@ function peakReveal(progress: number, mz: number) {
   return x * x * (3 - 2 * x);
 }
 
-function peakColor(peak: SpectrumPeak) {
-  if (peak.fuel) return "rgba(125, 155, 134, 0.95)";
-  if (peak.layer === "atmosphere") return "rgba(140, 168, 196, 0.92)";
-  return "rgba(236, 234, 228, 0.88)";
-}
-
 function drawSpectrograph(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH: number) {
   const { x, y, w, h } = spectroLayout(cssW, cssH, sim.phase);
   const body = spectroFocus(sim);
   const progress = spectroProgress(sim, body);
   const now = performance.now();
   const noiseAmp = sim.reducedMotion ? 0.06 * (1 - progress) : 0.16 * (1 - progress * 0.85);
+  // Old CRT scopes never sit perfectly steady: a slow, tiny brightness waver.
+  const flicker = sim.reducedMotion
+    ? 1
+    : 0.95 + 0.05 * (0.5 + 0.5 * Math.sin(now * 0.011) * Math.sin(now * 0.0037 + 1.7));
+
+  // CRT power envelopes. vx/vy squash the picture like beam deflection dying:
+  // on = dot -> line -> full raster, off = raster -> line -> lingering dot.
+  const c01 = (v: number) => Math.max(0, Math.min(1, v));
+  const easeOut = (u: number) => 1 - (1 - u) ** 3;
+  const onAge = now - sim.spectroOnAt;
+  const offAge = sim.showSpectro ? -1 : now - sim.spectroOffAt;
+  let vx = 1;
+  let vy = 1;
+  let boost = 1;
+  let flash = 0;
+  let dotA = 0;
+  let fade = 1;
+  if (!sim.reducedMotion && offAge >= 0) {
+    const a = offAge;
+    vy = Math.max(0.03, 1 - c01(a / 140) ** 2);
+    vx = a <= 140 ? 1 : Math.max(0.02, 1 - c01((a - 140) / 170) ** 2);
+    boost = 1 + c01(a / 140) * 1.6;
+    dotA = c01((a - 230) / 60) * c01(1 - (a - 300) / 340);
+    fade = a < 360 ? 1 : c01(1 - (a - 360) / 290);
+    if (fade <= 0.01) return;
+  } else if (!sim.reducedMotion && onAge >= 0 && onAge < 480) {
+    const a = onAge;
+    vx = a < 60 ? 0.02 : Math.max(0.02, easeOut(c01((a - 60) / 140)));
+    vy = a < 190 ? 0.03 : Math.max(0.03, easeOut(c01((a - 190) / 250)));
+    flash = a < 90 ? c01(a / 90) : c01(1 - (a - 90) / 320);
+    boost = 1 + c01(1 - a / 480) * 1.2;
+    dotA = a < 130 ? c01(1 - a / 130) * 0.9 : 0;
+  }
+  const lineA = c01((0.4 - vy) / 0.37) * c01((vx - 0.02) * 3);
 
   ctx.save();
-  ctx.globalAlpha = 0.92;
+  ctx.globalAlpha = 0.94 * fade;
+
+  // Instrument casing around the tube.
   roundRect(ctx, x, y, w, h, 12);
-  ctx.fillStyle = "rgba(18, 20, 26, 0.78)";
+  ctx.fillStyle = "rgba(22, 23, 22, 0.88)";
   ctx.fill();
   ctx.strokeStyle = "rgba(236, 234, 228, 0.12)";
   ctx.lineWidth = 1;
@@ -2047,11 +2079,36 @@ function drawSpectrograph(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number,
   const innerH = h - padT - padB;
   const baseY = innerY + innerH;
 
+  // CRT glass inset.
+  const gx = x + 4;
+  const gy = y + 4;
+  const gw = w - 8;
+  const gh = h - 8;
+  const cgx = gx + gw / 2;
+  const cgy = gy + gh / 2;
+
   ctx.save();
-  roundRect(ctx, x, y, w, h, 12);
+  roundRect(ctx, gx, gy, gw, gh, 9);
   ctx.clip();
 
-  ctx.strokeStyle = "rgba(236, 234, 228, 0.08)";
+  // Tube: near-black with a whisper of green, brighter toward the middle.
+  ctx.fillStyle = "rgb(6, 14, 9)";
+  ctx.fillRect(gx, gy, gw, gh);
+
+  // Everything emitted by the beam collapses with the deflection field.
+  ctx.save();
+  ctx.translate(cgx, cgy);
+  ctx.scale(Math.max(0.002, vx), Math.max(0.002, vy));
+  ctx.translate(-cgx, -cgy);
+
+  const tubeGlow = ctx.createRadialGradient(cgx, cgy, 4, cgx, cgy, Math.max(gw, gh) * 0.62);
+  tubeGlow.addColorStop(0, "rgba(92, 190, 122, 0.09)");
+  tubeGlow.addColorStop(1, "rgba(92, 190, 122, 0)");
+  ctx.fillStyle = tubeGlow;
+  ctx.fillRect(gx, gy, gw, gh);
+
+  // Graticule, etched in the same dull phosphor green.
+  ctx.strokeStyle = "rgba(112, 200, 142, 0.1)";
   ctx.lineWidth = 1;
   for (const tick of [0, 25, 50, 75, 100]) {
     const tx = innerX + (tick / MZ_MAX) * innerW;
@@ -2060,61 +2117,87 @@ function drawSpectrograph(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number,
     ctx.lineTo(tx, baseY);
     ctx.stroke();
   }
+  for (const f of [0.25, 0.5, 0.75]) {
+    const ty = baseY - innerH * f;
+    ctx.beginPath();
+    ctx.moveTo(innerX, ty);
+    ctx.lineTo(innerX + innerW, ty);
+    ctx.stroke();
+  }
 
   ctx.beginPath();
-  ctx.strokeStyle = "rgba(236, 234, 228, 0.2)";
+  ctx.strokeStyle = "rgba(120, 210, 150, 0.26)";
   ctx.moveTo(innerX, baseY);
   ctx.lineTo(innerX + innerW, baseY);
   ctx.stroke();
 
-  if (noiseAmp > 0.01) {
-    ctx.beginPath();
-    ctx.strokeStyle = `rgba(236, 234, 228, ${0.16 + noiseAmp * 0.35})`;
-    ctx.lineWidth = 1;
-    const n = Math.max(28, Math.floor(innerW / 3));
-    for (let i = 0; i <= n; i++) {
-      const u = i / n;
-      const px = innerX + u * innerW;
-      const seed = sim.reducedMotion ? u * 71.3 : u * 71.3 + now * 0.0017;
-      const nse = (hash(seed) - 0.5) * 2 * noiseAmp * innerH;
-      const py = baseY - 2 + nse;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    }
-    ctx.stroke();
-  }
-
+  // Single continuous beam trace: baseline noise and peaks are one line,
+  // like an oscilloscope sweep, not filled bars.
   const peaks = body ? bodyPeaks(body) : [];
-  ctx.font = '500 8px "IBM Plex Mono", ui-monospace, monospace';
-  ctx.textAlign = "center";
-  ctx.textBaseline = "bottom";
+  const vis: { px: number; v: number; half: number; reveal: number; peak: SpectrumPeak }[] = [];
   for (const peak of peaks) {
     const reveal = peakReveal(progress, peak.mz);
     if (reveal < 0.04) continue;
-    const px = innerX + (peak.mz / MZ_MAX) * innerW;
-    const hh = innerH * peak.height * reveal;
-    const half = peak.layer === "atmosphere" ? 1.35 : 2.15;
-    ctx.beginPath();
-    ctx.moveTo(px - half, baseY);
-    ctx.lineTo(px, baseY - hh);
-    ctx.lineTo(px + half, baseY);
-    ctx.closePath();
-    ctx.fillStyle = peakColor(peak);
-    ctx.globalAlpha = 0.55 + 0.45 * reveal;
-    ctx.fill();
-    if (reveal > 0.62 && innerW >= 160) {
-      ctx.globalAlpha = Math.min(1, (reveal - 0.62) / 0.25);
-      ctx.fillStyle = peak.fuel ? "rgba(125, 155, 134, 0.92)" : "rgba(236, 234, 228, 0.7)";
-      ctx.fillText(SUBSTANCES[peak.id].hud, px, baseY - hh - 2);
-    }
-    ctx.globalAlpha = 1;
+    vis.push({
+      px: innerX + (peak.mz / MZ_MAX) * innerW,
+      v: peak.height * reveal,
+      half: peak.layer === "atmosphere" ? 1.6 : 2.4,
+      reveal,
+      peak,
+    });
   }
+  const buildTrace = () => {
+    ctx.beginPath();
+    const n = Math.max(60, Math.floor(innerW));
+    for (let i = 0; i <= n; i++) {
+      const u = i / n;
+      const px = innerX + u * innerW;
+      let v = 0;
+      for (const pk of vis) {
+        const d = Math.abs(px - pk.px);
+        if (d < pk.half) v = Math.max(v, pk.v * (1 - d / pk.half));
+      }
+      const seed = sim.reducedMotion ? u * 71.3 : u * 71.3 + now * 0.0017;
+      const nse = (hash(seed) - 0.5) * 2 * noiseAmp * innerH * (1 - v * 0.8);
+      const py = baseY - 2 - v * innerH + nse;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+  };
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, flicker * boost) * fade;
+  // Wide, soft pass: the phosphor bloom around the beam.
+  ctx.shadowColor = "rgba(88, 215, 130, 0.85)";
+  ctx.shadowBlur = 7 * boost;
+  ctx.strokeStyle = "rgba(86, 185, 118, 0.38)";
+  ctx.lineWidth = 2.4;
+  buildTrace();
+  ctx.stroke();
+  // Tight core: the beam itself. Dull green, not neon.
+  ctx.shadowBlur = 3;
+  ctx.strokeStyle = "rgba(158, 232, 182, 0.85)";
+  ctx.lineWidth = 1.1;
+  buildTrace();
+  ctx.stroke();
   ctx.restore();
 
+  // Peak labels, burned into the phosphor above each spike.
+  ctx.font = '500 8px "IBM Plex Mono", ui-monospace, monospace';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  for (const pk of vis) {
+    if (pk.reveal <= 0.62 || innerW < 160) continue;
+    ctx.globalAlpha = Math.min(1, (pk.reveal - 0.62) / 0.25) * 0.95 * fade;
+    ctx.fillStyle = pk.peak.fuel ? "rgba(188, 250, 208, 0.95)" : "rgba(136, 216, 164, 0.8)";
+    ctx.fillText(SUBSTANCES[pk.peak.id].hud, pk.px, baseY - pk.v * innerH - 3);
+  }
+  ctx.globalAlpha = fade;
+
+  // On-screen readouts, same phosphor.
   ctx.font = '500 10px "IBM Plex Mono", ui-monospace, monospace';
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
-  ctx.fillStyle = "rgba(236, 234, 228, 0.62)";
+  ctx.fillStyle = "rgba(140, 218, 168, 0.7)";
   ctx.fillText("MASS SPEC", x + 10, y + 8);
 
   if (w >= 170) {
@@ -2128,18 +2211,96 @@ function drawSpectrograph(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number,
           : "IDLE";
     ctx.fillStyle =
       progress >= 1
-        ? "rgba(125, 155, 134, 0.88)"
+        ? "rgba(182, 248, 204, 0.9)"
         : progress > 0
-          ? "rgba(236, 234, 228, 0.7)"
-          : "rgba(140, 142, 148, 0.7)";
+          ? "rgba(152, 228, 178, 0.8)"
+          : "rgba(104, 176, 132, 0.6)";
     ctx.fillText(caption, x + w - 10, y + 8);
   }
 
   ctx.textAlign = "left";
   ctx.textBaseline = "bottom";
   ctx.font = '500 8px "IBM Plex Mono", ui-monospace, monospace';
-  ctx.fillStyle = "rgba(140, 142, 148, 0.7)";
+  ctx.fillStyle = "rgba(104, 176, 132, 0.6)";
   ctx.fillText("m/z", x + 10, y + h - 6);
+
+  // End of beam-deflected content.
+  ctx.restore();
+  ctx.globalAlpha = fade;
+
+  // Power-on flash: the whole tube blooms for an instant.
+  if (flash > 0.01) {
+    const fg = ctx.createRadialGradient(cgx, cgy, 2, cgx, cgy, Math.max(gw, gh) * 0.55);
+    fg.addColorStop(0, `rgba(214, 255, 228, ${0.5 * flash})`);
+    fg.addColorStop(0.5, `rgba(150, 240, 180, ${0.22 * flash})`);
+    fg.addColorStop(1, "rgba(120, 220, 150, 0)");
+    ctx.fillStyle = fg;
+    ctx.fillRect(gx, gy, gw, gh);
+  }
+
+  // Collapsed raster: a hot horizontal line across the middle.
+  if (lineA > 0.02) {
+    const halfW = (gw / 2 - 4) * Math.max(0.02, vx);
+    ctx.save();
+    ctx.shadowColor = "rgba(160, 255, 195, 0.9)";
+    ctx.shadowBlur = 9;
+    ctx.strokeStyle = `rgba(222, 255, 234, ${Math.min(1, lineA) * fade})`;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(cgx - halfW, cgy);
+    ctx.lineTo(cgx + halfW, cgy);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // The dying (or waking) beam dot at dead center.
+  if (dotA > 0.02) {
+    const dg = ctx.createRadialGradient(cgx, cgy, 0, cgx, cgy, 9);
+    dg.addColorStop(0, `rgba(238, 255, 243, ${0.95 * dotA * fade})`);
+    dg.addColorStop(0.35, `rgba(170, 248, 200, ${0.6 * dotA * fade})`);
+    dg.addColorStop(1, "rgba(120, 220, 150, 0)");
+    ctx.fillStyle = dg;
+    ctx.fillRect(cgx - 10, cgy - 10, 20, 20);
+  }
+
+  // Slow refresh band drifting down the tube.
+  if (!sim.reducedMotion && sim.showSpectro) {
+    const bandY = gy + (((now * 0.018) % (gh + 36)) - 18);
+    const band = ctx.createLinearGradient(0, bandY - 14, 0, bandY + 14);
+    band.addColorStop(0, "rgba(120, 220, 150, 0)");
+    band.addColorStop(0.5, "rgba(120, 220, 150, 0.045)");
+    band.addColorStop(1, "rgba(120, 220, 150, 0)");
+    ctx.fillStyle = band;
+    ctx.fillRect(gx, bandY - 14, gw, 28);
+  }
+
+  // Scanlines over everything on the glass.
+  ctx.fillStyle = "rgba(0, 0, 0, 0.16)";
+  for (let sy = gy + 1; sy < gy + gh; sy += 3) {
+    ctx.fillRect(gx, sy, gw, 1);
+  }
+
+  // Curved-tube vignette: corners fall off into the glass.
+  const vig = ctx.createRadialGradient(
+    cgx,
+    cgy,
+    Math.min(gw, gh) * 0.36,
+    cgx,
+    cgy,
+    Math.max(gw, gh) * 0.74,
+  );
+  vig.addColorStop(0, "rgba(0, 8, 3, 0)");
+  vig.addColorStop(1, "rgba(0, 8, 3, 0.5)");
+  ctx.fillStyle = vig;
+  ctx.fillRect(gx, gy, gw, gh);
+
+  ctx.restore();
+
+  // Faint glass rim.
+  roundRect(ctx, gx, gy, gw, gh, 9);
+  ctx.strokeStyle = "rgba(170, 245, 195, 0.07)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
 
   ctx.restore();
 }
