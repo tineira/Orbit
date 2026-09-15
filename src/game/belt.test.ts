@@ -100,6 +100,66 @@ test("away from the belt there is no grit", () => {
   assert.equal(hit.dust, 0);
 });
 
+test("resting on a rock ticks once and re-arms only after separating", () => {
+  createSystem(2, { belt: true });
+  const sim = createSim();
+  const belt = beltBands(sim.planets)[0]!;
+  const parent = sim.planets.find((p) => p.id === belt.parentId)!;
+  const phase = beltPhase(sim.planets, belt.parentId);
+  const rock = (() => {
+    for (let i = 0; i < belt.motes; i++) {
+      const m = moteAt(belt, parent.x, parent.y, phase, i);
+      if (m.kind === "pebble") return m;
+    }
+    throw new Error("no pebble");
+  })();
+  const cool = new Map<string, number>();
+  sim.ship.x = rock.x + 4;
+  sim.ship.y = rock.y;
+  sim.ship.vx = -48;
+  sim.ship.vy = 0;
+
+  // Settle: every touching mote fires its first hit, then holds.
+  let wait = 0;
+  let rain = 0;
+  let settled = 0;
+  for (let i = 0; i < 30; i++) {
+    const hit = scanBeltHull(sim.ship, sim.planets, cool, wait, 1 / 60, rain);
+    wait = hit.tickWait;
+    rain = hit.rainWait;
+    settled += hit.ticks.filter((t) => t.kind !== "dust").length;
+  }
+  assert.ok(settled >= 1, "expected at least one contact tick");
+
+  // Parked in contact for 2 s: the same rock must stay silent.
+  let repeats = 0;
+  for (let i = 0; i < 120; i++) {
+    const hit = scanBeltHull(sim.ship, sim.planets, cool, wait, 1 / 60, rain);
+    wait = hit.tickWait;
+    rain = hit.rainWait;
+    repeats += hit.ticks.filter((t) => t.kind !== "dust").length;
+  }
+  assert.equal(repeats, 0, `expected no repeat ticks while touching, got ${repeats}`);
+
+  // Separate long enough for the hold to expire, then come back.
+  const backX = sim.ship.x;
+  sim.ship.x = rock.x + 400;
+  for (let i = 0; i < 60; i++) {
+    const hit = scanBeltHull(sim.ship, sim.planets, cool, wait, 1 / 60, rain);
+    wait = hit.tickWait;
+    rain = hit.rainWait;
+  }
+  sim.ship.x = backX;
+  let rehit = 0;
+  for (let i = 0; i < 10; i++) {
+    const hit = scanBeltHull(sim.ship, sim.planets, cool, wait, 1 / 60, rain);
+    wait = hit.tickWait;
+    rain = hit.rainWait;
+    rehit += hit.ticks.filter((t) => t.kind !== "dust").length;
+  }
+  assert.ok(rehit >= 1, "expected the rock to hit again after separating");
+});
+
 test("crossing the belt peppers invisible grit at speed", () => {
   createSystem(2, { belt: true });
   const sim = createSim();

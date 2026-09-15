@@ -225,7 +225,11 @@ export function scanBeltHull(
         const hitR = SHIP_HULL + Math.max(3, m.sz);
         if (d > hitR) continue;
         const key = `${belt.seed}:${i}`;
-        if (cool.has(key)) continue;
+        if (cool.has(key)) {
+          // Still touching the same mote: hold the tick until we separate.
+          cool.set(key, 0.2);
+          continue;
+        }
         const vol = tickVolume(m.sz, closing, "chip") * 0.7;
         if (vol < 0.012) continue;
         const bright = Math.max(0, Math.min(1, (closing - V_SILENT) / 48));
@@ -241,7 +245,12 @@ export function scanBeltHull(
       const hitR = SHIP_HULL + m.sz;
       if (d > hitR) continue;
       const key = `${belt.seed}:${i}`;
-      if (cool.has(key)) continue;
+      if (cool.has(key)) {
+        // Resting against the same rock: refresh the hold every frame so it
+        // only re-arms once the ship separates and the grace period runs out.
+        cool.set(key, m.kind === "pebble" ? PEBBLE_COOL : CHIP_COOL);
+        continue;
+      }
       const vol = tickVolume(m.sz, closing, m.kind);
       if (vol < 0.012) continue;
       const sizeW = Math.min(1, m.sz / 14);
