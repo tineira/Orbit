@@ -136,6 +136,9 @@ export type Sim = {
   showGravityGrid: boolean;
   showVerbose: boolean;
   showSpectro: boolean;
+  /** performance.now() of the last spectro power-on / power-off, for CRT anims. */
+  spectroOnAt: number;
+  spectroOffAt: number;
   scannedIds: Set<string>;
   spectroScanId: string | null;
   spectroScanT: number;
@@ -243,6 +246,8 @@ export function createSim(): Sim {
     showGravityGrid: false,
     showVerbose: false,
     showSpectro: false,
+    spectroOnAt: -1e9,
+    spectroOffAt: -1e9,
     scannedIds: new Set(),
     spectroScanId: null,
     spectroScanT: 0,
@@ -2475,7 +2480,7 @@ function collidePlanets(sim: Sim) {
     s.x = p.x + nx * min;
     s.y = p.y + ny * min;
 
-    const canLand = p.landable && sim.phase === "flight" && rel < LAND_SPEED && vn < 14;
+    const canLand = p.landable && sim.phase === "flight" && rel < LAND_SPEED && vn < 20;
     if (canLand) {
       sim.phase = "landed";
       sim.landedId = p.id;

@@ -27,7 +27,7 @@ export const FUEL_BURN_MAIN = SHIP_FUEL_CAPACITY / FUEL_MAIN_SECONDS;
 /** Mass of a full starting tank of CH4. Empty vs full should feel different, not break T/W. */
 export const CH4_FULL_MASS = 0.35;
 export const TURN_RATE = 2.85;
-export const LAND_SPEED = 20;
+export const LAND_SPEED = 30;
 export const STEP = 1 / 60;
 export const ORBIT_LOCK_DWELL = 0.55;
 export const ORBIT_BREAK_COOLDOWN = 1.35;
