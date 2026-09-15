@@ -9,6 +9,7 @@ import {
   FOOD_MONTHS_MIN,
   beginAdrift,
   airlockScreenFade,
+  airlockSeqMs,
   rationsClockVisible,
   splitFoodClock,
 } from "./adrift.ts";
@@ -189,7 +190,7 @@ test("the airlock sequence ends in an airlock death", () => {
   beginAdrift(sim, Date.now(), () => 0);
   sim.adriftStartedAt = Date.now() - AIRLOCK_DELAY_MS;
   assert.equal(openAirLock(sim), true);
-  sim.airlockSeqAt = Date.now() - 20_000;
+  sim.airlockSeqAt = Date.now() - (airlockSeqMs(false) + 1000);
   stepSim(sim, 1 / 60, idle);
   assert.equal(sim.phase, "crashed");
   assert.equal(sim.crashKind, "airlock");

@@ -687,28 +687,51 @@ export function createAudio(): AudioApi {
   let airlockNodes: AudioNode[] = [];
   // Adrift clock escapement: alternates so seconds read tick / tock.
   let clockTock = false;
-  let alarmBuf: AudioBuffer | null = null;
   let alarmSrc: AudioBufferSourceNode | null = null;
   let alarmGain: GainNode | null = null;
   let adriftAlarmOn = false;
+  let adriftAlarmWanted = false;
+  let airlockSeqGen = 0;
+  const clipLoads = new Map<string, Promise<AudioBuffer>>();
   // CRT TV power on/off clip for the mass spec panel. On = the degauss
   // thunk at the head of the clip, off = the double pop at the tail.
   let tvLoad: Promise<AudioBuffer> | null = null;
 
+  const decodeUrl = async (url: string) => {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await ctx!.decodeAudioData(await res.arrayBuffer());
+  };
+
+  const loadClip = (name: string) => {
+    if (!ctx) return null;
+    let p = clipLoads.get(name);
+    if (!p) {
+      p = decodeUrl(`/sounds/${name}.webm`).catch(() => decodeUrl(`/sounds/${name}.m4a`));
+      p.catch(() => {
+        clipLoads.delete(name);
+      });
+      clipLoads.set(name, p);
+    }
+    return p;
+  };
+
   const loadTvClip = () => {
     if (!ctx) return null;
     if (!tvLoad) {
-      const dec = async (url: string) => {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return await ctx!.decodeAudioData(await res.arrayBuffer());
-      };
-      tvLoad = dec("/sounds/tv-onoff.webm").catch(() => dec("/sounds/tv-onoff.m4a"));
+      tvLoad = decodeUrl("/sounds/tv-onoff.webm").catch(() => decodeUrl("/sounds/tv-onoff.m4a"));
       tvLoad.catch(() => {
         tvLoad = null;
       });
     }
     return tvLoad;
+  };
+
+  const prefetchClips = () => {
+    void loadTvClip();
+    void loadClip("airlock-alarm");
+    void loadClip("airlock-hatch");
+    void loadClip("airlock-leak");
   };
 
   const ensure = () => {
@@ -1024,7 +1047,7 @@ export function createAudio(): AudioApi {
   const unlock = () => {
     ensure();
     if (ctx && ctx.state === "suspended") void ctx.resume();
-    void loadTvClip();
+    prefetchClips();
   };
 
   const onVis = () => {
@@ -1036,6 +1059,7 @@ export function createAudio(): AudioApi {
   window.addEventListener("keydown", onGesture);
 
   const stopAirlockNodes = () => {
+    airlockSeqGen += 1;
     for (const n of airlockNodes) {
       try {
         if ("stop" in n && typeof (n as OscillatorNode).stop === "function") {
@@ -1081,7 +1105,9 @@ export function createAudio(): AudioApi {
     ensure();
     if (!ctx || !sfx || !worldGain || !master || !whiteBuf) return;
     stopAirlockNodes();
-    const t = ctx.currentTime;
+    stopAdriftAlarm();
+    adriftAlarmWanted = false;
+    const gen = airlockSeqGen;
     const hatchAt = airlockHatchAt(reduced) / 1000;
     const fadeAt = airlockFadeAt(reduced) / 1000;
     const fadeDur = airlockFadeMs(reduced) / 1000;
@@ -1089,7 +1115,6 @@ export function createAudio(): AudioApi {
       airlockNodes.push(n);
       return n;
     };
-    // Own bus into master so the leak is the last thing heard as the world drops out.
     const dest = keep(ctx.createGain());
     dest.gain.value = 1;
     dest.connect(master);
@@ -1102,6 +1127,49 @@ export function createAudio(): AudioApi {
       src.start(at);
       src.stop(at + dur);
       return src;
+    };
+
+    const playClip = (
+      buf: AudioBuffer,
+      at: number,
+      opts: { duration: number; loop?: boolean; gain?: number; fadeOut?: boolean },
+    ) => {
+      const src = ctx!.createBufferSource();
+      src.buffer = buf;
+      src.loop = !!opts.loop;
+      keep(src);
+      const g = keep(ctx!.createGain());
+      const peak = opts.gain ?? 0.7;
+      const dur = Math.max(0.05, opts.duration);
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.linearRampToValueAtTime(peak, at + 0.03);
+      if (opts.fadeOut) {
+        g.gain.linearRampToValueAtTime(0.0001, at + dur);
+      } else {
+        g.gain.setValueAtTime(peak, at + Math.max(0.04, dur - 0.06));
+        g.gain.linearRampToValueAtTime(0.0001, at + dur);
+      }
+      src.connect(g);
+      g.connect(dest);
+      if (opts.loop) src.start(at);
+      else src.start(at, 0, Math.min(dur + 0.05, buf.duration));
+      src.stop(at + dur + 0.02);
+    };
+
+    const playLoopingAlarm = (buf: AudioBuffer, at: number, hold: number, fade: number, gain: number) => {
+      const src = ctx!.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      keep(src);
+      const g = keep(ctx!.createGain());
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.linearRampToValueAtTime(gain, at + 0.03);
+      g.gain.setValueAtTime(gain, at + hold);
+      g.gain.linearRampToValueAtTime(0.0001, at + hold + fade);
+      src.connect(g);
+      g.connect(dest);
+      src.start(at);
+      src.stop(at + hold + fade + 0.04);
     };
 
     const playHatch = (hatch: number) => {
@@ -1131,7 +1199,6 @@ export function createAudio(): AudioApi {
         return;
       }
 
-      // Pneumatic dump as the seals crack.
       const dump = startNoise(hatch, 0.55);
       const dumpHp = keep(ctx!.createBiquadFilter());
       dumpHp.type = "highpass";
@@ -1144,7 +1211,6 @@ export function createAudio(): AudioApi {
       dumpHp.connect(dumpG);
       dumpG.connect(dest);
 
-      // Three latch bolts.
       for (const d of [0.16, 0.34, 0.54]) {
         const at = hatch + d;
         const kn = keep(ctx!.createOscillator());
@@ -1172,7 +1238,6 @@ export function createAudio(): AudioApi {
         }
       }
 
-      // Motorized slide.
       const motor = keep(ctx!.createOscillator());
       motor.type = "sawtooth";
       motor.frequency.setValueAtTime(205, hatch + 0.58);
@@ -1206,7 +1271,6 @@ export function createAudio(): AudioApi {
       scrapeBp.connect(scrapeG);
       scrapeG.connect(dest);
 
-      // Door hits the stop.
       const stopAt = hatch + 4.08;
       const thunk = keep(ctx!.createOscillator());
       thunk.type = "sine";
@@ -1223,7 +1287,6 @@ export function createAudio(): AudioApi {
     };
 
     const playLeak = (at: number, dur: number) => {
-      // Tire-puncture / tank-dump hiss: bright noise plus a falling whistle.
       const rush = startNoise(at, dur + 0.05);
       const hp = keep(ctx!.createBiquadFilter());
       hp.type = "highpass";
@@ -1241,7 +1304,7 @@ export function createAudio(): AudioApi {
       const g = keep(ctx!.createGain());
       g.gain.setValueAtTime(0.0001, at);
       g.gain.linearRampToValueAtTime(reduced ? 0.14 : 0.24, at + 0.07);
-      g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+      g.gain.linearRampToValueAtTime(0.0001, at + dur);
       rush.connect(hp);
       hp.connect(bp);
       bp.connect(lp);
@@ -1262,13 +1325,64 @@ export function createAudio(): AudioApi {
       whistle.stop(at + dur);
     };
 
-    playHatch(t + hatchAt);
-    playLeak(t + fadeAt, Math.max(0.35, fadeDur + 0.4));
+    const playSynthAlarm = (t0: number, dur: number) => {
+      if (!ctx) return;
+      const osc = keep(ctx.createOscillator());
+      osc.type = "square";
+      const g = keep(ctx.createGain());
+      const step = 0.27;
+      osc.frequency.setValueAtTime(1174.7, t0);
+      for (let i = 0, at = t0; at < t0 + dur; i++, at += step) {
+        osc.frequency.setValueAtTime(i % 2 === 0 ? 1174.7 : 0.001, at);
+      }
+      g.gain.setValueAtTime(0.09, t0);
+      g.gain.setValueAtTime(0.09, t0 + Math.max(0.05, dur - 0.04));
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(g);
+      g.connect(dest);
+      osc.start(t0);
+      osc.stop(t0 + dur);
+    };
 
-    worldGain.gain.cancelScheduledValues(t);
-    worldGain.gain.setValueAtTime(1, t);
-    worldGain.gain.setValueAtTime(1, t + fadeAt);
-    worldGain.gain.exponentialRampToValueAtTime(0.0001, t + fadeAt + fadeDur);
+    const schedule = (
+      alarm: AudioBuffer | null,
+      hatch: AudioBuffer | null,
+      leak: AudioBuffer | null,
+    ) => {
+      if (gen !== airlockSeqGen || !ctx || !worldGain) return;
+      const start = ctx.currentTime;
+      const leakDur = leak ? leak.duration : Math.max(0.35, fadeDur);
+      if (!reduced && alarm) playLoopingAlarm(alarm, start, fadeAt, leakDur, 0.72);
+      else if (!reduced) playSynthAlarm(start, fadeAt + leakDur);
+
+      if (!reduced && hatch) playClip(hatch, start + hatchAt, { duration: hatch.duration, gain: 0.78 });
+      else playHatch(start + hatchAt);
+
+      if (!reduced && leak) {
+        playClip(leak, start + fadeAt, { duration: leak.duration, gain: 0.8, fadeOut: true });
+      } else {
+        playLeak(start + fadeAt, leakDur);
+      }
+
+      worldGain.gain.cancelScheduledValues(start);
+      worldGain.gain.setValueAtTime(1, start);
+      worldGain.gain.setValueAtTime(1, start + fadeAt);
+      worldGain.gain.linearRampToValueAtTime(0.0001, start + fadeAt + fadeDur);
+    };
+
+    if (reduced) {
+      schedule(null, null, null);
+      return;
+    }
+
+    const missing = () => Promise.resolve(null as AudioBuffer | null);
+    void Promise.all([
+      loadClip("airlock-alarm")?.catch(() => null) ?? missing(),
+      loadClip("airlock-hatch")?.catch(() => null) ?? missing(),
+      loadClip("airlock-leak")?.catch(() => null) ?? missing(),
+    ]).then(([alarm, hatch, leak]) => {
+      schedule(alarm, hatch, leak);
+    });
   };
 
   return {
@@ -1664,25 +1778,37 @@ export function createAudio(): AudioApi {
       // Kept for the API; the looping adrift alarm is the cue now.
     },
     setAdriftAlarm(on) {
-      if (on === adriftAlarmOn) return;
+      if (on === adriftAlarmWanted) return;
+      adriftAlarmWanted = on;
       if (!on) {
         stopAdriftAlarm();
         return;
       }
       ensure();
       if (!ctx || !sfx) return;
-      stopAdriftAlarm();
-      if (!alarmBuf) alarmBuf = makeAlarmBuffer(ctx);
-      adriftAlarmOn = true;
-      alarmGain = ctx.createGain();
-      alarmGain.gain.value = 0.0001;
-      alarmGain.connect(sfx);
-      alarmSrc = ctx.createBufferSource();
-      alarmSrc.buffer = alarmBuf;
-      alarmSrc.loop = true;
-      alarmSrc.connect(alarmGain);
-      alarmSrc.start();
-      alarmGain.gain.exponentialRampToValueAtTime(1, ctx.currentTime + 0.06);
+      const startLoop = (buf: AudioBuffer) => {
+        if (!adriftAlarmWanted || !ctx || !sfx) return;
+        stopAdriftAlarm();
+        adriftAlarmOn = true;
+        alarmGain = ctx.createGain();
+        alarmGain.gain.value = 0.0001;
+        alarmGain.connect(sfx);
+        alarmSrc = ctx.createBufferSource();
+        alarmSrc.buffer = buf;
+        alarmSrc.loop = true;
+        alarmSrc.connect(alarmGain);
+        alarmSrc.start();
+        alarmGain.gain.exponentialRampToValueAtTime(1, ctx.currentTime + 0.06);
+      };
+      const load = loadClip("airlock-alarm");
+      if (load) {
+        void load.then(startLoop).catch(() => {
+          if (!ctx) return;
+          startLoop(makeAlarmBuffer(ctx));
+        });
+        return;
+      }
+      startLoop(makeAlarmBuffer(ctx));
     },
     airlockSequence(reduced = false) {
       playAirlockSequence(reduced);

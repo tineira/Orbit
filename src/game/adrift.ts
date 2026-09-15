@@ -6,10 +6,10 @@ export const FOOD_MONTHS_MIN = 8;
 export const FOOD_MONTHS_MAX = 12;
 export const CLOCK_REVEAL_MS = 10_000;
 export const AIRLOCK_DELAY_MS = 60_000;
-export const AIRLOCK_HATCH_AT = 80;
-/** Seal breaks about two seconds into the hatch slide. */
-export const AIRLOCK_FADE_AT = 2200;
-export const AIRLOCK_FADE_MS = 4800;
+/** Recorded alarm loops; hatch at 5s; air 2s after the hatch. */
+export const AIRLOCK_HATCH_AT = 5000;
+export const AIRLOCK_FADE_AT = 7000;
+export const AIRLOCK_FADE_MS = 10_000;
 export const AIRLOCK_HOLD_MS = 500;
 export const FUEL_EMPTY = 1e-9;
 

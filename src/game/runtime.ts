@@ -248,6 +248,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let prevPunched = false;
   let prevBoomed = false;
   let prevAirlockSeq = 0;
+  let lastBeepSec = -1;
   let enterWasDown = false;
   let enterNeedsUp = false;
   let oWasDown = false;
@@ -694,10 +695,15 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     } else {
       audio.setBeltDust(0);
     }
+    audio.setAdriftAlarm(false);
     if (sim.adrift && sim.phase === "flight" && !sim.airlockSeqAt && Date.now() - sim.adriftStartedAt >= CLOCK_REVEAL_MS) {
-      audio.setAdriftAlarm(true);
+      const sec = Math.floor(Date.now() / 1000);
+      if (sec !== lastBeepSec) {
+        lastBeepSec = sec;
+        audio.clockBeep();
+      }
     } else {
-      audio.setAdriftAlarm(false);
+      lastBeepSec = -1;
     }
     const specVoice = playing() ? spectroVoice(sim) : "off";
     audio.setSpectro(specVoice, spectroScanProgress(sim), sim.reducedMotion);
