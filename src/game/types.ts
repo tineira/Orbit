@@ -174,7 +174,7 @@ export type TransitBeat = "tunnel" | "streak" | "brake";
 
 export type BurnCause = "flare" | "star";
 
-export type CrashKind = "burn" | "wreck" | "sink" | "lost";
+export type CrashKind = "burn" | "wreck" | "sink" | "lost" | "airlock" | "starve";
 
 export type NearbyHeading = {
   angle: number;
@@ -279,6 +279,9 @@ export type HudSnapshot = {
   dev: boolean;
   warpCharge: number;
   transitBeat: TransitBeat | "off";
+  adrift: boolean;
+  adriftStartedAt: number;
+  foodUntil: number;
 };
 
 export type InputState = {

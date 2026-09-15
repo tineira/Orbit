@@ -100,6 +100,15 @@ import {
   DEFAULT_TANK_KIND,
 } from "./fuel.ts";
 import { HULL_MAX, hullRepairRate, type HullRepairKind } from "./hull.ts";
+import {
+  adriftStarved,
+  canOpenAirLock,
+  endAdrift,
+  isCoastDeath,
+  maybeBeginAdrift,
+  pickAirlockCopy,
+  pickStarveCopy,
+} from "./adrift.ts";
 
 export type Sim = {
   ship: Ship;
@@ -179,6 +188,9 @@ export type Sim = {
   beltHitCool: Map<string, number>;
   beltTickWait: number;
   beltRainWait: number;
+  adrift: boolean;
+  adriftStartedAt: number;
+  foodUntil: number;
 };
 
 export const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
@@ -289,6 +301,9 @@ export function createSim(): Sim {
     beltHitCool: new Map(),
     beltTickWait: 0,
     beltRainWait: 0,
+    adrift: false,
+    adriftStartedAt: 0,
+    foodUntil: 0,
   };
   landOnHome(sim);
   return sim;
@@ -403,6 +418,7 @@ export function rebootSim(sim: Sim) {
   sim.beltHitCool.clear();
   sim.beltTickWait = 0;
   sim.beltRainWait = 0;
+  endAdrift(sim);
   landOnHome(sim);
   sim.camera.trauma = 0;
   sim.camera.shake = 0;
@@ -1976,6 +1992,7 @@ function breachHull(sim: Sim) {
   const nx = sp > 1e-6 ? s.vx / sp : 0;
   const ny = sp > 1e-6 ? s.vy / sp : 0;
   s.hull = 0;
+  endAdrift(sim);
   sim.phase = "crashed";
   sim.crashedId = null;
   sim.crashKind = "wreck";
@@ -2062,8 +2079,13 @@ export function stepSim(
   sim.beltDust = 0;
   sim.beltDustBright = 0;
 
+  if (sim.phase === "flight") {
+    maybeBeginAdrift(sim);
+    if (adriftStarved(sim)) starveAdrift(sim);
+  }
+
   if (sim.phase === "crashed") {
-    if (sim.crashKind === "lost") {
+    if (isCoastDeath(sim.crashKind)) {
       ship.thrusting = false;
       ship.reverse = false;
       ship.x += ship.vx * dt;
@@ -2128,7 +2150,7 @@ export function stepSim(
     return;
   }
 
-  if (Math.hypot(ship.vx, ship.vy) >= WARP_JUMP_SPEED) {
+  if (!sim.adrift && Math.hypot(ship.vx, ship.vy) >= WARP_JUMP_SPEED) {
     const dir = shipTravelDir(ship);
     const aim = lockedNearby(dir.x, dir.y, sim.nearby, WARP_AIM_DEG);
     if (aim) {
@@ -2142,13 +2164,19 @@ export function stepSim(
     return;
   }
 
-  applySteer(ship, controls, dt);
+  const ctl = sim.adrift
+    ? { steer: 0, forward: false, reverse: false, aimYaw: null as number | null, aimThrust: false }
+    : controls;
+
+  applySteer(ship, ctl, dt);
 
   if (sim.lagrangeLockKey) {
-    if (stepLockedLagrange(sim, dt, controls)) {
+    if (stepLockedLagrange(sim, dt, ctl)) {
       if (shipHitsFlare(sim)) burnInFlare(sim);
       applyBeltHull(sim, dt);
       repairShipHull(sim, dt);
+      maybeBeginAdrift(sim);
+      if (sim.adrift && sim.phase === "flight") sim.orbitHint = "No propellant";
       decayParticles(sim, dt);
       updateCamera(sim, dt);
       return;
@@ -2156,10 +2184,12 @@ export function stepSim(
   }
 
   if (sim.orbitLockId) {
-    if (stepLockedOrbit(sim, dt, controls)) {
+    if (stepLockedOrbit(sim, dt, ctl)) {
       if (shipHitsFlare(sim)) burnInFlare(sim);
       applyBeltHull(sim, dt);
       repairShipHull(sim, dt);
+      maybeBeginAdrift(sim);
+      if (sim.adrift && sim.phase === "flight") sim.orbitHint = "No propellant";
       decayParticles(sim, dt);
       updateCamera(sim, dt);
       return;
@@ -2167,7 +2197,7 @@ export function stepSim(
   }
 
   const f = forwardOf(ship.yaw);
-  const engine = armedEngine(ship, controls);
+  const engine = armedEngine(ship, ctl);
   ship.thrusting = engine === "main";
   ship.reverse = engine === "retro";
 
@@ -2207,10 +2237,12 @@ export function stepSim(
   collidePlanets(sim);
   if (sim.phase === "flight" && shipHitsFlare(sim)) burnInFlare(sim);
   applyBeltHull(sim, dt);
+  maybeBeginAdrift(sim);
 
   sim.nearest = nearest;
   sim.altitude = surfaceAltitude(nearest, sim.ship.x, sim.ship.y);
   classify(sim, nearest, dist);
+  if (sim.adrift && sim.phase === "flight") sim.orbitHint = "No propellant";
   decayParticles(sim, dt);
   updateCamera(sim, dt);
 }
@@ -2271,17 +2303,38 @@ function stepLostWarp(sim: Sim, dt: number) {
 
 function loseInSpace(sim: Sim) {
   clearFlightLocks(sim);
+  finishCoastDeath(sim, "lost", pickLostCopy());
+  sim.warpCharge = 1;
+  sim.warpApproach = 1;
+  sim.warpTarget = null;
+}
+
+export function starveAdrift(sim: Sim) {
+  if (!sim.adrift || sim.phase !== "flight") return;
+  clearFlightLocks(sim);
+  finishCoastDeath(sim, "starve", pickStarveCopy());
+}
+
+export function openAirLock(sim: Sim, now = Date.now()) {
+  if (!canOpenAirLock(sim, now)) return false;
+  clearFlightLocks(sim);
+  finishCoastDeath(sim, "airlock", pickAirlockCopy());
+  return true;
+}
+
+function finishCoastDeath(sim: Sim, kind: CrashKind, copy: NonNullable<Sim["lostCopy"]>) {
+  endAdrift(sim);
   sim.phase = "crashed";
-  sim.crashKind = "lost";
-  sim.lostCopy = pickLostCopy();
+  sim.crashKind = kind;
+  sim.lostCopy = copy;
   sim.crashedId = null;
   sim.crashAge = 0;
   sim.burned = false;
   sim.burnCause = null;
   sim.status = "crashed";
   sim.orbitHint = null;
-  sim.warpCharge = 1;
-  sim.warpApproach = 1;
+  sim.warpCharge = 0;
+  sim.warpApproach = 0;
   sim.warpTarget = null;
   sim.ship.thrusting = false;
   sim.ship.reverse = false;
@@ -2290,6 +2343,7 @@ function loseInSpace(sim: Sim) {
 function crashInto(sim: Sim, p: Planet, nx: number, ny: number, rel: number) {
   const s = sim.ship;
   const kind = crashKindFor(p);
+  endAdrift(sim);
   sim.phase = "crashed";
   sim.crashedId = p.id;
   sim.crashKind = kind;
@@ -2427,6 +2481,7 @@ function burnInFlare(sim: Sim) {
   const star = sim.planets.find((p) => p.kind === "star");
   if (!star || sim.phase === "crashed") return;
   const s = sim.ship;
+  endAdrift(sim);
   sim.phase = "crashed";
   sim.burned = true;
   sim.burnCause = "flare";
@@ -2549,6 +2604,7 @@ function collidePlanets(sim: Sim) {
       sim.orbitLockId = null;
       sim.lagrangeLockKey = null;
       sim.lagrangeDwell = 0;
+      endAdrift(sim);
       s.vx = p.vx;
       s.vy = p.vy;
       if (padHasFuel(p)) beginPadRefill(s);

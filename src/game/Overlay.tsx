@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Minus, Plus, Volume2, VolumeX } from "lucide-react";
 import type {
   CompositionReadout,
@@ -12,6 +12,7 @@ import { engineGrade, fuelGrade, tankGrade } from "./fuel";
 import { HULL_MAX } from "./hull";
 import { bodyReadout, SCAN_SECONDS } from "./matter";
 import { ATMO_STEPS, GRAVITY_STEPS, getPlanets, isGhostBody, planetById } from "./world";
+import { AIRLOCK_DELAY_MS, splitFoodClock, usesLostCard } from "./adrift";
 import { cn } from "@/lib/utils";
 
 const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
@@ -38,6 +39,7 @@ type Props = {
   onToggleGravityGrid: () => void;
   onToggleVerbose: () => void;
   onToggleSpectro: () => void;
+  onOpenAirLock: () => void;
 };
 
 function isEnterKey(e: KeyboardEvent) {
@@ -61,6 +63,7 @@ export function Overlay({
   onToggleGravityGrid,
   onToggleVerbose,
   onToggleSpectro,
+  onOpenAirLock,
 }: Props) {
   const landed = hud.landedId ? planetById(hud.landedId) : null;
   const crashed = hud.crashedId ? planetById(hud.crashedId) : null;
@@ -236,27 +239,35 @@ export function Overlay({
               )}
             </button>
             <p className="font-mono text-xs leading-relaxed text-muted">
-              <span className="hidden sm:inline">
-                Left / right yaw. Up burns. Down retro. + / − or scroll to zoom.
-              </span>
-              <span className="sm:hidden">Hold to point and burn. Pinch to zoom.</span>
+              {hud.adrift ? (
+                <span>No propellant. The craft coasts.</span>
+              ) : (
+                <>
+                  <span className="hidden sm:inline">
+                    Left / right yaw. Up burns. Down retro. + / − or scroll to zoom.
+                  </span>
+                  <span className="sm:hidden">Hold to point and burn. Pinch to zoom.</span>
+                </>
+              )}
             </p>
-            <p className="mt-2 flex font-mono text-xs">
-              <KeyTips
-                orbitShell={hud.orbitShell}
-                lagrangePoints={hud.lagrangePoints}
-                physicsMenu={hud.physicsMenu}
-                gravityGrid={hud.gravityGrid}
-                verbose={hud.verbose}
-                spectro={hud.spectro}
-                onToggleOrbitShell={onToggleOrbitShell}
-                onToggleLagrange={onToggleLagrange}
-                onToggleGravityGrid={onToggleGravityGrid}
-                onToggleVerbose={onToggleVerbose}
-                onToggleSpectro={onToggleSpectro}
-                dev={dev}
-              />
-            </p>
+            {hud.adrift ? null : (
+              <p className="mt-2 flex font-mono text-xs">
+                <KeyTips
+                  orbitShell={hud.orbitShell}
+                  lagrangePoints={hud.lagrangePoints}
+                  physicsMenu={hud.physicsMenu}
+                  gravityGrid={hud.gravityGrid}
+                  verbose={hud.verbose}
+                  spectro={hud.spectro}
+                  onToggleOrbitShell={onToggleOrbitShell}
+                  onToggleLagrange={onToggleLagrange}
+                  onToggleGravityGrid={onToggleGravityGrid}
+                  onToggleVerbose={onToggleVerbose}
+                  onToggleSpectro={onToggleSpectro}
+                  dev={dev}
+                />
+              </p>
+            )}
             {hud.orbitShell ? (
               <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">
                 Orbit shell · {hud.nearestName ?? "—"}
@@ -286,6 +297,7 @@ export function Overlay({
               <p
                 className={cn(
                   "mt-2 font-mono text-xs tracking-wide uppercase",
+                  hud.adrift ||
                   hud.status === "too-fast" ||
                     hud.status === "crashed" ||
                     hud.orbitHint === ORBIT_DRAG_HINT ||
@@ -331,14 +343,22 @@ export function Overlay({
         </div>
       ) : null}
 
+      {hud.phase === "flight" && hud.adrift ? (
+        <AdriftCard
+          startedAt={hud.adriftStartedAt}
+          foodUntil={hud.foodUntil}
+          onAirlock={onOpenAirLock}
+        />
+      ) : null}
+
       {hud.phase === "landed" && landed ? (
         <LandingCard planet={landed} onTakeoff={onTakeoff} />
       ) : null}
 
-      {hud.phase === "crashed" && hud.crashKind === "lost" && hud.lostCopy ? (
+      {hud.phase === "crashed" && usesLostCard(hud.crashKind) && hud.lostCopy ? (
         <LostCard copy={hud.lostCopy} onReboot={onReboot} onNewWorld={onNewWorld} />
       ) : null}
-      {hud.phase === "crashed" && hud.crashKind !== "lost" ? (
+      {hud.phase === "crashed" && !usesLostCard(hud.crashKind) ? (
         <CrashCard
           burned={hud.burned}
           crashKind={hud.crashKind}
@@ -567,6 +587,71 @@ function LandingCard({
             </a>
           ) : null}
         </div>
+      </article>
+    </div>
+  );
+}
+
+function AdriftCard({
+  startedAt,
+  foodUntil,
+  onAirlock,
+}: {
+  startedAt: number;
+  foodUntil: number;
+  onAirlock: () => void;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 200);
+    return () => window.clearInterval(id);
+  }, []);
+  const remaining = Math.max(0, foodUntil - now);
+  const parts = splitFoodClock(remaining);
+  const canOpen = now - startedAt >= AIRLOCK_DELAY_MS;
+  const cells = [
+    { n: parts.years, label: "Years" },
+    { n: parts.months, label: "Months" },
+    { n: parts.days, label: "Days" },
+    { n: parts.hours, label: "Hours" },
+    { n: parts.minutes, label: "Min" },
+    { n: parts.seconds, label: "Sec" },
+  ];
+  return (
+    <div className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
+      <article className="w-full max-w-xl rounded-xl border border-border bg-surface/85 px-4 py-5 shadow-lg backdrop-blur-sm sm:px-6">
+        <p className="font-mono text-xs tracking-[0.22em] uppercase text-warn">Rations remaining</p>
+        <div className="mt-4 flex items-end justify-between gap-1 sm:gap-2">
+          {cells.map((cell, i) => (
+            <div key={cell.label} className="flex min-w-0 flex-1 items-end justify-center gap-1 sm:gap-2">
+              {i > 0 ? (
+                <span className="mb-5 hidden font-mono text-lg text-subtle sm:mb-6 sm:inline sm:text-2xl">
+                  :
+                </span>
+              ) : null}
+              <div className="min-w-0 text-center">
+                <p className="font-mono text-2xl tabular-nums leading-none tracking-wider text-fg sm:text-4xl">
+                  {String(cell.n).padStart(2, "0")}
+                </p>
+                <p className="mt-2 font-mono text-[9px] tracking-[0.16em] uppercase text-muted sm:text-[10px]">
+                  {cell.label}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+        {canOpen ? (
+          <div className="mt-6 flex justify-center pointer-events-auto">
+            <button
+              type="button"
+              data-ui
+              onClick={onAirlock}
+              className="h-11 px-5 rounded-md border border-warn/40 bg-transparent text-sm font-medium text-warn hover:bg-warn/10 active:scale-[0.98] transition-[background,transform] duration-[var(--motion-quick)] ease-[var(--ease-out)]"
+            >
+              open air lock
+            </button>
+          </div>
+        ) : null}
       </article>
     </div>
   );
@@ -1274,6 +1359,7 @@ function FuelPanel({
 }
 
 function statusLabel(hud: HudSnapshot) {
+  if (hud.adrift) return "ADRIFT";
   switch (hud.status) {
     case "orbit":
       return hud.orbitLocked ? (hud.orbitEcc >= 0.08 ? "ELLIPSE" : "LOCKED") : "ORBIT";

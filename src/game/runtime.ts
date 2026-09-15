@@ -32,6 +32,7 @@ import {
   spectroVoice,
   spectroScanProgress,
   clearSpectroScan,
+  openAirLock,
   type Sim,
   type SimViewPrefs,
   type SpectroVoice,
@@ -56,6 +57,7 @@ export type GameHandle = {
   launch: () => void;
   takeoff: () => void;
   reboot: () => void;
+  openAirLock: () => void;
   newWorld: () => void;
   setMuted: (muted: boolean) => void;
   adjustGravity: (dir: number) => void;
@@ -77,6 +79,12 @@ declare global {
       getYaw: () => number;
       getSpeed: () => number;
       getFuel?: () => number;
+      setFuel?: (v: number) => void;
+      getAdrift?: () => boolean;
+      getFoodUntil?: () => number;
+      getAdriftStartedAt?: () => number;
+      setAdriftStartedAt?: (t: number) => void;
+      openAirLock?: () => boolean | void;
       setSteer?: (v: number) => void;
       setKeys?: (codes: string[]) => void;
       place?: (x: number, y: number, vx: number, vy: number) => void;
@@ -199,6 +207,9 @@ const CREATING_HUD: HudSnapshot = {
   dev: false,
   warpCharge: 0,
   transitBeat: "off",
+  adrift: false,
+  adriftStartedAt: 0,
+  foodUntil: 0,
 };
 
 export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameHandle {
@@ -233,6 +244,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let prevSpectroVoice: SpectroVoice = "off";
   let prevPunched = false;
   let prevBoomed = false;
+  let lastBeepSec = -1;
   let enterWasDown = false;
   let enterNeedsUp = false;
   let oWasDown = false;
@@ -337,6 +349,9 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       dev: devTools,
       warpCharge: sim.warpCharge,
       transitBeat: sim.phase === "transit" ? transitBeat(sim.transitAge, sim.reducedMotion) : "off",
+      adrift: sim.adrift,
+      adriftStartedAt: sim.adriftStartedAt,
+      foodUntil: sim.foodUntil,
     };
     onUi(hud);
   };
@@ -346,6 +361,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     const p = input.state.pointer;
     if (!p?.down) return null;
     if (
+      sim.adrift ||
       sim.phase === "title" ||
       sim.phase === "crashed" ||
       sim.phase === "landed" ||
@@ -360,7 +376,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     return Math.atan2(-dx, -dy);
   };
 
-  const playing = () => sim?.phase === "flight";
+  const playing = () => sim?.phase === "flight" && !sim.adrift;
 
   const consumeEnter = () => {
     const down = enterHeld(input.state);
@@ -434,6 +450,16 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getYaw: () => s.ship.yaw,
       getSpeed: () => Math.hypot(s.ship.vx, s.ship.vy),
       getFuel: () => s.ship.fuel,
+      setFuel: (v: number) => {
+        s.ship.fuel = Math.max(0, v);
+      },
+      getAdrift: () => s.adrift,
+      getFoodUntil: () => s.foodUntil,
+      getAdriftStartedAt: () => s.adriftStartedAt,
+      setAdriftStartedAt: (t: number) => {
+        s.adriftStartedAt = t;
+      },
+      openAirLock: () => openAirLock(s),
       setSteer: (v) => {
         input.state.qaSteer = v;
       },
@@ -449,6 +475,9 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         s.burnCause = null;
         s.crashKind = null;
         s.crashAge = 0;
+        s.adrift = false;
+        s.adriftStartedAt = 0;
+        s.foodUntil = 0;
         s.orbitLockId = null;
         s.orbitDwell = 0;
         s.orbitLockCooldown = 0;
@@ -652,12 +681,21 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       sim.ship.thrusting && playing(),
       Math.min(1, Math.hypot(sim.ship.vx, sim.ship.vy) / 120),
     );
-    audio.setAtmo(playing() ? atmoDrag(sim) : 0);
-    if (playing() && sim.phase === "flight") {
+    audio.setAtmo(sim.phase === "flight" ? atmoDrag(sim) : 0);
+    if (sim.phase === "flight") {
       audio.setBeltDust(sim.beltDust, sim.beltDustBright);
       for (const tick of sim.beltTicks) audio.hullTick(tick);
     } else {
       audio.setBeltDust(0);
+    }
+    if (sim.adrift && sim.phase === "flight") {
+      const sec = Math.floor(Date.now() / 1000);
+      if (sec !== lastBeepSec) {
+        lastBeepSec = sec;
+        audio.clockBeep();
+      }
+    } else {
+      lastBeepSec = -1;
     }
     const specVoice = playing() ? spectroVoice(sim) : "off";
     audio.setSpectro(specVoice, spectroScanProgress(sim), sim.reducedMotion);
@@ -689,8 +727,15 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
 
     if (sim.landedId && sim.landedId !== prevLanded && sim.phase !== "title") audio.land();
     prevLanded = sim.landedId;
-    if (sim.crashedId && sim.crashedId !== prevCrashed) audio.crash();
-    prevCrashed = sim.crashedId ?? (sim.crashKind === "lost" ? "lost" : null);
+    const crashKey =
+      sim.crashedId ??
+      (sim.crashKind === "lost" || sim.crashKind === "airlock" || sim.crashKind === "starve"
+        ? sim.crashKind
+        : null);
+    if (crashKey && crashKey !== prevCrashed && sim.crashKind !== "lost" && sim.crashKind !== "starve") {
+      audio.crash();
+    }
+    prevCrashed = crashKey;
     if (sim.orbitDragAlarm) {
       audio.warn();
       sim.orbitDragAlarm = false;
@@ -835,6 +880,11 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       input.state.qaSteer = null;
       input.state.presses.clear();
       publish();
+    },
+    openAirLock() {
+      if (!sim) return;
+      audio.unlock();
+      if (openAirLock(sim)) publish();
     },
     newWorld() {
       chartNewWorld();

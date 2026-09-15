@@ -588,6 +588,7 @@ type AudioApi = {
   land: () => void;
   crash: () => void;
   warn: () => void;
+  clockBeep: () => void;
   setMuted: (muted: boolean) => void;
   destroy: () => void;
 };
@@ -1338,6 +1339,25 @@ export function createAudio(): AudioApi {
       };
       chirp(880, 0, 0.11, 0.09);
       chirp(520, 0.14, 0.16, 0.11);
+    },
+    clockBeep() {
+      if (!ctx || !sfx) return;
+      const t = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = "square";
+      osc.frequency.value = 1240;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.045, t + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.045);
+      osc.connect(g);
+      g.connect(sfx);
+      osc.start(t);
+      osc.stop(t + 0.06);
+      osc.onended = () => {
+        osc.disconnect();
+        g.disconnect();
+      };
     },
     crash() {
       if (!ctx || !sfx) return;

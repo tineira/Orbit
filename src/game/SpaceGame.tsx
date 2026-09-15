@@ -54,6 +54,9 @@ const INITIAL: HudSnapshot = {
   dev: false,
   warpCharge: 0,
   transitBeat: "off",
+  adrift: false,
+  adriftStartedAt: 0,
+  foodUntil: 0,
 };
 
 export function SpaceGame() {
@@ -81,6 +84,9 @@ export function SpaceGame() {
   }, []);
   const onReboot = useCallback(() => {
     gameRef.current?.reboot();
+  }, []);
+  const onOpenAirLock = useCallback(() => {
+    gameRef.current?.openAirLock();
   }, []);
   const onNewWorld = useCallback(() => {
     if (hud.phase !== "title" && hud.phase !== "crashed") return;
@@ -133,6 +139,7 @@ export function SpaceGame() {
         onLaunch={onLaunch}
         onTakeoff={onTakeoff}
         onReboot={onReboot}
+        onOpenAirLock={onOpenAirLock}
         onNewWorld={onNewWorld}
         onMute={onMute}
         onGravity={onGravity}
