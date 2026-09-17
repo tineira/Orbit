@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Minus, Plus, Volume2, VolumeX } from "lucide-react";
+import { ChevronLeft, ChevronRight, Minus, Plus, Volume2, VolumeX } from "lucide-react";
 import type {
   CompositionReadout,
   EngineKind,
@@ -68,6 +68,7 @@ export function Overlay({
   const landed = hud.landedId ? planetById(hud.landedId) : null;
   const crashed = hud.crashedId ? planetById(hud.crashedId) : null;
   const dev = hud.dev;
+  const [instruments, setInstruments] = useState(false);
 
   useEffect(() => {
     if (hud.phase !== "title") return;
@@ -144,7 +145,12 @@ export function Overlay({
         <>
           <FlightVisor
             hud={hud}
-            className={cn("sm:hidden", dev && hud.physicsMenu ? "pr-[13rem]" : "pr-14")}
+            expanded={instruments}
+            onToggleExpand={() => setInstruments((open) => !open)}
+            className={cn(
+              "px-4 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6 sm:pt-5",
+              dev && hud.physicsMenu ? "pr-[13rem]" : "pr-14 sm:pr-6",
+            )}
           />
           <div className="pointer-events-auto absolute top-[max(0.75rem,env(safe-area-inset-top))] right-3 z-10 flex flex-col items-end gap-3 sm:hidden">
             <MuteButton muted={hud.muted} onMute={onMute} />
@@ -157,6 +163,26 @@ export function Overlay({
               />
             ) : null}
           </div>
+          {dev && hud.physicsMenu ? (
+            <div className="pointer-events-auto absolute top-[4.75rem] right-6 z-10 hidden sm:block">
+              <PhysicsKnobs
+                gravityScale={hud.gravityScale}
+                atmoScale={hud.atmoScale}
+                onGravity={onGravity}
+                onAtmo={onAtmo}
+              />
+            </div>
+          ) : null}
+          {dev && hud.verbose && hud.verboseDiag ? (
+            <div className="absolute top-[4.75rem] left-6 hidden sm:block">
+              <VerbosePanel diag={hud.verboseDiag} />
+            </div>
+          ) : null}
+          {dev && hud.verbose && hud.phase === "flight" ? (
+            <div className="absolute top-[9rem] left-6 hidden sm:block">
+              <VerboseMatter />
+            </div>
+          ) : null}
           {hud.phase === "flight" && !hud.adrift ? (
             <div
               className="absolute left-4 z-10 sm:hidden"
@@ -183,139 +209,25 @@ export function Overlay({
             </div>
           ) : null}
 
-          <header className="absolute top-0 left-0 right-0 hidden flex-col gap-3 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:flex sm:p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="font-mono text-xs tracking-[0.18em] uppercase text-muted">
-                  Nearest body
-                </p>
-                <p className="mt-1 font-display text-2xl leading-tight font-medium tracking-tight text-fg">
-                  {hud.nearestName ?? "—"}
-                </p>
-                <p className="mt-1 font-mono text-xs tabular-nums text-muted">
-                  {hud.altitude != null ? `ALT ${fmt(hud.altitude)}` : "DEEP SPACE"}
-                  <span className="mx-2 text-subtle">/</span>
-                  {statusLabel(hud)}
-                </p>
-                {hud.composition ? (
-                  <BodyMixLines className="mt-1.5" mix={hud.composition} />
-                ) : null}
-                {hud.spectroScanning ? <ScanPips frac={hud.spectroScan} /> : null}
-              </div>
-              <div className="flex flex-col items-end gap-3">
-                <div
-                  data-ui
-                  className="pointer-events-auto w-64 rounded-lg border border-border bg-surface/80 p-3 backdrop-blur-sm sm:w-[28rem]"
-                >
-                  <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
-                    <div className="space-y-1.5">
-                      <PanelRow label="Speed">
-                        {fmt(hud.speed)} <span className="text-muted">u/s</span>
-                      </PanelRow>
-                      <PanelRow label="Drag">{fmt(hud.drag)}</PanelRow>
-                      <PanelRow label="Heading">
-                        {hud.headingDeg.toFixed(0).padStart(3, "0")}°
-                      </PanelRow>
-                      <PanelRow label="Mass">{hud.mass.toFixed(2)}</PanelRow>
-                    </div>
-                    <div className="mt-2.5 border-t border-border pt-2.5 sm:mt-0 sm:border-t-0 sm:border-l sm:pl-4 sm:pt-0">
-                      <FuelPanel
-                        kind={hud.fuelKind}
-                        engineKind={hud.engineKind}
-                        tankKind={hud.tankKind}
-                        engineIsp={hud.engineIsp}
-                        engineThrust={hud.engineThrust}
-                        dev={dev}
-                        onCycleFuel={onCycleFuel}
-                        onCycleEngine={onCycleEngine}
-                        onCycleTank={onCycleTank}
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-2.5 grid grid-cols-1 gap-x-4 gap-y-1.5 border-t border-border pt-2.5 sm:grid-cols-2">
-                    <GaugeRow
-                      label="Hull"
-                      ariaLabel="Hull integrity"
-                      value={hud.hull}
-                      max={HULL_MAX}
-                      unit=""
-                      note={hud.repairing ? "Repair" : null}
-                    />
-                    <GaugeRow
-                      label="Fuel"
-                      ariaLabel="Fuel"
-                      value={hud.fuel}
-                      max={hud.fuelCapacity}
-                      unit=" L"
-                      note={hud.refueling ? "Refuel" : null}
-                    />
-                  </div>
-                </div>
-                {dev && hud.physicsMenu ? (
-                  <PhysicsKnobs
-                    gravityScale={hud.gravityScale}
-                    atmoScale={hud.atmoScale}
-                    onGravity={onGravity}
-                    onAtmo={onAtmo}
-                  />
-                ) : null}
-              </div>
-            </div>
-            {dev && hud.verbose && hud.verboseDiag ? <VerbosePanel diag={hud.verboseDiag} /> : null}
-            {dev && hud.verbose && hud.phase === "flight" ? <VerboseMatter /> : null}
-          </header>
-
-          <div className="absolute bottom-16 left-0 hidden max-w-[22rem] p-4 sm:block sm:p-6">
-            <MuteButton muted={hud.muted} onMute={onMute} className="mb-3" />
-            <p className="font-mono text-xs leading-relaxed text-muted">
-              {hud.adrift ? null : (
-                <span>Left / right yaw. Up burns. Down retro. + / − or scroll to zoom.</span>
-              )}
-            </p>
+          <div className="absolute bottom-8 left-6 hidden sm:block">
+            <MuteButton muted={hud.muted} onMute={onMute} className="mb-2" />
             {hud.adrift ? null : (
-              <p className="mt-2 flex font-mono text-xs">
-                <KeyTips
-                  orbitShell={hud.orbitShell}
-                  lagrangePoints={hud.lagrangePoints}
-                  physicsMenu={hud.physicsMenu}
-                  gravityGrid={hud.gravityGrid}
-                  verbose={hud.verbose}
-                  spectro={hud.spectro}
-                  onToggleOrbitShell={onToggleOrbitShell}
-                  onToggleLagrange={onToggleLagrange}
-                  onToggleGravityGrid={onToggleGravityGrid}
-                  onToggleVerbose={onToggleVerbose}
-                  onToggleSpectro={onToggleSpectro}
-                  dev={dev}
-                />
-              </p>
+              <KeyTips
+                legend
+                orbitShell={hud.orbitShell}
+                lagrangePoints={hud.lagrangePoints}
+                physicsMenu={hud.physicsMenu}
+                gravityGrid={hud.gravityGrid}
+                verbose={hud.verbose}
+                spectro={hud.spectro}
+                onToggleOrbitShell={onToggleOrbitShell}
+                onToggleLagrange={onToggleLagrange}
+                onToggleGravityGrid={onToggleGravityGrid}
+                onToggleVerbose={onToggleVerbose}
+                onToggleSpectro={onToggleSpectro}
+                dev={dev}
+              />
             )}
-            {hud.orbitShell ? (
-              <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">
-                Orbit shell · {hud.nearestName ?? "—"}
-              </p>
-            ) : null}
-            {hud.lagrangePoints ? (
-              <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">
-                Lagrange points
-              </p>
-            ) : null}
-            {hud.gravityGrid ? (
-              <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">
-                Gravity grid
-              </p>
-            ) : null}
-            {dev && hud.verbose ? (
-              <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">
-                Verbose
-              </p>
-            ) : null}
-            {hud.spectro ? (
-              <p className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ok">
-                Mass spec
-              </p>
-            ) : null}
-            <OrbitHint hud={hud} className="mt-2" />
           </div>
         </>
       ) : null}
@@ -1112,11 +1024,17 @@ function orbitHintTone(hud: HudSnapshot) {
 
 function OrbitHint({ hud, className }: { hud: HudSnapshot; className?: string }) {
   if (!hud.orbitHint || hud.phase === "crashed" || hud.adrift) return null;
+  if (isRedundantOrbitHint(hud.orbitHint)) return null;
   return (
     <p className={cn("font-mono text-xs tracking-wide uppercase", orbitHintTone(hud), className)}>
       {hud.orbitHint}
     </p>
   );
+}
+
+function isRedundantOrbitHint(hint: string) {
+  if (hint === "Warp") return true;
+  return /^(Ellipse locked|Orbit locked|.+ locked) · /.test(hint);
 }
 
 function statusTone(hud: HudSnapshot) {
@@ -1131,13 +1049,15 @@ function VisorReadout({
   label,
   value,
   valueClass,
+  className,
 }: {
   label: string;
   value: string;
   valueClass?: string;
+  className?: string;
 }) {
   return (
-    <div className="flex items-baseline justify-end gap-2">
+    <div className={cn("flex items-baseline justify-end gap-2", className)}>
       <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-muted">{label}</span>
       <span
         className={cn(
@@ -1175,44 +1095,99 @@ function VisorGauge({
   );
 }
 
-function FlightVisor({ hud, className }: { hud: HudSnapshot; className?: string }) {
+function FlightVisor({
+  hud,
+  className,
+  expanded,
+  onToggleExpand,
+}: {
+  hud: HudSnapshot;
+  className?: string;
+  expanded?: boolean;
+  onToggleExpand?: () => void;
+}) {
   const alt = hud.altitude != null ? fmt(hud.altitude) : "—";
   const dragWarn = hud.drag >= ORBIT_DRAG_BREAK;
   const dragOn = hud.drag > 0;
+  const fuel = fuelGrade(hud.fuelKind);
+  const engine = engineGrade(hud.engineKind);
+  const isp = fuel.isp * hud.engineIsp;
+  const thrust = fuel.thrust * hud.engineThrust;
   return (
     <header
       className={cn(
-        "absolute top-0 left-0 right-0 bg-gradient-to-b from-bg/90 via-bg/55 to-transparent px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-6",
+        "absolute top-0 left-0 right-0 bg-gradient-to-b from-bg/90 via-bg/55 to-transparent pb-6",
         className,
       )}
     >
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1">
-        <p className="min-w-0 truncate font-display text-base leading-tight font-medium tracking-tight text-fg">
-          {hud.nearestName ?? "—"}
-          <span className="ml-1.5 font-mono text-xs font-normal tabular-nums text-muted">
-            · {alt}
-          </span>
-        </p>
-        <p
+      <div className="flex items-center gap-2">
+        <div
           className={cn(
-            "font-mono text-[10px] tracking-[0.16em] uppercase",
-            statusTone(hud),
+            "min-w-0 grid grid-cols-[auto_auto_auto] items-center gap-x-6 gap-y-1",
+            expanded && "sm:grid-cols-[auto_auto_auto_auto_auto_auto]",
           )}
         >
-          {statusLabel(hud)}
-        </p>
-        <VisorReadout label="Speed" value={fmt(hud.speed)} />
-        <VisorGauge label="Hull" frac={hud.hull / HULL_MAX} note={hud.repairing} />
-        <VisorGauge
-          label="Fuel"
-          frac={hud.fuelCapacity > 0 ? hud.fuel / hud.fuelCapacity : 0}
-          note={hud.refueling}
-        />
-        <VisorReadout
-          label="Drag"
-          value={fmt(hud.drag)}
-          valueClass={dragWarn ? "text-warn" : dragOn ? "text-caution" : undefined}
-        />
+          <p className="min-w-0 truncate font-display text-base leading-tight font-medium tracking-tight text-fg">
+            {hud.nearestName ?? "—"}
+            <span className="ml-1.5 font-mono text-xs font-normal tabular-nums text-muted">
+              · {alt}
+            </span>
+          </p>
+          <VisorGauge
+            label="Fuel"
+            frac={hud.fuelCapacity > 0 ? hud.fuel / hud.fuelCapacity : 0}
+            note={hud.refueling}
+          />
+          <VisorReadout label="Speed" value={fmt(hud.speed)} />
+          {expanded ? (
+            <>
+              <VisorReadout
+                className="hidden sm:flex"
+                label="Heading"
+                value={`${hud.headingDeg.toFixed(0).padStart(3, "0")}°`}
+              />
+              <VisorReadout className="hidden sm:flex" label="Engine" value={engine.hud} />
+              <VisorReadout className="hidden sm:flex" label="Isp" value={fmtStat(isp)} />
+            </>
+          ) : null}
+          <p
+            className={cn(
+              "font-mono text-[10px] tracking-[0.16em] uppercase",
+              statusTone(hud),
+            )}
+          >
+            {statusLabel(hud)}
+          </p>
+          <VisorGauge label="Hull" frac={hud.hull / HULL_MAX} note={hud.repairing} />
+          <VisorReadout
+            label="Drag"
+            value={fmt(hud.drag)}
+            valueClass={dragWarn ? "text-warn" : dragOn ? "text-caution" : undefined}
+          />
+          {expanded ? (
+            <>
+              <VisorReadout className="hidden sm:flex" label="Mass" value={hud.mass.toFixed(2)} />
+              <VisorReadout className="hidden sm:flex" label="Mix" value={fuel.hud} />
+              <VisorReadout className="hidden sm:flex" label="Thrust" value={fmtStat(thrust)} />
+            </>
+          ) : null}
+        </div>
+        {onToggleExpand ? (
+          <button
+            type="button"
+            data-ui
+            aria-label={expanded ? "Hide instruments" : "Show instruments"}
+            aria-expanded={expanded}
+            onClick={onToggleExpand}
+            className="pointer-events-auto hidden size-8 shrink-0 place-items-center rounded-md text-muted hover:text-fg sm:grid"
+          >
+            {expanded ? (
+              <ChevronLeft className="size-4" strokeWidth={1.75} />
+            ) : (
+              <ChevronRight className="size-4" strokeWidth={1.75} />
+            )}
+          </button>
+        ) : null}
       </div>
       {hud.composition ? <BodyMixLines className="mt-1.5" mix={hud.composition} /> : null}
       {hud.spectroScanning ? <ScanPips frac={hud.spectroScan} /> : null}
@@ -1235,6 +1210,7 @@ function KeyTips({
   onToggleSpectro,
   dev,
   stack,
+  legend,
 }: {
   orbitShell: boolean;
   lagrangePoints: boolean;
@@ -1249,14 +1225,18 @@ function KeyTips({
   onToggleSpectro: () => void;
   dev: boolean;
   stack?: boolean;
+  legend?: boolean;
 }) {
+  const asLegend = Boolean(legend || stack);
   return (
     <span
       className={cn(
         "inline-flex items-center",
         stack
           ? "h-full flex-col items-stretch justify-between"
-          : "flex-wrap gap-x-2 gap-y-1 sm:gap-x-3",
+          : asLegend
+            ? "flex-wrap gap-x-4 gap-y-1"
+            : "flex-wrap gap-x-2 gap-y-1 sm:gap-x-3",
       )}
     >
       <KeyTip
@@ -1265,7 +1245,8 @@ function KeyTips({
         label="orbit shell"
         on={orbitShell}
         onToggle={onToggleOrbitShell}
-        legend={stack}
+        legend={asLegend}
+        fill={stack}
       />
       <KeyTip
         code="L"
@@ -1273,7 +1254,8 @@ function KeyTips({
         label="Lagrange"
         on={lagrangePoints}
         onToggle={onToggleLagrange}
-        legend={stack}
+        legend={asLegend}
+        fill={stack}
       />
       <KeyTip
         code="M"
@@ -1281,7 +1263,8 @@ function KeyTips({
         label="mass spec"
         on={spectro}
         onToggle={onToggleSpectro}
-        legend={stack}
+        legend={asLegend}
+        fill={stack}
       />
       {dev ? (
         <KeyTip
@@ -1289,6 +1272,7 @@ function KeyTips({
           rest="hysics"
           label="physics"
           on={physicsMenu}
+          legend={asLegend}
           className="hidden sm:inline-flex"
         />
       ) : null}
@@ -1298,7 +1282,8 @@ function KeyTips({
         label="grid"
         on={gravityGrid}
         onToggle={onToggleGravityGrid}
-        legend={stack}
+        legend={asLegend}
+        fill={stack}
       />
       {dev ? (
         <KeyTip
@@ -1307,6 +1292,7 @@ function KeyTips({
           label="verbose"
           on={verbose}
           onToggle={onToggleVerbose}
+          legend={asLegend}
           className="hidden sm:inline-flex"
         />
       ) : null}
@@ -1322,6 +1308,7 @@ function KeyTip({
   onToggle,
   className,
   legend,
+  fill,
 }: {
   code: string;
   rest?: string;
@@ -1330,6 +1317,7 @@ function KeyTip({
   onToggle?: () => void;
   className?: string;
   legend?: boolean;
+  fill?: boolean;
 }) {
   const color = on ? "text-ok" : "text-muted";
   const legendWord =
@@ -1362,7 +1350,7 @@ function KeyTip({
         className={cn(
           "pointer-events-auto inline-flex rounded-md",
           legend
-            ? "min-h-0 flex-1 items-center px-2 -mx-2"
+            ? cn("min-h-0 items-center", fill ? "flex-1 px-2 -mx-2" : "px-0 py-0.5")
             : "min-h-11 items-center gap-1.5 px-1.5 sm:min-h-0 sm:px-0",
           color,
           className,
