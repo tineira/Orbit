@@ -51,6 +51,10 @@ test("chart flags parse belt independently of twins", () => {
   assert.deepEqual(chartFlagsFromSearch("?settlement=active"), { settlement: "active" });
   assert.deepEqual(chartFlagsFromSearch("?settlement=unexplored"), { settlement: "unexplored" });
   assert.deepEqual(chartFlagsFromSearch("?settlement=foo"), {});
+  assert.deepEqual(chartFlagsFromSearch("?mine"), { mine: "active" });
+  assert.deepEqual(chartFlagsFromSearch("?mine=abandoned"), { mine: "abandoned" });
+  assert.deepEqual(chartFlagsFromSearch("?mine=both"), { mine: "both" });
+  assert.deepEqual(chartFlagsFromSearch("?mine=0"), {});
 });
 
 test("?belt always charts a sparse belt with one landable primary", () => {

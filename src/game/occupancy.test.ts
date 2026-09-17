@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { flavorBody, occupancyLegal, padHasFuel, type FlavorArgs } from "./occupancy.ts";
-import { createSystem } from "./world.ts";
+import {
+  asteroidMine,
+  ASTEROID_MINE_PRIMARY_R,
+  flavorBody,
+  occupancyLegal,
+  padHasFuel,
+  type FlavorArgs,
+} from "./occupancy.ts";
+import { chartFlagsFromSearch, createSystem, withMineFlags } from "./world.ts";
 import type { Planet } from "./types.ts";
 
 type Occ = Pick<Planet, "kind" | "kicker" | "landable" | "settlement" | "civ">;
@@ -301,4 +308,112 @@ test("occupancy weight bands over seeds 1–200", () => {
   assert.ok(rockyPct >= 0.15 && rockyPct <= 0.35, `rocky non-Home active ${rockyPct}`);
   assert.ok(moonPct >= 0.7, `moons unexplored ${moonPct}`);
   assert.ok(campPct >= 0.1 && campPct <= 0.35, `{belt:true} Camp ${campPct}`);
+});
+
+test("asteroidMine is only landable active/abandoned rocks", () => {
+  assert.equal(
+    asteroidMine({
+      kind: "asteroid",
+      landable: true,
+      radius: 32,
+      settlement: "unexplored",
+      shapeSeed: 1,
+    }),
+    null,
+  );
+  assert.equal(
+    asteroidMine({
+      kind: "asteroid",
+      landable: false,
+      radius: 12,
+      settlement: "unexplored",
+      shapeSeed: 1,
+    }),
+    null,
+  );
+  const camp = asteroidMine({
+    kind: "asteroid",
+    landable: true,
+    radius: 32,
+    settlement: "active",
+    shapeSeed: 1,
+  });
+  assert.ok(camp);
+  assert.equal(camp!.towers.length, 2);
+  assert.equal(camp!.padLights, true);
+  assert.ok(camp!.towers.every((t) => t.lamp && !t.broken));
+  const med = asteroidMine({
+    kind: "asteroid",
+    landable: true,
+    radius: ASTEROID_MINE_PRIMARY_R - 1,
+    settlement: "abandoned",
+    shapeSeed: 3,
+  });
+  assert.ok(med);
+  assert.equal(med!.towers.length, 1);
+  assert.equal(med!.padLights, false);
+});
+
+test("?mine sugar resolves to camp/belt/settlement", () => {
+  assert.deepEqual(withMineFlags({ mine: "active" }).camp, true);
+  assert.deepEqual(withMineFlags({ mine: "abandoned" }), {
+    mine: "abandoned",
+    camp: false,
+    belt: true,
+    settlement: "abandoned",
+  });
+  assert.equal(withMineFlags({ mine: "both", settlement: "unexplored" }).camp, true);
+  assert.equal(withMineFlags({ mine: "both", settlement: "unexplored" }).settlement, "unexplored");
+  assert.deepEqual(chartFlagsFromSearch("?mine=both&settlement=active"), {
+    mine: "both",
+    settlement: "active",
+  });
+});
+
+test("{mine:active} always belts with a lit Camp", () => {
+  for (let seed = 1; seed <= 12; seed++) {
+    const sys = createSystem(seed, { mine: "active" });
+    const camp = sys.planets.find((p) => p.kicker === "Camp");
+    assert.ok(camp, String(seed));
+    const spec = asteroidMine(camp!);
+    assert.ok(spec);
+    assert.equal(spec!.towers.length, 2);
+    assert.equal(spec!.padLights, true);
+  }
+});
+
+test("{mine:abandoned} belts a dead primary Rock, never a Camp", () => {
+  for (let seed = 1; seed <= 12; seed++) {
+    const sys = createSystem(seed, { mine: "abandoned" });
+    const rocks = sys.planets.filter((p) => p.kind === "asteroid");
+    assert.ok(rocks.length >= 5, String(seed));
+    assert.equal(
+      rocks.some((p) => p.kicker === "Camp"),
+      false,
+      String(seed),
+    );
+    const primary = rocks.find((p) => p.landable);
+    assert.ok(primary, String(seed));
+    assert.equal(primary!.kicker, "Rock");
+    assert.equal(primary!.settlement, "abandoned");
+    const spec = asteroidMine(primary!);
+    assert.ok(spec, String(seed));
+    assert.equal(spec!.padLights, false);
+    assert.equal(spec!.towers.length, 2);
+  }
+});
+
+test("{mine:both} is a Camp plus an abandoned extra rock", () => {
+  for (let seed = 1; seed <= 12; seed++) {
+    const sys = createSystem(seed, { mine: "both" });
+    const camp = sys.planets.find((p) => p.kicker === "Camp");
+    assert.ok(camp, String(seed));
+    assert.equal(camp!.settlement, "active");
+    const extra = sys.planets.filter((p) => p.kind === "asteroid" && p.landable && p.kicker !== "Camp");
+    assert.equal(extra.length, 1, String(seed));
+    assert.equal(extra[0]!.settlement, "abandoned");
+    assert.equal(asteroidMine(extra[0]!)!.towers.length, 1);
+    const home = sys.planets.find((p) => p.kicker === "Home");
+    assert.equal(home!.settlement, "active");
+  }
 });

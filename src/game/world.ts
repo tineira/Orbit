@@ -862,11 +862,15 @@ function placeOnRails(
   });
 }
 
+export type MineFlag = "active" | "abandoned" | "both";
+
 export type ChartFlags = {
   twins?: "on" | "tight";
   belt?: boolean;
   camp?: boolean;
   settlement?: Settlement;
+  /** Debug sugar. Applied in `makeSystem`, not the URL parser. */
+  mine?: MineFlag;
 };
 
 function flagOn(raw: string | null) {
@@ -876,7 +880,7 @@ function flagOn(raw: string | null) {
   return true;
 }
 
-/** `?twins` / `?twins=1` always rolls a pair. `?twins=tight` always rolls a close one. `?belt` always rolls a belt. `?camp` does not set belt here. */
+/** `?twins` / `?twins=1` always rolls a pair. `?twins=tight` always rolls a close one. `?belt` always rolls a belt. `?camp` / `?mine` do not set belt here. */
 export function chartFlagsFromSearch(search = ""): ChartFlags {
   const raw = search.startsWith("?") ? search.slice(1) : search;
   const q = new URLSearchParams(raw);
@@ -898,7 +902,33 @@ export function chartFlagsFromSearch(search = ""): ChartFlags {
     const t = settlement.trim().toLowerCase();
     if (t === "active" || t === "abandoned" || t === "unexplored") flags.settlement = t;
   }
+  const mine = q.get("mine");
+  if (mine != null) {
+    const t = mine.trim().toLowerCase();
+    if (t === "0" || t === "off" || t === "false" || t === "no") {
+      /* leave unset */
+    } else if (t === "abandoned" || t === "ruin" || t === "dead") flags.mine = "abandoned";
+    else if (t === "both" || t === "all") flags.mine = "both";
+    else flags.mine = "active";
+  }
   return flags;
+}
+
+/** Debug `?mine` is sugar for camp / belt / settlement. Explicit settlement still wins. */
+export function withMineFlags(flags: ChartFlags): ChartFlags {
+  if (!flags.mine) return flags;
+  const out: ChartFlags = { ...flags };
+  if (flags.mine === "active") {
+    out.camp = true;
+  } else if (flags.mine === "abandoned") {
+    out.camp = false;
+    out.belt = true;
+    if (out.settlement == null) out.settlement = "abandoned";
+  } else {
+    out.camp = true;
+    if (out.settlement == null) out.settlement = "abandoned";
+  }
+  return out;
 }
 
 export type PlayFlags = {
@@ -994,6 +1024,7 @@ function makeSystem(
   starPal: [string, string, string] | null = null,
   starNameForced: string | null = null,
 ): Planet[] {
+  flags = withMineFlags(flags);
   const rng = mulberry32(seed);
   const used = new Set<string>(["lumen"]);
   const planets: Planet[] = [];
@@ -1121,7 +1152,7 @@ function makeSystem(
       const mu = G * GRAVITY_BASE * star.mass;
       const campRoll = rng() < 0.2;
       const camp = flags.camp === true ? true : flags.camp === false ? false : campRoll;
-      const extraLand = n >= 6 && rng() < 0.4;
+      const extraLand = flags.mine === "both" || (n >= 6 && rng() < 0.4);
       for (let i = 0; i < n; i++) {
         const primary = i === 0;
         const medium = i === 1 && extraLand;

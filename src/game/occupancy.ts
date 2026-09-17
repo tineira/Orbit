@@ -120,3 +120,42 @@ export function flavorBody(args: FlavorArgs): string {
   if (!row) throw new Error(`missing occupancy copy: ${key}`);
   return row(args);
 }
+
+function mineFrac(n: number) {
+  const x = Math.sin(n * 127.1) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+/** Primary belt rocks are ≥26. Medium extras sit under 22. */
+export const ASTEROID_MINE_PRIMARY_R = 26;
+
+export type AsteroidMineTower = {
+  /** Body-frame offset from `padAngle`. Shoulders of the pad; never the landing spot. */
+  dPad: number;
+  broken: boolean;
+  lamp: boolean;
+};
+
+export type AsteroidMine = {
+  towers: AsteroidMineTower[];
+  padLights: boolean;
+};
+
+/** Human mining camp on a landable asteroid. Unexplored and shards have none. */
+export function asteroidMine(
+  p: Pick<Planet, "kind" | "landable" | "radius" | "settlement" | "shapeSeed">,
+): AsteroidMine | null {
+  if (p.kind !== "asteroid" || !p.landable) return null;
+  if (p.settlement !== "active" && p.settlement !== "abandoned") return null;
+  const seed = p.shapeSeed ?? 0;
+  const n = p.radius >= ASTEROID_MINE_PRIMARY_R ? 2 : 1;
+  const offsets = n === 1 ? [-0.28] : [-0.28, 0.28];
+  const towers: AsteroidMineTower[] = offsets.map((dPad, i) => {
+    const u = mineFrac(seed * 13.1 + i * 7.7);
+    const broken = p.settlement === "abandoned" && u > 0.22;
+    const lamp =
+      p.settlement === "active" || mineFrac(seed * 3.9 + i * 2.3) < 0.4;
+    return { dPad, broken, lamp };
+  });
+  return { towers, padLights: p.settlement === "active" };
+}
