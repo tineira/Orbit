@@ -2017,9 +2017,16 @@ function minimapLayout(cssW: number, cssH: number) {
 
 function spectroLayout(cssW: number, cssH: number) {
   const map = minimapLayout(cssW, cssH);
+  const gap = 8;
+  if (!map.desktop) {
+    const legendW = 148;
+    const maxW = map.x - gap - (map.pad + legendW);
+    const w = Math.max(72, Math.min(map.size, maxW));
+    return { x: map.x - gap - w, y: map.y, w, h: map.size };
+  }
   const w = map.size;
-  const h = map.desktop ? Math.round(map.size * 0.72) : 96;
-  return { x: map.x, y: Math.max(map.pad, map.y - h - 8), w, h };
+  const h = Math.round(map.size * 0.72);
+  return { x: map.x, y: Math.max(map.pad, map.y - h - gap), w, h };
 }
 
 function spectroProgress(sim: Sim, body: Planet | null) {

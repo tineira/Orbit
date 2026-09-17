@@ -11,7 +11,7 @@ import type {
 import { engineGrade, fuelGrade, tankGrade } from "./fuel";
 import { HULL_MAX } from "./hull";
 import { bodyReadout, SCAN_SECONDS } from "./matter";
-import { ATMO_STEPS, GRAVITY_STEPS, getPlanets, isGhostBody, planetById } from "./world";
+import { ATMO_STEPS, GRAVITY_STEPS, ORBIT_DRAG_BREAK, getPlanets, isGhostBody, planetById } from "./world";
 import { AIRLOCK_DELAY_MS, CLOCK_REVEAL_MS, airlockScreenFade, splitFoodClock, usesLostCard } from "./adrift";
 import { cn } from "@/lib/utils";
 
@@ -142,7 +142,48 @@ export function Overlay({
 
       {hud.phase !== "title" && hud.phase !== "creating" && hud.phase !== "transit" ? (
         <>
-          <header className="absolute top-0 left-0 right-0 flex flex-col gap-3 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:p-6">
+          <FlightVisor
+            hud={hud}
+            className={cn("sm:hidden", dev && hud.physicsMenu ? "pr-[13rem]" : "pr-14")}
+          />
+          <div className="pointer-events-auto absolute top-[max(0.75rem,env(safe-area-inset-top))] right-3 z-10 flex flex-col items-end gap-3 sm:hidden">
+            <MuteButton muted={hud.muted} onMute={onMute} />
+            {dev && hud.physicsMenu ? (
+              <PhysicsKnobs
+                gravityScale={hud.gravityScale}
+                atmoScale={hud.atmoScale}
+                onGravity={onGravity}
+                onAtmo={onAtmo}
+              />
+            ) : null}
+          </div>
+          {hud.phase === "flight" && !hud.adrift ? (
+            <div
+              className="absolute left-4 z-10 sm:hidden"
+              style={{
+                bottom: "calc(1rem + 8px)",
+                height: "min(132px, max(96px, 16vw))",
+              }}
+            >
+              <KeyTips
+                stack
+                orbitShell={hud.orbitShell}
+                lagrangePoints={hud.lagrangePoints}
+                physicsMenu={hud.physicsMenu}
+                gravityGrid={hud.gravityGrid}
+                verbose={hud.verbose}
+                spectro={hud.spectro}
+                onToggleOrbitShell={onToggleOrbitShell}
+                onToggleLagrange={onToggleLagrange}
+                onToggleGravityGrid={onToggleGravityGrid}
+                onToggleVerbose={onToggleVerbose}
+                onToggleSpectro={onToggleSpectro}
+                dev={dev}
+              />
+            </div>
+          ) : null}
+
+          <header className="absolute top-0 left-0 right-0 hidden flex-col gap-3 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:flex sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="font-mono text-xs tracking-[0.18em] uppercase text-muted">
@@ -224,28 +265,11 @@ export function Overlay({
             {dev && hud.verbose && hud.phase === "flight" ? <VerboseMatter /> : null}
           </header>
 
-          <div className="absolute bottom-16 left-0 p-4 sm:p-6 max-w-[22rem]">
-            <button
-              type="button"
-              data-ui
-              onClick={onMute}
-              aria-label={hud.muted ? "Unmute" : "Mute"}
-              className="pointer-events-auto mb-3 size-11 grid place-items-center rounded-md text-muted hover:text-fg transition-colors duration-[var(--motion-quick)] ease-[var(--ease-out)]"
-            >
-              {hud.muted ? (
-                <VolumeX className="size-4" strokeWidth={1.75} />
-              ) : (
-                <Volume2 className="size-4" strokeWidth={1.75} />
-              )}
-            </button>
+          <div className="absolute bottom-16 left-0 hidden max-w-[22rem] p-4 sm:block sm:p-6">
+            <MuteButton muted={hud.muted} onMute={onMute} className="mb-3" />
             <p className="font-mono text-xs leading-relaxed text-muted">
               {hud.adrift ? null : (
-                <>
-                  <span className="hidden sm:inline">
-                    Left / right yaw. Up burns. Down retro. + / − or scroll to zoom.
-                  </span>
-                  <span className="sm:hidden">Hold to point and burn. Pinch to zoom.</span>
-                </>
+                <span>Left / right yaw. Up burns. Down retro. + / − or scroll to zoom.</span>
               )}
             </p>
             {hud.adrift ? null : (
@@ -291,45 +315,14 @@ export function Overlay({
                 Mass spec
               </p>
             ) : null}
-            {hud.orbitHint && hud.phase !== "crashed" && !hud.adrift ? (
-              <p
-                className={cn(
-                  "mt-2 font-mono text-xs tracking-wide uppercase",
-                  hud.adrift ||
-                  hud.status === "too-fast" ||
-                    hud.status === "crashed" ||
-                    hud.orbitHint === ORBIT_DRAG_HINT ||
-                    hud.orbitHint === ORBIT_PERTURB_HINT ||
-                    isOrbitLostHint(hud.orbitHint) ||
-                    (hud.status === "warp" && hud.warpCharge >= 0.7)
-                    ? "text-warn"
-                    : hud.status === "orbit" || hud.status === "lagrange"
-                      ? "text-ok"
-                      : "text-accent",
-                )}
-              >
-                {hud.orbitHint}
-              </p>
-            ) : null}
+            <OrbitHint hud={hud} className="mt-2" />
           </div>
         </>
       ) : null}
 
       {hud.phase === "title" ? (
         <div className="pointer-events-auto absolute top-[max(1rem,env(safe-area-inset-top))] right-4 sm:right-8 flex flex-col items-end gap-3">
-          <button
-            type="button"
-            data-ui
-            onClick={onMute}
-            aria-label={hud.muted ? "Unmute" : "Mute"}
-            className="size-11 grid place-items-center rounded-md text-muted hover:text-fg transition-colors duration-[var(--motion-quick)] ease-[var(--ease-out)]"
-          >
-            {hud.muted ? (
-              <VolumeX className="size-4" strokeWidth={1.75} />
-            ) : (
-              <Volume2 className="size-4" strokeWidth={1.75} />
-            )}
-          </button>
+          <MuteButton muted={hud.muted} onMute={onMute} />
           {dev && hud.physicsMenu ? (
             <PhysicsKnobs
               gravityScale={hud.gravityScale}
@@ -560,7 +553,7 @@ function LandingCard({
   onTakeoff: () => void;
 }) {
   return (
-    <div className="absolute inset-0 flex items-end justify-center p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 sm:pb-5 pointer-events-none">
+    <div className="absolute inset-0 z-20 flex items-end justify-center p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 sm:pb-5 pointer-events-none">
       <article
         data-ui
         className="pointer-events-auto w-full max-w-md rounded-xl bg-surface border border-border p-5 sm:p-6 shadow-lg"
@@ -744,7 +737,7 @@ function AdriftCard({
   const colonOn = Math.floor(now / 1000) % 2 === 0;
   if (!shown && !sealing) return null;
   return (
-    <div className="absolute inset-0 flex items-end justify-center p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 sm:pb-5 pointer-events-none">
+    <div className="absolute inset-0 z-20 flex items-end justify-center p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 sm:pb-5 pointer-events-none">
       <div className="time-circuit-row">
         {canOpen ? <HatchCrtButton colonOn={colonOn} onAirlock={onAirlock} /> : null}
         <article className="time-circuit">
@@ -832,7 +825,7 @@ function LostCard({
   onNewWorld: () => void;
 }) {
   return (
-    <div className="absolute inset-0 flex items-end justify-center p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 sm:pb-5 pointer-events-none">
+    <div className="absolute inset-0 z-20 flex items-end justify-center p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 sm:pb-5 pointer-events-none">
       <article
         data-ui
         className="pointer-events-auto w-full max-w-md rounded-xl bg-surface border border-border p-5 sm:p-6 shadow-lg"
@@ -872,7 +865,7 @@ function CrashCard({
   onNewWorld: () => void;
 }) {
   return (
-    <div className="absolute inset-0 flex items-end justify-center p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 sm:pb-5 pointer-events-none">
+    <div className="absolute inset-0 z-20 flex items-end justify-center p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 sm:pb-5 pointer-events-none">
       <article
         data-ui
         className="pointer-events-auto w-full max-w-md rounded-xl bg-surface border border-border p-5 sm:p-6 shadow-lg"
@@ -1072,6 +1065,162 @@ function fmtScale(n: number) {
   return `${n.toFixed(2).replace(/\.?0+$/, "")}×`;
 }
 
+function MuteButton({
+  muted,
+  onMute,
+  className,
+}: {
+  muted: boolean;
+  onMute: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      data-ui
+      onClick={onMute}
+      aria-label={muted ? "Unmute" : "Mute"}
+      className={cn(
+        "pointer-events-auto size-11 grid place-items-center rounded-md text-muted hover:text-fg transition-colors duration-[var(--motion-quick)] ease-[var(--ease-out)]",
+        className,
+      )}
+    >
+      {muted ? (
+        <VolumeX className="size-4" strokeWidth={1.75} />
+      ) : (
+        <Volume2 className="size-4" strokeWidth={1.75} />
+      )}
+    </button>
+  );
+}
+
+function orbitHintTone(hud: HudSnapshot) {
+  if (
+    hud.adrift ||
+    hud.status === "too-fast" ||
+    hud.status === "crashed" ||
+    hud.orbitHint === ORBIT_DRAG_HINT ||
+    hud.orbitHint === ORBIT_PERTURB_HINT ||
+    isOrbitLostHint(hud.orbitHint) ||
+    (hud.status === "warp" && hud.warpCharge >= 0.7)
+  ) {
+    return "text-warn";
+  }
+  if (hud.status === "orbit" || hud.status === "lagrange") return "text-ok";
+  return "text-accent";
+}
+
+function OrbitHint({ hud, className }: { hud: HudSnapshot; className?: string }) {
+  if (!hud.orbitHint || hud.phase === "crashed" || hud.adrift) return null;
+  return (
+    <p className={cn("font-mono text-xs tracking-wide uppercase", orbitHintTone(hud), className)}>
+      {hud.orbitHint}
+    </p>
+  );
+}
+
+function statusTone(hud: HudSnapshot) {
+  if (hud.adrift || hud.status === "too-fast" || hud.status === "crashed") return "text-warn";
+  if (hud.status === "warp" && hud.warpCharge >= 0.7) return "text-warn";
+  if (hud.status === "orbit" || hud.status === "lagrange") return "text-ok";
+  if (hud.status === "approach" || hud.status === "warp") return "text-accent";
+  return "text-muted";
+}
+
+function VisorReadout({
+  label,
+  value,
+  valueClass,
+}: {
+  label: string;
+  value: string;
+  valueClass?: string;
+}) {
+  return (
+    <div className="flex items-baseline justify-end gap-2">
+      <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-muted">{label}</span>
+      <span
+        className={cn(
+          "min-w-[2.35rem] text-right font-mono text-xs tabular-nums text-fg",
+          valueClass,
+        )}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function VisorGauge({
+  label,
+  frac,
+  note,
+}: {
+  label: string;
+  frac: number;
+  note?: boolean;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-1.5">
+      <span
+        className={cn(
+          "shrink-0 font-mono text-[10px] tracking-[0.16em] uppercase",
+          note ? "text-ok" : "text-muted",
+        )}
+      >
+        {label}
+      </span>
+      <GaugePips frac={frac} />
+    </div>
+  );
+}
+
+function FlightVisor({ hud, className }: { hud: HudSnapshot; className?: string }) {
+  const alt = hud.altitude != null ? fmt(hud.altitude) : "—";
+  const dragWarn = hud.drag >= ORBIT_DRAG_BREAK;
+  const dragOn = hud.drag > 0;
+  return (
+    <header
+      className={cn(
+        "absolute top-0 left-0 right-0 bg-gradient-to-b from-bg/90 via-bg/55 to-transparent px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-6",
+        className,
+      )}
+    >
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1">
+        <p className="min-w-0 truncate font-display text-base leading-tight font-medium tracking-tight text-fg">
+          {hud.nearestName ?? "—"}
+          <span className="ml-1.5 font-mono text-xs font-normal tabular-nums text-muted">
+            · {alt}
+          </span>
+        </p>
+        <p
+          className={cn(
+            "font-mono text-[10px] tracking-[0.16em] uppercase",
+            statusTone(hud),
+          )}
+        >
+          {statusLabel(hud)}
+        </p>
+        <VisorReadout label="Speed" value={fmt(hud.speed)} />
+        <VisorGauge label="Hull" frac={hud.hull / HULL_MAX} note={hud.repairing} />
+        <VisorGauge
+          label="Fuel"
+          frac={hud.fuelCapacity > 0 ? hud.fuel / hud.fuelCapacity : 0}
+          note={hud.refueling}
+        />
+        <VisorReadout
+          label="Drag"
+          value={fmt(hud.drag)}
+          valueClass={dragWarn ? "text-warn" : dragOn ? "text-caution" : undefined}
+        />
+      </div>
+      {hud.composition ? <BodyMixLines className="mt-1.5" mix={hud.composition} /> : null}
+      {hud.spectroScanning ? <ScanPips frac={hud.spectroScan} /> : null}
+      <OrbitHint hud={hud} className="mt-2" />
+    </header>
+  );
+}
+
 function KeyTips({
   orbitShell,
   lagrangePoints,
@@ -1085,6 +1234,7 @@ function KeyTips({
   onToggleVerbose,
   onToggleSpectro,
   dev,
+  stack,
 }: {
   orbitShell: boolean;
   lagrangePoints: boolean;
@@ -1098,34 +1248,96 @@ function KeyTips({
   onToggleVerbose: () => void;
   onToggleSpectro: () => void;
   dev: boolean;
+  stack?: boolean;
 }) {
   return (
-    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 sm:gap-x-3">
-      <KeyTip code="O" label="orbit shell" on={orbitShell} onToggle={onToggleOrbitShell} />
-      <KeyTip code="L" label="Lagrange" on={lagrangePoints} onToggle={onToggleLagrange} />
-      <KeyTip code="M" label="mass spec" on={spectro} onToggle={onToggleSpectro} />
+    <span
+      className={cn(
+        "inline-flex items-center",
+        stack
+          ? "h-full flex-col items-stretch justify-between"
+          : "flex-wrap gap-x-2 gap-y-1 sm:gap-x-3",
+      )}
+    >
+      <KeyTip
+        code="O"
+        rest="rbit"
+        label="orbit shell"
+        on={orbitShell}
+        onToggle={onToggleOrbitShell}
+        legend={stack}
+      />
+      <KeyTip
+        code="L"
+        rest="agrange"
+        label="Lagrange"
+        on={lagrangePoints}
+        onToggle={onToggleLagrange}
+        legend={stack}
+      />
+      <KeyTip
+        code="M"
+        rest="ass spec"
+        label="mass spec"
+        on={spectro}
+        onToggle={onToggleSpectro}
+        legend={stack}
+      />
       {dev ? (
-        <KeyTip code="P" label="physics" on={physicsMenu} className="hidden sm:inline-flex" />
+        <KeyTip
+          code="P"
+          rest="hysics"
+          label="physics"
+          on={physicsMenu}
+          className="hidden sm:inline-flex"
+        />
       ) : null}
-      <KeyTip code="G" label="grid" on={gravityGrid} onToggle={onToggleGravityGrid} />
-      {dev ? <KeyTip code="V" label="verbose" on={verbose} onToggle={onToggleVerbose} /> : null}
+      <KeyTip
+        code="G"
+        rest="rid"
+        label="grid"
+        on={gravityGrid}
+        onToggle={onToggleGravityGrid}
+        legend={stack}
+      />
+      {dev ? (
+        <KeyTip
+          code="V"
+          rest="erbose"
+          label="verbose"
+          on={verbose}
+          onToggle={onToggleVerbose}
+          className="hidden sm:inline-flex"
+        />
+      ) : null}
     </span>
   );
 }
 
 function KeyTip({
   code,
+  rest,
   label,
   on,
   onToggle,
   className,
+  legend,
 }: {
   code: string;
+  rest?: string;
   label: string;
   on?: boolean;
   onToggle?: () => void;
   className?: string;
+  legend?: boolean;
 }) {
+  const color = on ? "text-ok" : "text-muted";
+  const legendWord =
+    legend && rest != null ? (
+      <span className="font-mono text-sm leading-none tracking-normal">
+        <span className={on ? "text-ok" : "text-fg"}>[{code}]</span>{rest}
+      </span>
+    ) : null;
   const kbd = (
     <kbd
       className={cn(
@@ -1136,7 +1348,6 @@ function KeyTip({
       {code}
     </kbd>
   );
-  const color = on ? "text-ok" : "text-muted";
   if (onToggle) {
     return (
       <button
@@ -1149,20 +1360,31 @@ function KeyTip({
           onToggle();
         }}
         className={cn(
-          "pointer-events-auto inline-flex items-center gap-1.5 rounded-md min-h-11 px-1.5 sm:min-h-0 sm:px-0",
+          "pointer-events-auto inline-flex rounded-md",
+          legend
+            ? "min-h-0 flex-1 items-center px-2 -mx-2"
+            : "min-h-11 items-center gap-1.5 px-1.5 sm:min-h-0 sm:px-0",
           color,
           className,
         )}
       >
-        {kbd}
-        <span className="hidden sm:inline">{label}</span>
+        {legendWord ?? (
+          <>
+            {kbd}
+            <span className="hidden sm:inline">{label}</span>
+          </>
+        )}
       </button>
     );
   }
   return (
-    <span className={cn("inline-flex items-center gap-1.5", color, className)}>
-      {kbd}
-      <span>{label}</span>
+    <span className={cn("inline-flex items-baseline", color, className)}>
+      {legendWord ?? (
+        <>
+          {kbd}
+          <span>{label}</span>
+        </>
+      )}
     </span>
   );
 }
