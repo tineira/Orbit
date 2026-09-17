@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   createSim,
+  PAD_UNLOCK_USER_ZOOM,
   rebootSim,
   setUserZoom,
   stepSim,
   takeoff,
-  USER_ZOOM_MAX,
   USER_ZOOM_MIN,
 } from "./sim.ts";
 import { createSystem } from "./world.ts";
@@ -43,7 +43,7 @@ test("zoom-out stays locked until takeoff", () => {
   assert.equal(sim.camera.userZoom, Math.max(USER_ZOOM_MIN, 0.2));
 });
 
-test("takeoff eases out to the user's max zoom, not the whole chart", () => {
+test("takeoff eases out past pinch-in, not the whole chart", () => {
   createSystem(1);
   const sim = createSim();
   sim.viewCssW = 1280;
@@ -51,11 +51,14 @@ test("takeoff eases out to the user's max zoom, not the whole chart", () => {
   const padZ = sim.camera.zoom;
   takeoff(sim);
   assert.equal(sim.padZoomLock, false);
-  assert.equal(sim.camera.userZoom, USER_ZOOM_MAX);
+  assert.equal(sim.camera.userZoom, PAD_UNLOCK_USER_ZOOM);
   assert.ok(Math.abs(sim.camera.zoom - padZ) < 1e-6, `zoom jumped on unlock ${sim.camera.zoom}`);
-  for (let i = 0; i < 240; i++) stepSim(sim, 1 / 60, idle);
-  assert.equal(sim.camera.userZoom, USER_ZOOM_MAX);
-  assert.ok(sim.camera.zoom > 2.2, `zoom ${sim.camera.zoom} pulled out past user max`);
+  for (let i = 0; i < 90; i++) stepSim(sim, 1 / 60, idle);
+  assert.ok(sim.camera.zoom < 3.4, `zoom ${sim.camera.zoom} should already be well out by 1.5s`);
+  for (let i = 0; i < 150; i++) stepSim(sim, 1 / 60, idle);
+  assert.equal(sim.camera.userZoom, PAD_UNLOCK_USER_ZOOM);
+  assert.ok(sim.camera.zoom < 2.6, `zoom ${sim.camera.zoom} should settle further out than pinch-in`);
+  assert.ok(sim.camera.zoom > 1.6, `zoom ${sim.camera.zoom} should not dump to the chart`);
   assert.ok(sim.camera.zoom < padZ, `still eases out from the pad ${sim.camera.zoom} vs ${padZ}`);
 });
 

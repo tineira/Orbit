@@ -2750,6 +2750,10 @@ function decayParticles(sim: Sim, dt: number) {
 
 export const USER_ZOOM_MIN = 0.12;
 export const USER_ZOOM_MAX = 3.4;
+/** First takeoff: closer than default play, but pulled out past the pinch-in ceiling. */
+export const PAD_UNLOCK_USER_ZOOM = 2.2;
+const ZOOM_EASE_K = 0.7;
+const PAD_UNLOCK_ZOOM_K = 1.8;
 /** Craft kite is ~24 world units; fill ~26% of the short screen axis on the pad. */
 const PAD_ZOOM_SHIP_H = 24;
 const PAD_ZOOM_FILL = 0.26;
@@ -2797,13 +2801,13 @@ function holdTitleSim(sim: Sim, dt: number) {
   updateCamera(sim, dt);
 }
 
-/** Pad is closer than play zoom. Ease out to the player's max (+ / pinch) instead of the whole chart. */
+/** Pad is closer than play zoom. Ease out toward a mid play zoom, not the whole chart. */
 function unlockPadCamera(sim: Sim) {
   if (!sim.padZoomLock) return;
   const z = sim.camera.zoomAuto * sim.camera.userZoom;
   sim.padZoomLock = false;
-  sim.camera.userZoom = USER_ZOOM_MAX;
-  sim.camera.zoomAuto = z / USER_ZOOM_MAX;
+  sim.camera.userZoom = PAD_UNLOCK_USER_ZOOM;
+  sim.camera.zoomAuto = z / PAD_UNLOCK_USER_ZOOM;
   sim.camera.zoom = z;
 }
 
@@ -2944,7 +2948,10 @@ function updateCamera(sim: Sim, dt: number) {
       ? 0.15
       : Math.min(zoomFromSpeed(speed), zoomToHoldStar(sim));
   if (sim.padZoomLock) sim.camera.zoomAuto = zWant;
-  else sim.camera.zoomAuto += (zWant - sim.camera.zoomAuto) * (1 - Math.exp(-0.7 * dt));
+  else {
+    const zoomK = sim.camera.zoomAuto > zWant * 1.2 ? PAD_UNLOCK_ZOOM_K : ZOOM_EASE_K;
+    sim.camera.zoomAuto += (zWant - sim.camera.zoomAuto) * (1 - Math.exp(-zoomK * dt));
+  }
   sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
   sim.camera.trauma = Math.max(0, sim.camera.trauma - dt * 1.6);
   sim.camera.shake = sim.reducedMotion ? 0 : sim.camera.trauma * sim.camera.trauma;
