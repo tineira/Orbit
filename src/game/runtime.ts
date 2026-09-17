@@ -39,7 +39,7 @@ import {
   type SimViewPrefs,
   type SpectroVoice,
 } from "./sim";
-import { cycleEngine as stepEngine, cycleFuelKind, cycleTank as stepTank } from "./fuel";
+import { cycleDrive as stepDrive, cycleTank as stepTank } from "./fuel";
 import { HULL_MAX } from "./hull";
 import type { GameUiHandler, HudSnapshot } from "./types";
 import {
@@ -68,6 +68,7 @@ export type GameHandle = {
   toggleLagrange: () => void;
   toggleGravityGrid: () => void;
   toggleSpectro: () => void;
+  cycleDrive: (dir: number) => void;
   cycleFuel: (dir: number) => void;
   cycleEngine: (dir: number) => void;
   cycleTank: (dir: number) => void;
@@ -258,6 +259,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let gWasDown = false;
   let mWasDown = false;
   let nWasDown = false;
+  let eWasDown = false;
+  let tWasDown = false;
   let pendingPrefs: SimViewPrefs | null = null;
 
   const resize = () => {
@@ -429,6 +432,23 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   const consumeNewWorld = () => {
     const { pressed, down } = consumePress(input.state, "KeyN", nWasDown);
     nWasDown = down;
+    return pressed;
+  };
+
+  const cycleDir = () => {
+    const keys = held(input.state);
+    return keys.has("ShiftLeft") || keys.has("ShiftRight") ? -1 : 1;
+  };
+
+  const consumeDrive = () => {
+    const { pressed, down } = consumePress(input.state, "KeyE", eWasDown);
+    eWasDown = down;
+    return pressed;
+  };
+
+  const consumeTank = () => {
+    const { pressed, down } = consumePress(input.state, "KeyT", tWasDown);
+    tWasDown = down;
     return pressed;
   };
 
@@ -609,6 +629,14 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     }
     if (consumeSpectro()) {
       flipSpectro();
+      publish();
+    }
+    if (consumeDrive() && devTools) {
+      stepDrive(sim.ship, cycleDir());
+      publish();
+    }
+    if (consumeTank() && devTools) {
+      stepTank(sim.ship, cycleDir());
       publish();
     }
 
@@ -795,6 +823,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     gWasDown = keys.has("KeyG");
     mWasDown = keys.has("KeyM");
     nWasDown = keys.has("KeyN");
+    eWasDown = keys.has("KeyE");
+    tWasDown = keys.has("KeyT");
     input.state.presses.clear();
     publish();
     raf = requestAnimationFrame(frame);
@@ -932,14 +962,19 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       flipSpectro();
       publish();
     },
+    cycleDrive(dir) {
+      if (!sim || !devTools) return;
+      stepDrive(sim.ship, dir);
+      publish();
+    },
     cycleFuel(dir) {
       if (!sim || !devTools) return;
-      cycleFuelKind(sim.ship, dir);
+      stepDrive(sim.ship, dir);
       publish();
     },
     cycleEngine(dir) {
       if (!sim || !devTools) return;
-      stepEngine(sim.ship, dir);
+      stepDrive(sim.ship, dir);
       publish();
     },
     cycleTank(dir) {

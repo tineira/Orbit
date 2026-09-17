@@ -72,6 +72,33 @@ export const FUEL_KIND_ORDER = Object.keys(FUEL_GRADES) as FuelKind[];
 export const ENGINE_ORDER = Object.keys(ENGINES) as EngineKind[];
 export const TANK_ORDER = Object.keys(TANKS) as TankKind[];
 
+/** Combustible matrix: fuel × engine, with the tanks that cell allows. Walk order is E. */
+export type DriveCell = {
+  fuel: FuelKind;
+  engine: EngineKind;
+  tanks: readonly TankKind[];
+};
+
+const CHEM_TANKS = ["fuel", "long", "hold", "cistern"] as const;
+const NH3_TANKS = ["fuel", "long", "cryo", "hold"] as const;
+const CRYO_TANKS = ["cryo", "hold", "cistern"] as const;
+const FIELD_TANKS = ["hold", "cistern"] as const;
+
+export const DRIVE_CELLS: readonly DriveCell[] = [
+  { fuel: "ch4", engine: "v1", tanks: CHEM_TANKS },
+  { fuel: "ch4", engine: "v2", tanks: CHEM_TANKS },
+  { fuel: "nh3", engine: "v1", tanks: NH3_TANKS },
+  { fuel: "nh3", engine: "v2", tanks: NH3_TANKS },
+  { fuel: "h2", engine: "v1", tanks: CRYO_TANKS },
+  { fuel: "h2", engine: "v2", tanks: CRYO_TANKS },
+  { fuel: "h2", engine: "thermal", tanks: CRYO_TANKS },
+  { fuel: "ntr", engine: "thermal", tanks: CRYO_TANKS },
+  { fuel: "d", engine: "torch", tanks: CRYO_TANKS },
+  { fuel: "he3", engine: "torch", tanks: CRYO_TANKS },
+  { fuel: "lumen", engine: "lumen", tanks: FIELD_TANKS },
+  { fuel: "hush", engine: "coil", tanks: FIELD_TANKS },
+];
+
 /** Ignore deep-space gravity noise. HUSH only sips inside a real well. */
 export const HUSH_WELL_FLOOR = 0.05;
 /** Volume per second per unit of |g| above the floor. */
@@ -102,11 +129,42 @@ export function tankGrade(kind: TankKind): TankGrade {
   return TANKS[kind] ?? TANKS.fuel;
 }
 
-function wrapItem<T>(list: T[], current: T, dir: number): T {
+function wrapItem<T>(list: readonly T[], current: T, dir: number): T {
   const i = list.indexOf(current);
   const n = list.length;
   const at = i < 0 ? 0 : i;
   return list[(at + dir + n * 8) % n]!;
+}
+
+export function driveCell(fuel: FuelKind, engine: EngineKind): DriveCell | null {
+  return DRIVE_CELLS.find((c) => c.fuel === fuel && c.engine === engine) ?? null;
+}
+
+function snapTank(current: TankKind, allowed: readonly TankKind[]): TankKind {
+  if (allowed.includes(current)) return current;
+  const vol = tankGrade(current).volume;
+  let best = allowed[0]!;
+  let bestD = Infinity;
+  for (const k of allowed) {
+    const d = Math.abs(tankGrade(k).volume - vol);
+    if (d < bestD || (d === bestD && tankGrade(k).volume < tankGrade(best).volume)) {
+      best = k;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+/** Force a legal fuel × engine × tank. Does not refill. */
+export function legalizeLoadout(ship: Fueled) {
+  let cell = driveCell(ship.fuelKind, ship.engineKind);
+  if (!cell) {
+    cell = DRIVE_CELLS.find((c) => c.fuel === ship.fuelKind) ?? DRIVE_CELLS[0]!;
+    ship.fuelKind = cell.fuel;
+    ship.engineKind = cell.engine;
+  }
+  ship.tankKind = snapTank(ship.tankKind, cell.tanks);
+  applyLoadout(ship);
 }
 
 export function applyLoadout(ship: Fueled) {
@@ -130,7 +188,30 @@ export function cycleEngine(ship: Fueled, dir: number) {
 }
 
 export function cycleTank(ship: Fueled, dir: number) {
-  ship.tankKind = wrapItem(TANK_ORDER, ship.tankKind, dir);
+  const cell = driveCell(ship.fuelKind, ship.engineKind);
+  if (!cell) {
+    legalizeLoadout(ship);
+    return cycleTank(ship, dir);
+  }
+  ship.tankKind = wrapItem(cell.tanks, ship.tankKind, dir);
+  applyLoadout(ship);
+}
+
+/** E: next legal fuel×engine. Same fuel keeps volume; a new grade fills. Tank snaps if illegal. */
+export function cycleDrive(ship: Fueled, dir: number) {
+  const i = DRIVE_CELLS.findIndex((c) => c.fuel === ship.fuelKind && c.engine === ship.engineKind);
+  const n = DRIVE_CELLS.length;
+  const at = i < 0 ? 0 : i;
+  const next = DRIVE_CELLS[(at + dir + n * 8) % n]!;
+  const sameFuel = next.fuel === ship.fuelKind;
+  ship.engineKind = next.engine;
+  if (sameFuel) {
+    ship.tankKind = snapTank(ship.tankKind, next.tanks);
+    applyLoadout(ship);
+    return;
+  }
+  ship.tankKind = snapTank(ship.tankKind, next.tanks);
+  fillGrade(ship, next.fuel);
   applyLoadout(ship);
 }
 
@@ -175,7 +256,11 @@ export function beginPadRefill(ship: Fueled) {
     ship.fuelKind = DEFAULT_FUEL_KIND;
     ship.fuel = 0;
   }
-  syncFuelMass(ship);
+  const cell = driveCell(ship.fuelKind, ship.engineKind);
+  if (!cell) ship.engineKind = DEFAULT_ENGINE_KIND;
+  const tanks = (cell ?? driveCell(DEFAULT_FUEL_KIND, ship.engineKind) ?? DRIVE_CELLS[0]!).tanks;
+  ship.tankKind = snapTank(ship.tankKind, tanks);
+  applyLoadout(ship);
 }
 
 export function pumpPadRefill(ship: Fueled, dt: number) {

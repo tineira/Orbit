@@ -132,6 +132,8 @@ export function Overlay({
           onToggleGravityGrid={onToggleGravityGrid}
           spectro={hud.spectro}
           onToggleSpectro={onToggleSpectro}
+          onCycleDrive={() => onCycleFuel(1)}
+          onCycleTank={() => onCycleTank(1)}
           dev={dev}
         />
       ) : null}
@@ -191,6 +193,8 @@ export function Overlay({
                   onToggleLagrange={onToggleLagrange}
                   onToggleGravityGrid={onToggleGravityGrid}
                   onToggleSpectro={onToggleSpectro}
+                  onCycleDrive={() => onCycleFuel(1)}
+                  onCycleTank={() => onCycleTank(1)}
                   dev={dev}
                 />
               </div>
@@ -211,6 +215,8 @@ export function Overlay({
                 onToggleLagrange={onToggleLagrange}
                 onToggleGravityGrid={onToggleGravityGrid}
                 onToggleSpectro={onToggleSpectro}
+                onCycleDrive={() => onCycleFuel(1)}
+                onCycleTank={() => onCycleTank(1)}
                 dev={dev}
               />
             )}
@@ -319,6 +325,8 @@ function Title({
   onToggleGravityGrid,
   spectro,
   onToggleSpectro,
+  onCycleDrive,
+  onCycleTank,
   dev,
 }: {
   onLaunch: () => void;
@@ -332,6 +340,8 @@ function Title({
   onToggleLagrange: () => void;
   onToggleGravityGrid: () => void;
   onToggleSpectro: () => void;
+  onCycleDrive: () => void;
+  onCycleTank: () => void;
   dev: boolean;
 }) {
   const destinations = getPlanets().filter((p) => {
@@ -385,6 +395,8 @@ function Title({
               onToggleLagrange={onToggleLagrange}
               onToggleGravityGrid={onToggleGravityGrid}
               onToggleSpectro={onToggleSpectro}
+              onCycleDrive={onCycleDrive}
+              onCycleTank={onCycleTank}
               dev={dev}
             />
           </p>
@@ -1124,6 +1136,8 @@ function KeyTips({
   onToggleLagrange,
   onToggleGravityGrid,
   onToggleSpectro,
+  onCycleDrive,
+  onCycleTank,
   dev,
   stack,
   legend,
@@ -1137,6 +1151,8 @@ function KeyTips({
   onToggleLagrange: () => void;
   onToggleGravityGrid: () => void;
   onToggleSpectro: () => void;
+  onCycleDrive?: () => void;
+  onCycleTank?: () => void;
   dev: boolean;
   stack?: boolean;
   legend?: boolean;
@@ -1180,6 +1196,26 @@ function KeyTips({
         legend={asLegend}
         fill={stack}
       />
+      {dev ? (
+        <KeyTip
+          code="E"
+          rest="ngine"
+          label="engine"
+          onToggle={onCycleDrive}
+          legend={asLegend}
+          fill={stack}
+        />
+      ) : null}
+      {dev ? (
+        <KeyTip
+          code="T"
+          rest="ank"
+          label="tank"
+          onToggle={onCycleTank}
+          legend={asLegend}
+          fill={stack}
+        />
+      ) : null}
       {dev ? (
         <KeyTip
           code="P"

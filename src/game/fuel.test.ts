@@ -4,9 +4,12 @@ import {
   applyLoadout,
   armedEngine,
   burnFuel,
+  cycleDrive,
   cycleEngine,
   cycleFuelKind,
   cycleTank,
+  DRIVE_CELLS,
+  driveCell,
   engineForce,
   engineGrade,
   fillGrade,
@@ -311,6 +314,78 @@ test("HUSH does not sip in deep space and does sip in a well", () => {
   const methane = ship(100, "ch4");
   sipField(methane, 1, 15);
   assert.equal(methane.fuel, 100);
+});
+
+test("the combustible matrix has 12 legal cells and no CH4×Thermal", () => {
+  assert.equal(DRIVE_CELLS.length, 12);
+  assert.ok(driveCell("ch4", "v1"));
+  assert.ok(driveCell("ch4", "v2"));
+  assert.equal(driveCell("ch4", "thermal"), null);
+  assert.ok(driveCell("h2", "thermal"));
+  assert.ok(driveCell("ntr", "thermal"));
+  assert.equal(driveCell("ntr", "v1"), null);
+  assert.ok(driveCell("d", "torch"));
+  assert.ok(driveCell("he3", "torch"));
+  assert.ok(driveCell("lumen", "lumen"));
+  assert.ok(driveCell("hush", "coil"));
+  assert.equal(driveCell("hush", "v1"), null);
+  assert.ok(!driveCell("ch4", "v1")!.tanks.includes("cryo"));
+  assert.ok(driveCell("h2", "v1")!.tanks.includes("cryo"));
+  assert.deepEqual(driveCell("lumen", "lumen")!.tanks, ["hold", "cistern"]);
+});
+
+test("E walks engines on a fuel then the next fuel's least engine", () => {
+  const s = ship();
+  cycleDrive(s, 1);
+  assert.equal(s.fuelKind, "ch4");
+  assert.equal(s.engineKind, "v2");
+  cycleDrive(s, 1);
+  assert.equal(s.fuelKind, "nh3");
+  assert.equal(s.engineKind, "v1");
+  assert.equal(s.fuel, s.fuelCapacity);
+  for (let i = 0; i < DRIVE_CELLS.length - 3; i++) cycleDrive(s, 1);
+  assert.equal(s.fuelKind, "hush");
+  assert.equal(s.engineKind, "coil");
+  cycleDrive(s, 1);
+  assert.equal(s.fuelKind, "ch4");
+  assert.equal(s.engineKind, "v1");
+  cycleDrive(s, -1);
+  assert.equal(s.fuelKind, "hush");
+  assert.equal(s.engineKind, "coil");
+});
+
+test("E snaps an illegal tank; T skips tanks the cell forbids", () => {
+  const s = ship();
+  s.tankKind = "cistern";
+  applyLoadout(s);
+  cycleDrive(s, 1);
+  cycleDrive(s, 1);
+  assert.equal(s.fuelKind, "nh3");
+  assert.equal(s.tankKind, "hold");
+  assert.equal(s.fuelCapacity, tankGrade("hold").volume);
+  const nh3 = ship();
+  nh3.fuelKind = "nh3";
+  nh3.engineKind = "v1";
+  nh3.tankKind = "fuel";
+  applyLoadout(nh3);
+  const seen = new Set<string>();
+  for (let i = 0; i < 8; i++) {
+    cycleTank(nh3, 1);
+    seen.add(nh3.tankKind);
+  }
+  assert.deepEqual([...seen].sort(), ["cryo", "fuel", "hold", "long"]);
+});
+
+test("the pad dumps a torch onto CH4 and a methane-legal engine", () => {
+  const s = ship(80, "he3");
+  s.engineKind = "torch";
+  s.tankKind = "cryo";
+  applyLoadout(s);
+  beginPadRefill(s);
+  assert.equal(s.fuelKind, "ch4");
+  assert.equal(s.fuel, 0);
+  assert.equal(s.engineKind, "v1");
+  assert.equal(s.tankKind, "long");
 });
 
 test("dev cycles wrap fuel, engine, and tank", () => {

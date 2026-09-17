@@ -23,6 +23,8 @@ const GAME_CODES = new Set([
   "KeyG",
   "KeyN",
   "KeyM",
+  "KeyE",
+  "KeyT",
 ]);
 
 /** Held actions: a tap should count for one physics frame even if already released. */
