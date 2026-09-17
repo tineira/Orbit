@@ -44,6 +44,9 @@ export type MatterProfileId =
   | "asteroid-ice"
   | "asteroid-carbon";
 
+export type Settlement = "active" | "abandoned" | "unexplored";
+export type CivId = "human";
+
 export type Planet = {
   id: string;
   name: string;
@@ -71,6 +74,8 @@ export type Planet = {
   kicker: string;
   title: string;
   body: string;
+  settlement: Settlement | null;
+  civ: CivId | null;
   href?: { label: string; url: string };
   deny?: string;
   /** Asteroid silhouette. Ignored on round bodies. */
@@ -204,31 +209,6 @@ export type CompositionReadout = {
   bulk: string | null;
 };
 
-export type VerboseDiag = {
-  gate: string;
-  ok: boolean;
-  relSpeed: number;
-  vCirc: number | null;
-  ecc: number | null;
-  eccLim: number;
-  energy: number | null;
-  alt: number | null;
-  shellMin: number | null;
-  shellMax: number | null;
-  drag: number;
-  dragLim: number;
-  perturb: number;
-  perturbLim: number;
-  accelG: number;
-  accelThrust: number;
-  accelDrag: number;
-  well: number | null;
-  wellLim: number | null;
-  periAlt: number | null;
-  apoAlt: number | null;
-  lagrange: string | null;
-};
-
 export type HudSnapshot = {
   phase: Phase;
   speed: number;
@@ -270,8 +250,6 @@ export type HudSnapshot = {
   lagrangeLabel: string | null;
   physicsMenu: boolean;
   gravityGrid: boolean;
-  verbose: boolean;
-  verboseDiag: VerboseDiag | null;
   spectro: boolean;
   spectroScan: number;
   spectroScanning: boolean;

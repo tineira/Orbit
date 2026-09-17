@@ -6,11 +6,10 @@ import type {
   FuelKind,
   HudSnapshot,
   TankKind,
-  VerboseDiag,
 } from "./types";
 import { engineGrade, fuelGrade, tankGrade } from "./fuel";
 import { HULL_MAX } from "./hull";
-import { bodyReadout, SCAN_SECONDS } from "./matter";
+import { SCAN_SECONDS } from "./matter";
 import { ATMO_STEPS, GRAVITY_STEPS, ORBIT_DRAG_BREAK, getPlanets, isGhostBody, planetById } from "./world";
 import { AIRLOCK_DELAY_MS, CLOCK_REVEAL_MS, airlockScreenFade, splitFoodClock, usesLostCard } from "./adrift";
 import { cn } from "@/lib/utils";
@@ -37,7 +36,6 @@ type Props = {
   onToggleOrbitShell: () => void;
   onToggleLagrange: () => void;
   onToggleGravityGrid: () => void;
-  onToggleVerbose: () => void;
   onToggleSpectro: () => void;
   onOpenAirLock: () => void;
 };
@@ -61,7 +59,6 @@ export function Overlay({
   onToggleOrbitShell,
   onToggleLagrange,
   onToggleGravityGrid,
-  onToggleVerbose,
   onToggleSpectro,
   onOpenAirLock,
 }: Props) {
@@ -133,8 +130,6 @@ export function Overlay({
           onToggleOrbitShell={onToggleOrbitShell}
           onToggleLagrange={onToggleLagrange}
           onToggleGravityGrid={onToggleGravityGrid}
-          verbose={hud.verbose}
-          onToggleVerbose={onToggleVerbose}
           spectro={hud.spectro}
           onToggleSpectro={onToggleSpectro}
           dev={dev}
@@ -172,16 +167,6 @@ export function Overlay({
               />
             </div>
           ) : null}
-          {dev && hud.verbose && hud.verboseDiag ? (
-            <div className="absolute top-[4.75rem] left-6 hidden sm:block">
-              <VerbosePanel diag={hud.verboseDiag} />
-            </div>
-          ) : null}
-          {dev && hud.verbose && hud.phase === "flight" ? (
-            <div className="absolute top-[9rem] left-6 hidden sm:block">
-              <VerboseMatter />
-            </div>
-          ) : null}
           {hud.phase === "flight" && !hud.adrift ? (
             <div
               className="absolute left-4 z-10 flex flex-col items-start sm:hidden"
@@ -201,12 +186,10 @@ export function Overlay({
                   lagrangePoints={hud.lagrangePoints}
                   physicsMenu={hud.physicsMenu}
                   gravityGrid={hud.gravityGrid}
-                  verbose={hud.verbose}
                   spectro={hud.spectro}
                   onToggleOrbitShell={onToggleOrbitShell}
                   onToggleLagrange={onToggleLagrange}
                   onToggleGravityGrid={onToggleGravityGrid}
-                  onToggleVerbose={onToggleVerbose}
                   onToggleSpectro={onToggleSpectro}
                   dev={dev}
                 />
@@ -223,12 +206,10 @@ export function Overlay({
                 lagrangePoints={hud.lagrangePoints}
                 physicsMenu={hud.physicsMenu}
                 gravityGrid={hud.gravityGrid}
-                verbose={hud.verbose}
                 spectro={hud.spectro}
                 onToggleOrbitShell={onToggleOrbitShell}
                 onToggleLagrange={onToggleLagrange}
                 onToggleGravityGrid={onToggleGravityGrid}
-                onToggleVerbose={onToggleVerbose}
                 onToggleSpectro={onToggleSpectro}
                 dev={dev}
               />
@@ -333,11 +314,9 @@ function Title({
   orbitShell,
   lagrangePoints,
   gravityGrid,
-  verbose,
   onToggleOrbitShell,
   onToggleLagrange,
   onToggleGravityGrid,
-  onToggleVerbose,
   spectro,
   onToggleSpectro,
   dev,
@@ -348,12 +327,10 @@ function Title({
   orbitShell: boolean;
   lagrangePoints: boolean;
   gravityGrid: boolean;
-  verbose: boolean;
   spectro: boolean;
   onToggleOrbitShell: () => void;
   onToggleLagrange: () => void;
   onToggleGravityGrid: () => void;
-  onToggleVerbose: () => void;
   onToggleSpectro: () => void;
   dev: boolean;
 }) {
@@ -390,7 +367,6 @@ function Title({
                 </span>
                 <span className="text-subtle">{p.kicker}</span>
               </span>
-              {verbose ? <BodyMixLines mix={bodyReadout(p)} /> : null}
             </li>
           ))}
         </ul>
@@ -404,12 +380,10 @@ function Title({
               lagrangePoints={lagrangePoints}
               physicsMenu={physicsMenu}
               gravityGrid={gravityGrid}
-              verbose={verbose}
               spectro={spectro}
               onToggleOrbitShell={onToggleOrbitShell}
               onToggleLagrange={onToggleLagrange}
               onToggleGravityGrid={onToggleGravityGrid}
-              onToggleVerbose={onToggleVerbose}
               onToggleSpectro={onToggleSpectro}
               dev={dev}
             />
@@ -814,38 +788,6 @@ function fmt(n: number) {
   return Math.abs(n) >= 100 ? n.toFixed(0) : n.toFixed(1);
 }
 
-function fmtV(n: number | null, digits = 2) {
-  if (n == null) return "—";
-  if (!Number.isFinite(n)) return "∞";
-  const a = Math.abs(n);
-  if (a >= 100) return n.toFixed(0);
-  return n.toFixed(digits);
-}
-
-function VCell({
-  label,
-  value,
-  warn,
-  wide,
-}: {
-  label: string;
-  value: string;
-  warn?: boolean;
-  wide?: boolean;
-}) {
-  return (
-    <span
-      className={cn(
-        "whitespace-nowrap",
-        wide ? "sm:col-span-2" : undefined,
-        warn ? "text-warn" : undefined,
-      )}
-    >
-      <span className="text-subtle">{label}</span> {value}
-    </span>
-  );
-}
-
 function BodyMixLines({
   mix,
   className,
@@ -898,81 +840,6 @@ function ScanPips({ frac }: { frac: number }) {
         </span>
         <span className="font-mono text-[10px] tabular-nums text-muted">{left}s</span>
       </div>
-    </div>
-  );
-}
-
-function VerboseMatter() {
-  const bodies = getPlanets().filter((p) => p.matter);
-  if (!bodies.length) return null;
-  return (
-    <div className="pointer-events-auto max-h-[22vh] max-w-[28rem] overflow-y-auto font-mono text-[10px] leading-4 tabular-nums uppercase tracking-wide text-muted">
-      {bodies.map((p) => {
-        const mix = bodyReadout(p);
-        const bits = [
-          mix.atmosphere ? `Atmo ${mix.atmosphere}` : null,
-          mix.bulk ? `Core ${mix.bulk}` : null,
-        ].filter((s): s is string => !!s);
-        return (
-          <p key={p.id} className="mt-1 first:mt-0">
-            <span className="text-fg">{p.name}</span> {bits.join("  ")}
-          </p>
-        );
-      })}
-    </div>
-  );
-}
-
-function VerbosePanel({ diag }: { diag: VerboseDiag }) {
-  const vOverC = diag.vCirc && diag.vCirc > 0 ? diag.relSpeed / diag.vCirc : null;
-  const shellWarn =
-    diag.alt != null && diag.shellMin != null && diag.shellMax != null
-      ? diag.alt < diag.shellMin || diag.alt > diag.shellMax
-      : false;
-  const shell =
-    diag.alt != null && diag.shellMin != null && diag.shellMax != null
-      ? `${fmtV(diag.alt, 1)} [${fmtV(diag.shellMin, 0)}–${fmtV(diag.shellMax, 0)}]`
-      : null;
-  return (
-    <div className="max-w-[22rem] font-mono text-[10px] leading-4 tabular-nums uppercase tracking-wide">
-      <p className={diag.ok ? "text-ok" : "text-warn"}>{diag.gate}</p>
-      <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 text-muted">
-        <VCell label="Rel" value={fmtV(diag.relSpeed, 1)} />
-        <VCell label="V/Vc" value={fmtV(vOverC)} />
-        <VCell
-          label="Ecc"
-          value={diag.ecc == null ? "—" : `${fmtV(diag.ecc, 3)} / ${fmtV(diag.eccLim, 2)}`}
-          warn={diag.ecc != null && diag.ecc >= diag.eccLim}
-        />
-        <VCell label="Eng" value={fmtV(diag.energy)} />
-        {shell ? <VCell label="Shell" value={shell} warn={shellWarn} wide /> : null}
-        <VCell
-          label="Drag"
-          value={`${fmtV(diag.drag)} / ${fmtV(diag.dragLim)}`}
-          warn={diag.drag > diag.dragLim}
-        />
-        <VCell
-          label="Pert"
-          value={`${fmtV(diag.perturb)} / ${fmtV(diag.perturbLim)}`}
-          warn={Number.isFinite(diag.perturb) && diag.perturb > diag.perturbLim}
-        />
-        <VCell
-          label="A"
-          value={`G ${fmtV(diag.accelG)}  T ${fmtV(diag.accelThrust, 1)}  D ${fmtV(diag.accelDrag)}`}
-          wide
-        />
-        {diag.well != null && diag.wellLim != null ? (
-          <VCell
-            label="Well"
-            value={`${fmtV(diag.well)} / ${fmtV(diag.wellLim)}`}
-            warn={diag.well <= diag.wellLim}
-          />
-        ) : null}
-        {diag.periAlt != null || diag.apoAlt != null ? (
-          <VCell label="Pe/Ap" value={`${fmtV(diag.periAlt, 1)}  ${fmtV(diag.apoAlt, 1)}`} />
-        ) : null}
-      </div>
-      {diag.lagrange ? <p className="mt-1 text-muted">{diag.lagrange}</p> : null}
     </div>
   );
 }
@@ -1252,12 +1119,10 @@ function KeyTips({
   lagrangePoints,
   physicsMenu,
   gravityGrid,
-  verbose,
   spectro,
   onToggleOrbitShell,
   onToggleLagrange,
   onToggleGravityGrid,
-  onToggleVerbose,
   onToggleSpectro,
   dev,
   stack,
@@ -1267,12 +1132,10 @@ function KeyTips({
   lagrangePoints: boolean;
   physicsMenu: boolean;
   gravityGrid: boolean;
-  verbose: boolean;
   spectro: boolean;
   onToggleOrbitShell: () => void;
   onToggleLagrange: () => void;
   onToggleGravityGrid: () => void;
-  onToggleVerbose: () => void;
   onToggleSpectro: () => void;
   dev: boolean;
   stack?: boolean;
@@ -1336,17 +1199,6 @@ function KeyTips({
         legend={asLegend}
         fill={stack}
       />
-      {dev ? (
-        <KeyTip
-          code="V"
-          rest="erbose"
-          label="verbose"
-          on={verbose}
-          onToggle={onToggleVerbose}
-          legend={asLegend}
-          className="hidden sm:inline-flex"
-        />
-      ) : null}
     </span>
   );
 }

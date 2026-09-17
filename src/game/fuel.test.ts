@@ -41,7 +41,7 @@ import {
   STEP,
   THRUST_FORCE,
 } from "./world.ts";
-import { createSim, shipIsRefueling, stepSim } from "./sim.ts";
+import { createSim, shipIsRefueling, shipIsRepairing, stepSim } from "./sim.ts";
 import type { FuelKind } from "./types.ts";
 
 const ship = (fuel = SHIP_FUEL_CAPACITY, fuelKind: FuelKind = DEFAULT_FUEL_KIND) => {
@@ -187,12 +187,16 @@ test("dry belt rocks are not refueling", () => {
   const rock = sim.planets.find((p) => p.kind === "asteroid" && p.landable);
   assert.ok(rock);
   rock!.kicker = "Rock";
+  rock!.settlement = "unexplored";
+  rock!.civ = null;
   sim.phase = "landed";
   sim.padZoomLock = false;
   sim.landedId = rock!.id;
   sim.ship.fuel = 10;
   assert.equal(shipIsRefueling(sim), false);
   rock!.kicker = "Camp";
+  rock!.settlement = "active";
+  rock!.civ = "human";
   assert.equal(shipIsRefueling(sim), true);
 });
 
@@ -212,6 +216,46 @@ test("a landing pumps CH4 over time instead of topping off", () => {
   });
   assert.ok(Math.abs(sim.ship.fuel - (10 + PAD_REFILL_RATE)) < 1e-6);
   assert.ok(sim.ship.fuel < sim.ship.fuelCapacity);
+});
+
+test("abandoned non-Home pads stay dry while hull repairs; Home still pumps", () => {
+  createSystem(1, { settlement: "abandoned" });
+  const sim = createSim();
+  const rocky = sim.planets.find((p) => p.kind === "rocky" && p.kicker !== "Home" && p.landable);
+  assert.ok(rocky);
+  assert.equal(rocky!.settlement, "abandoned");
+  sim.phase = "landed";
+  sim.padZoomLock = false;
+  sim.landedId = rocky!.id;
+  sim.ship.fuel = 10;
+  sim.ship.hull = 40;
+  stepSim(sim, 1, {
+    steer: 0,
+    forward: false,
+    reverse: false,
+    aimYaw: null,
+    aimThrust: false,
+  });
+  assert.equal(sim.ship.fuel, 10);
+  assert.ok(sim.ship.hull > 40);
+  assert.equal(shipIsRefueling(sim), false);
+  assert.equal(shipIsRepairing(sim), true);
+
+  const home = sim.planets.find((p) => p.kicker === "Home");
+  assert.ok(home);
+  assert.equal(home!.settlement, "active");
+  sim.landedId = home!.id;
+  sim.ship.fuel = 10;
+  beginPadRefill(sim.ship);
+  stepSim(sim, 1, {
+    steer: 0,
+    forward: false,
+    reverse: false,
+    aimYaw: null,
+    aimThrust: false,
+  });
+  assert.ok(Math.abs(sim.ship.fuel - (10 + PAD_REFILL_RATE)) < 1e-6);
+  assert.equal(shipIsRefueling(sim), true);
 });
 
 test("fillGrade swaps the kind and tops the tank", () => {

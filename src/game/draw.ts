@@ -2031,7 +2031,7 @@ function spectroLayout(cssW: number, cssH: number) {
 
 function spectroProgress(sim: Sim, body: Planet | null) {
   if (!body) return 0;
-  if (sim.showVerbose || sim.scannedIds.has(body.id)) return 1;
+  if (sim.scannedIds.has(body.id)) return 1;
   if (sim.spectroScanId === body.id) {
     return Math.max(0, Math.min(1, sim.spectroScanT / SCAN_SECONDS));
   }

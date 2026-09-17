@@ -58,12 +58,6 @@ export function asteroidLandedRadius(p: AsteroidShape, worldAngle: number) {
   return Math.max(surface * 0.45, r);
 }
 
-/** Pads load methane. Empty belt rocks do not. */
-export function padHasFuel(p: Pick<Planet, "kind" | "kicker">) {
-  if (p.kind !== "asteroid") return true;
-  return p.kicker === "Camp";
-}
-
 export const ASTEROID_PATH_STEPS = 22;
 
 export function asteroidWorldPath(p: Planet) {

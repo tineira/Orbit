@@ -1,5 +1,6 @@
 import { bodyReadout, canScan, clonePlanetMatter, SCAN_SECONDS } from "./matter.ts";
-import { asteroidLandedRadius, padHasFuel, surfaceAltitude, surfaceRadius, worldAngleFromLanded } from "./asteroid.ts";
+import { asteroidLandedRadius, surfaceAltitude, surfaceRadius, worldAngleFromLanded } from "./asteroid.ts";
+import { padHasFuel } from "./occupancy.ts";
 import { scanBeltHull, type BeltTick } from "./belt.ts";
 import type {
   BurnCause,
@@ -11,7 +12,6 @@ import type {
   Planet,
   Ship,
   SolarFlare,
-  VerboseDiag,
   WarpRing,
   IonWisp,
   LostCopy,
@@ -147,7 +147,6 @@ export type Sim = {
   showLagrange: boolean;
   showPhysics: boolean;
   showGravityGrid: boolean;
-  showVerbose: boolean;
   showSpectro: boolean;
   /** performance.now() of the last spectro power-on / power-off, for CRT anims. */
   spectroOnAt: number;
@@ -262,7 +261,6 @@ export function createSim(): Sim {
     showLagrange: false,
     showPhysics: false,
     showGravityGrid: false,
-    showVerbose: false,
     showSpectro: false,
     spectroOnAt: -1e9,
     spectroOffAt: -1e9,
@@ -344,7 +342,6 @@ export type SimViewPrefs = {
   showLagrange: boolean;
   showPhysics: boolean;
   showGravityGrid: boolean;
-  showVerbose: boolean;
   showSpectro: boolean;
   userZoom: number;
 };
@@ -357,7 +354,6 @@ export function simViewPrefs(sim: Sim): SimViewPrefs {
     showLagrange: sim.showLagrange,
     showPhysics: sim.showPhysics,
     showGravityGrid: sim.showGravityGrid,
-    showVerbose: sim.showVerbose,
     showSpectro: sim.showSpectro,
     userZoom: sim.camera.userZoom,
   };
@@ -370,7 +366,6 @@ export function applySimViewPrefs(sim: Sim, prefs: SimViewPrefs) {
   sim.showLagrange = prefs.showLagrange;
   sim.showPhysics = prefs.showPhysics;
   sim.showGravityGrid = prefs.showGravityGrid;
-  sim.showVerbose = prefs.showVerbose;
   sim.showSpectro = !!prefs.showSpectro;
   if (sim.padZoomLock) lockPadCamera(sim);
   else {
@@ -1928,10 +1923,7 @@ export function stepSpectro(sim: Sim, dt: number) {
   }
 }
 
-export function spectroHud(
-  sim: Sim,
-  revealAll: boolean,
-): {
+export function spectroHud(sim: Sim): {
   spectro: boolean;
   spectroScan: number;
   spectroScanning: boolean;
@@ -1947,8 +1939,7 @@ export function spectroHud(
     body.id === sim.orbitLockId &&
     canScan(body) &&
     !scanned;
-  const composition =
-    body && canScan(body) && (scanned || revealAll) ? bodyReadout(body) : null;
+  const composition = body && canScan(body) && scanned ? bodyReadout(body) : null;
   return {
     spectro: sim.showSpectro,
     spectroScan: scanning ? Math.max(0, Math.min(1, sim.spectroScanT / SCAN_SECONDS)) : 0,
@@ -2656,145 +2647,6 @@ function orbitReady(sim: Sim, nearest: Planet, dist: number) {
   )
     return false;
   return readKepler(nearest, sim.ship, sim.gravityScale, sim.planets) != null;
-}
-
-function fmtDiag(n: number, digits = 2) {
-  if (!Number.isFinite(n)) return "∞";
-  const a = Math.abs(n);
-  if (a >= 100) return n.toFixed(0);
-  return n.toFixed(digits);
-}
-
-function keplerGate(info: KeplerInspect, p: Planet): string | null {
-  switch (info.reject) {
-    case "close":
-      return "CLOSE";
-    case "gravity":
-      return "GRAVITY OFF";
-    case "radial":
-      return "RADIAL";
-    case "unbound":
-      return "UNBOUND";
-    case "semimajor":
-      return "UNBOUND";
-    case "eccentric":
-      return `ECC ${fmtDiag(info.e ?? 0)} / ${fmtDiag(KEPLER_E_MAX)}`;
-    case "periapsis":
-      return `PERI ${fmtDiag((info.periapsis ?? 0) - p.radius)}`;
-    case "apoapsis":
-      return `APO ${fmtDiag((info.apoapsis ?? 0) - p.radius)} / ${fmtDiag(info.maxApo - p.radius)}`;
-    default:
-      return null;
-  }
-}
-
-export function verboseDiag(sim: Sim): VerboseDiag {
-  const ship = sim.ship;
-  const host =
-    (sim.orbitLockId ? sim.planets.find((b) => b.id === sim.orbitLockId) : null) ?? sim.nearest;
-  const g = gravityAt(ship.x, ship.y, sim.planets, sim.gravityScale);
-  const dragVec = dragNear(ship.x, ship.y, ship.vx, ship.vy, sim.planets, sim.atmoScale);
-  const drag = Math.hypot(dragVec.ax, dragVec.ay);
-  const accelG = Math.hypot(g.ax, g.ay);
-  const accelDrag = Math.hypot(dragVec.ax, dragVec.ay);
-  const accelThrust = ship.thrusting
-    ? engineForce(ship, "main") / ship.mass
-    : ship.reverse
-      ? engineForce(ship, "retro") / ship.mass
-      : 0;
-
-  const info = host ? inspectKepler(host, ship, sim.gravityScale, sim.planets) : null;
-  const well = host ? wellInspect(host, ship.x, ship.y, sim.planets) : null;
-  const shell = host ? orbitShellAlts(host, sim.planets) : null;
-  const alt = host ? Math.hypot(ship.x - host.x, ship.y - host.y) - host.radius : sim.altitude;
-  const relSpeed = host
-    ? Math.hypot(ship.vx - host.vx, ship.vy - host.vy)
-    : Math.hypot(ship.vx, ship.vy);
-  const vCirc = info && info.mu > 0 && info.r > 0 ? Math.sqrt(info.mu / info.r) : null;
-
-  let perturb = 0;
-  if (sim.lagrangeLockKey) {
-    const pt = listLagrangePoints(sim).find((p) => p.key === sim.lagrangeLockKey);
-    perturb = pt ? lagrangePerturbRatio(pt, sim) : Infinity;
-  } else if (host) {
-    perturb = orbitPerturbRatio(host, ship.x, ship.y, sim.planets, sim.gravityScale);
-  }
-
-  let lagrange: string | null = null;
-  let nearL: LagrangePoint | null = null;
-  let nearLd = Infinity;
-  for (const pt of listLagrangePoints(sim)) {
-    const d = Math.hypot(ship.x - pt.x, ship.y - pt.y);
-    if (d < nearLd) {
-      nearLd = d;
-      nearL = pt;
-    }
-  }
-  if (nearL && nearLd <= LAGRANGE_CAPTURE_R * 3) {
-    const rel = Math.hypot(ship.vx - nearL.vx, ship.vy - nearL.vy);
-    lagrange = `${nearL.kind} Δr ${fmtDiag(nearLd)} / ${LAGRANGE_CAPTURE_R}  Δv ${fmtDiag(rel)} / ${LAGRANGE_CAPTURE_V}`;
-  }
-
-  let gate = "COAST";
-  let ok = false;
-  if (sim.phase === "landed") gate = "LANDED";
-  else if (sim.phase === "crashed") gate = "CRASH";
-  else if (sim.phase === "title") gate = "TITLE";
-  else if (sim.phase === "transit" || Math.hypot(ship.vx, ship.vy) >= WARP_BAR_SPEED) {
-    gate = `WARP ${fmtDiag(Math.hypot(ship.vx, ship.vy), 0)} / ${WARP_JUMP_SPEED}`;
-    ok = sim.warpCharge >= 1;
-  } else if (sim.lagrangeLockKey) {
-    const kind = sim.lagrangeLockKey.split(":")[1] ?? "L";
-    gate = `${kind} LOCKED`;
-    ok = true;
-  } else if (sim.orbitLockId) {
-    gate = sim.orbitLockE >= 0.08 ? "ELLIPSE LOCKED" : "LOCKED";
-    ok = true;
-  } else if (sim.ship.thrusting || sim.ship.reverse) gate = "THRUST";
-  else if (sim.orbitLockCooldown > 0) gate = `COOLDOWN ${fmtDiag(sim.orbitLockCooldown)}`;
-  else if (nearL && lagrangeReady(sim, nearL)) {
-    gate = `CAPTURING ${nearL.kind} ${fmtDiag(sim.lagrangeDwell)} / ${fmtDiag(LAGRANGE_LOCK_DWELL)}`;
-    ok = true;
-  } else if (host && shell) {
-    const hostAlt = Math.hypot(ship.x - host.x, ship.y - host.y) - host.radius;
-    if (hostAlt < shell.minAlt || hostAlt > shell.maxAlt) {
-      gate = `SHELL ${fmtDiag(hostAlt, 1)} [${fmtDiag(shell.minAlt, 0)}–${fmtDiag(shell.maxAlt, 0)}]`;
-    } else if (host.kind !== "asteroid" && well && !well.ok)
-      gate = `WELL ${fmtDiag(well.ratio)} / ${fmtDiag(well.limit)}`;
-    else if (drag > ORBIT_DRAG_BREAK) gate = `DRAG ${fmtDiag(drag)} / ${fmtDiag(ORBIT_DRAG_BREAK)}`;
-    else if (perturb > ORBIT_PERTURB_BREAK)
-      gate = `PERTURB ${fmtDiag(perturb)} / ${fmtDiag(ORBIT_PERTURB_BREAK)}`;
-    else if (info?.reject) gate = keplerGate(info, host) ?? "KEPLER";
-    else {
-      gate = `CAPTURING ${fmtDiag(sim.orbitDwell)} / ${fmtDiag(ORBIT_LOCK_DWELL)}`;
-      ok = true;
-    }
-  }
-
-  return {
-    gate,
-    ok,
-    relSpeed,
-    vCirc,
-    ecc: info?.e ?? null,
-    eccLim: KEPLER_E_MAX,
-    energy: info?.energy ?? null,
-    alt,
-    shellMin: shell?.minAlt ?? null,
-    shellMax: shell?.maxAlt ?? null,
-    drag,
-    dragLim: ORBIT_DRAG_BREAK,
-    perturb,
-    perturbLim: ORBIT_PERTURB_BREAK,
-    accelG,
-    accelThrust,
-    accelDrag,
-    well: well?.ratio ?? null,
-    wellLim: well?.limit ?? null,
-    periAlt: info?.periapsis != null && host ? info.periapsis - host.radius : null,
-    apoAlt: info?.apoapsis != null && host ? info.apoapsis - host.radius : null,
-    lagrange,
-  };
 }
 
 function landHint(p: Planet, rel: number) {

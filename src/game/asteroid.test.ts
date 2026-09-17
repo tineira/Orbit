@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { asteroidLandedRadius, ASTEROID_LAND_PROTRUDE, padHasFuel, surfaceRadius, worldAngleFromLanded, wrapPi } from "./asteroid.ts";
+import { asteroidLandedRadius, ASTEROID_LAND_PROTRUDE, surfaceRadius, worldAngleFromLanded, wrapPi } from "./asteroid.ts";
+import { padHasFuel } from "./occupancy.ts";
 import { createSim, listLagrangePoints, stepSim, takeoff } from "./sim.ts";
 import { beginPadRefill, PAD_REFILL_RATE } from "./fuel.ts";
 import { beltBands, BELT_MOTES_MAX, BELT_MOTES_MIN, chartFlagsFromSearch, createSystem, SHIP_HULL } from "./world.ts";
@@ -27,6 +28,8 @@ function shape(over: Partial<Planet> = {}): Planet {
     kicker: "Rock",
     title: "Clast",
     body: "",
+    settlement: "unexplored",
+    civ: null,
     matter: "asteroid-silicate",
     bulk: [],
     atmosphere: [],
@@ -41,6 +44,13 @@ test("chart flags parse belt independently of twins", () => {
   assert.deepEqual(chartFlagsFromSearch("?belt"), { belt: true });
   assert.deepEqual(chartFlagsFromSearch("?belt=0"), { belt: false });
   assert.deepEqual(chartFlagsFromSearch("?twins=tight&belt=1"), { twins: "tight", belt: true });
+  assert.deepEqual(chartFlagsFromSearch("?camp"), { camp: true });
+  assert.deepEqual(chartFlagsFromSearch("?camp=0"), { camp: false });
+  assert.deepEqual(chartFlagsFromSearch("?camp=1&belt=0"), { camp: true, belt: false });
+  assert.deepEqual(chartFlagsFromSearch("?settlement=abandoned"), { settlement: "abandoned" });
+  assert.deepEqual(chartFlagsFromSearch("?settlement=active"), { settlement: "active" });
+  assert.deepEqual(chartFlagsFromSearch("?settlement=unexplored"), { settlement: "unexplored" });
+  assert.deepEqual(chartFlagsFromSearch("?settlement=foo"), {});
 });
 
 test("?belt always charts a sparse belt with one landable primary", () => {
@@ -229,6 +239,8 @@ test("empty rocks do not pump methane; camps do", () => {
   const rock = sim.planets.find((p) => p.kind === "asteroid" && p.landable);
   assert.ok(rock);
   rock!.kicker = "Rock";
+  rock!.settlement = "unexplored";
+  rock!.civ = null;
   sim.phase = "landed";
   sim.padZoomLock = false;
   sim.landedId = rock!.id;
@@ -243,6 +255,8 @@ test("empty rocks do not pump methane; camps do", () => {
   assert.equal(sim.ship.fuel, 10);
 
   rock!.kicker = "Camp";
+  rock!.settlement = "active";
+  rock!.civ = "human";
   beginPadRefill(sim.ship);
   stepSim(sim, 1, {
     steer: 0,
@@ -254,11 +268,11 @@ test("empty rocks do not pump methane; camps do", () => {
   assert.ok(Math.abs(sim.ship.fuel - (10 + PAD_REFILL_RATE)) < 1e-6);
 });
 
-test("padHasFuel is only camps on asteroids", () => {
-  assert.equal(padHasFuel({ kind: "rocky", kicker: "Home" }), true);
-  assert.equal(padHasFuel({ kind: "asteroid", kicker: "Rock" }), false);
-  assert.equal(padHasFuel({ kind: "asteroid", kicker: "Camp" }), true);
-  assert.equal(padHasFuel({ kind: "asteroid", kicker: "Shard" }), false);
+test("padHasFuel is only active settlements", () => {
+  assert.equal(padHasFuel({ settlement: "active" }), true);
+  assert.equal(padHasFuel({ settlement: "abandoned" }), false);
+  assert.equal(padHasFuel({ settlement: "unexplored" }), false);
+  assert.equal(padHasFuel({ settlement: null }), false);
 });
 
 test("wrapPi stays in (-pi, pi]", () => {

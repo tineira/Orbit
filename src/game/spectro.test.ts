@@ -33,12 +33,12 @@ test("a locked survey finishes after SCAN_SECONDS and stores the mix", () => {
   const { sim, host } = flightOn();
   stepSpectro(sim, SCAN_SECONDS - 0.5);
   assert.equal(sim.scannedIds.has(host.id), false);
-  const mid = spectroHud(sim, false);
+  const mid = spectroHud(sim);
   assert.equal(mid.spectroScanning, true);
   assert.equal(mid.composition, null);
   stepSpectro(sim, 1);
   assert.equal(sim.scannedIds.has(host.id), true);
-  const done = spectroHud(sim, false);
+  const done = spectroHud(sim);
   assert.equal(done.spectroScanning, false);
   assert.ok(done.composition?.bulk);
 });
@@ -75,7 +75,7 @@ test("a stored scan survives reboot and skips the countdown", () => {
   sim.nearest = host;
   stepSpectro(sim, 0.2);
   assert.equal(sim.spectroScanT, SCAN_SECONDS);
-  const hud = spectroHud(sim, false);
+  const hud = spectroHud(sim);
   assert.equal(hud.spectroScanning, false);
   assert.ok(hud.composition);
 });
@@ -129,17 +129,14 @@ test("a locked shard survey stores the mix", () => {
   sim.nearest = shard!;
   stepSpectro(sim, SCAN_SECONDS);
   assert.equal(sim.scannedIds.has(shard!.id), true);
-  const hud = spectroHud(sim, false);
+  const hud = spectroHud(sim);
   assert.ok(hud.composition?.bulk);
   assert.equal(hud.composition?.atmosphere, null);
 });
 
-test("verbose reveal shows the mix before a scan; warp clears the chart", () => {
+test("warp clears the spectro chart", () => {
   const { sim, host } = flightOn();
-  const hidden = spectroHud(sim, false);
-  assert.equal(hidden.composition, null);
-  const shown = spectroHud(sim, true);
-  assert.ok(shown.composition?.bulk);
+  assert.equal(spectroHud(sim).composition, null);
   sim.scannedIds.add(host.id);
   sim.reducedMotion = true;
   enterWarp(sim);

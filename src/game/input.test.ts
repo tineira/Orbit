@@ -39,11 +39,11 @@ test("a held key fires on the rising edge only", () => {
 
 test("qaKeys still edge-detect without the press queue", () => {
   const s = state();
-  s.qaKeys = ["KeyV"];
-  s.presses.add("KeyV");
-  const first = consumePress(s, "KeyV", false);
+  s.qaKeys = ["KeyM"];
+  s.presses.add("KeyM");
+  const first = consumePress(s, "KeyM", false);
   assert.equal(first.pressed, true);
-  const second = consumePress(s, "KeyV", first.down);
+  const second = consumePress(s, "KeyM", first.down);
   assert.equal(second.pressed, false);
 });
 

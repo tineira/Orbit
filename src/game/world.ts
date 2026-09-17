@@ -6,7 +6,8 @@ import {
   starProfileId,
   withMatter,
 } from "./matter.ts";
-import type { LostCopy, NearbyHeading, Planet, TransitBeat } from "./types.ts";
+import { flavorBody, isOccupiableKind, rollSettlement } from "./occupancy.ts";
+import type { LostCopy, NearbyHeading, Planet, Settlement, TransitBeat } from "./types.ts";
 
 /** Gravity constant in world units. a = G * GRAVITY_BASE * M / r² */
 export const G = 1;
@@ -864,6 +865,8 @@ function placeOnRails(
 export type ChartFlags = {
   twins?: "on" | "tight";
   belt?: boolean;
+  camp?: boolean;
+  settlement?: Settlement;
 };
 
 function flagOn(raw: string | null) {
@@ -873,7 +876,7 @@ function flagOn(raw: string | null) {
   return true;
 }
 
-/** `?twins` / `?twins=1` always rolls a pair. `?twins=tight` always rolls a close one. `?belt` always rolls a belt. */
+/** `?twins` / `?twins=1` always rolls a pair. `?twins=tight` always rolls a close one. `?belt` always rolls a belt. `?camp` does not set belt here. */
 export function chartFlagsFromSearch(search = ""): ChartFlags {
   const raw = search.startsWith("?") ? search.slice(1) : search;
   const q = new URLSearchParams(raw);
@@ -888,6 +891,13 @@ export function chartFlagsFromSearch(search = ""): ChartFlags {
   }
   const belt = flagOn(q.get("belt"));
   if (belt != null) flags.belt = belt;
+  const camp = flagOn(q.get("camp"));
+  if (camp != null) flags.camp = camp;
+  const settlement = q.get("settlement");
+  if (settlement != null) {
+    const t = settlement.trim().toLowerCase();
+    if (t === "active" || t === "abandoned" || t === "unexplored") flags.settlement = t;
+  }
   return flags;
 }
 
@@ -909,7 +919,7 @@ export function playFlagsFromSearch(search = ""): PlayFlags {
   return { warp, target };
 }
 
-/** `?dev` / `?dev=1` shows physics knobs, verbose HUD, and the mass readout. */
+/** `?dev` / `?dev=1` shows physics knobs and loadout cycling. */
 export function devToolsFromSearch(search = ""): boolean {
   const raw = search.startsWith("?") ? search.slice(1) : search;
   const v = new URLSearchParams(raw).get("dev");
@@ -930,6 +940,52 @@ export function debugWarpDir(nearby: NearbyHeading[], target: boolean) {
     if (!lockedNearby(v.x, v.y, nearby, WARP_AIM_DEG + 6)) return v;
   }
   return headingVec(Math.PI / 5);
+}
+
+function assignOccupancy(planets: Planet[], flags: ChartFlags, rng: () => number) {
+  for (const p of planets) {
+    if (!isOccupiableKind(p.kind)) {
+      p.settlement = null;
+      p.civ = null;
+      continue;
+    }
+    if (p.kicker === "Home") {
+      p.settlement = "active";
+      p.civ = "human";
+    } else if (p.kicker === "Shard" || (p.kind === "asteroid" && !p.landable)) {
+      p.settlement = "unexplored";
+      p.civ = null;
+    } else if (p.kicker === "Camp") {
+      p.settlement = "active";
+      p.civ = "human";
+    } else if (flags.settlement && p.landable) {
+      p.settlement = flags.settlement;
+      p.civ = flags.settlement === "unexplored" ? null : "human";
+    } else {
+      const w =
+        p.kind === "moon"
+          ? { active: 0.03, abandoned: 0.12, unexplored: 0.85 }
+          : p.kind === "rocky"
+            ? { active: 0.25, abandoned: 0.4, unexplored: 0.35 }
+            : { active: 0, abandoned: 0.08, unexplored: 0.92 };
+      const settlement = rollSettlement(rng, w);
+      p.settlement = settlement;
+      p.civ = settlement === "unexplored" ? null : "human";
+    }
+    const sibling = twinOf(p, planets);
+    const parent = p.parentId ? planets.find((b) => b.id === p.parentId) : undefined;
+    p.body = flavorBody({
+      kind: p.kind,
+      kicker: p.kicker,
+      settlement: p.settlement,
+      civ: p.civ,
+      name: p.name,
+      ctx: {
+        twinName: sibling?.name,
+        gasName: parent?.kind === "gas" ? parent.name : undefined,
+      },
+    });
+  }
 }
 
 function makeSystem(
@@ -970,6 +1026,8 @@ function makeSystem(
       kicker: "Star",
       title: starName,
       body: "The well at the center. Too hot to land.",
+      settlement: null,
+      civ: null,
       deny: "Too hot to land",
     },
     starProfileId(starPalIndex < 0 ? 0 : starPalIndex),
@@ -1028,7 +1086,12 @@ function makeSystem(
       surfaceG: lerp(8.6, 13.8, rng()),
     });
   }
-  const wantBelt = flags.belt === true ? true : flags.belt === false ? false : rng() < 0.34;
+  const wantBelt =
+    flags.camp === true || flags.belt === true
+      ? true
+      : flags.belt === false
+        ? false
+        : rng() < 0.34;
   if (wantBelt) drafts.push({ kind: "belt", radius: 210 });
   const gasR = lerp(175, 248, rng());
   const gasG = lerp(13, 17, rng());
@@ -1056,7 +1119,8 @@ function makeSystem(
       const halfW = lerp(110, 190, rng());
       const baseA = rng() * Math.PI * 2;
       const mu = G * GRAVITY_BASE * star.mass;
-      const camp = rng() < 0.2;
+      const campRoll = rng() < 0.2;
+      const camp = flags.camp === true ? true : flags.camp === false ? false : campRoll;
       const extraLand = n >= 6 && rng() < 0.4;
       for (let i = 0; i < n; i++) {
         const primary = i === 0;
@@ -1116,6 +1180,8 @@ function makeSystem(
               kicker,
               title: name,
               body,
+              settlement: null,
+              civ: null,
               deny: landable ? undefined : "Too small to land",
               shapeSeed: rng() * 0xffffffff,
               padAngle: rng() * Math.PI * 2,
@@ -1151,6 +1217,8 @@ function makeSystem(
             kicker: "Giant",
             title: name,
             body: "A thick atmosphere. You can orbit. You cannot land.",
+            settlement: null,
+            civ: null,
             deny: "Atmosphere too thick",
           },
           gasProfileId(palIndex),
@@ -1185,6 +1253,8 @@ function makeSystem(
           kicker: "Pair",
           title: `${nameA} · ${nameB}`,
           body: "",
+          settlement: null,
+          civ: null,
         },
         null,
       );
@@ -1226,6 +1296,8 @@ function makeSystem(
             kicker: "Twin",
             title: nameA,
             body: `${nameA} is bound to ${nameB}. Two wells, one dance. Land on either; the other never sits still.`,
+            settlement: null,
+            civ: null,
           },
           rockyProfileId("Twin"),
         ),
@@ -1258,6 +1330,8 @@ function makeSystem(
             kicker: "Twin",
             title: nameB,
             body: `${nameB} is bound to ${nameA}. Two wells, one dance. Land on either; the other never sits still.`,
+            settlement: null,
+            civ: null,
           },
           rockyProfileId("Twin"),
         ),
@@ -1288,6 +1362,8 @@ function makeSystem(
           kicker: role.kicker,
           title: name,
           body: role.body(name),
+          settlement: null,
+          civ: null,
         },
         rockyProfileId(role.kicker),
       ),
@@ -1334,12 +1410,15 @@ function makeSystem(
           kicker: "Moon",
           title: name,
           body: `A quiet moon of ${gas.name}. Slow down. The well will hold you if you let it.`,
+          settlement: null,
+          civ: null,
         },
         moonProfileId(rng),
       ),
     );
   }
 
+  assignOccupancy(planets, flags, rng);
   return planets;
 }
 

@@ -26,7 +26,6 @@ import {
   stepSim,
   STEP,
   takeoff,
-  verboseDiag,
   wrapPi,
   spectroHud,
   spectroVoice,
@@ -68,7 +67,6 @@ export type GameHandle = {
   toggleOrbitShell: () => void;
   toggleLagrange: () => void;
   toggleGravityGrid: () => void;
-  toggleVerbose: () => void;
   toggleSpectro: () => void;
   cycleFuel: (dir: number) => void;
   cycleEngine: (dir: number) => void;
@@ -144,7 +142,6 @@ declare global {
       }[];
       getPhysicsMenu?: () => boolean;
       getGravityGrid?: () => boolean;
-      getVerbose?: () => boolean;
       getSpectro?: () => boolean;
       getScanned?: () => string[];
       getSpectroScan?: () => { id: string | null; t: number };
@@ -203,8 +200,6 @@ const CREATING_HUD: HudSnapshot = {
   lagrangeLabel: null,
   physicsMenu: false,
   gravityGrid: false,
-  verbose: false,
-  verboseDiag: null,
   spectro: false,
   spectroScan: 0,
   spectroScanning: false,
@@ -261,7 +256,6 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let lWasDown = false;
   let pWasDown = false;
   let gWasDown = false;
-  let vWasDown = false;
   let mWasDown = false;
   let nWasDown = false;
   let pendingPrefs: SimViewPrefs | null = null;
@@ -343,9 +337,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       lagrangeLabel: (sim.lagrangeLockKey ?? sim.lagrangeDwellKey)?.split(":")[1] ?? null,
       physicsMenu: devTools && sim.showPhysics,
       gravityGrid: sim.showGravityGrid,
-      verbose: devTools && sim.showVerbose,
-      verboseDiag: devTools && sim.showVerbose ? verboseDiag(sim) : null,
-      ...spectroHud(sim, devTools && sim.showVerbose),
+      ...spectroHud(sim),
       dev: devTools,
       warpCharge: sim.warpCharge,
       transitBeat: sim.phase === "transit" ? transitBeat(sim.transitAge, sim.reducedMotion) : "off",
@@ -416,12 +408,6 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   const consumeGravityGrid = () => {
     const { pressed, down } = consumePress(input.state, "KeyG", gWasDown);
     gWasDown = down;
-    return pressed;
-  };
-
-  const consumeVerbose = () => {
-    const { pressed, down } = consumePress(input.state, "KeyV", vWasDown);
-    vWasDown = down;
     return pressed;
   };
 
@@ -559,7 +545,6 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getLagrangeShown: () => s.showLagrange,
       getPhysicsMenu: () => s.showPhysics,
       getGravityGrid: () => s.showGravityGrid,
-      getVerbose: () => s.showVerbose,
       getSpectro: () => s.showSpectro,
       getScanned: () => [...s.scannedIds],
       getSpectroScan: () => ({ id: s.spectroScanId, t: s.spectroScanT }),
@@ -620,10 +605,6 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     }
     if (consumeGravityGrid()) {
       sim.showGravityGrid = !sim.showGravityGrid;
-      publish();
-    }
-    if (consumeVerbose() && devTools) {
-      sim.showVerbose = !sim.showVerbose;
       publish();
     }
     if (consumeSpectro()) {
@@ -812,7 +793,6 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     lWasDown = keys.has("KeyL");
     pWasDown = keys.has("KeyP");
     gWasDown = keys.has("KeyG");
-    vWasDown = keys.has("KeyV");
     mWasDown = keys.has("KeyM");
     nWasDown = keys.has("KeyN");
     input.state.presses.clear();
@@ -867,7 +847,6 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getLagrangePoints: () => [],
       getPhysicsMenu: () => false,
       getGravityGrid: () => false,
-      getVerbose: () => false,
       getSpectro: () => false,
       getScanned: () => [],
       getSpectroScan: () => ({ id: null, t: 0 }),
@@ -947,11 +926,6 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     toggleGravityGrid() {
       if (!sim) return;
       sim.showGravityGrid = !sim.showGravityGrid;
-      publish();
-    },
-    toggleVerbose() {
-      if (!sim || !devTools) return;
-      sim.showVerbose = !sim.showVerbose;
       publish();
     },
     toggleSpectro() {
