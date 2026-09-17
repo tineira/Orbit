@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, Minus, Plus, Volume2, VolumeX } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Minus, Plus, Volume2, VolumeX } from "lucide-react";
 import type {
   CompositionReadout,
   EngineKind,
@@ -149,20 +149,19 @@ export function Overlay({
             onToggleExpand={() => setInstruments((open) => !open)}
             className={cn(
               "px-4 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6 sm:pt-5",
-              dev && hud.physicsMenu ? "pr-[13rem]" : "pr-14 sm:pr-6",
+              dev && hud.physicsMenu ? "pr-[13rem]" : "pr-4 sm:pr-6",
             )}
           />
-          <div className="pointer-events-auto absolute top-[max(0.75rem,env(safe-area-inset-top))] right-3 z-10 flex flex-col items-end gap-3 sm:hidden">
-            <MuteButton muted={hud.muted} onMute={onMute} />
-            {dev && hud.physicsMenu ? (
+          {dev && hud.physicsMenu ? (
+            <div className="pointer-events-auto absolute top-[max(0.75rem,env(safe-area-inset-top))] right-3 z-10 sm:hidden">
               <PhysicsKnobs
                 gravityScale={hud.gravityScale}
                 atmoScale={hud.atmoScale}
                 onGravity={onGravity}
                 onAtmo={onAtmo}
               />
-            ) : null}
-          </div>
+            </div>
+          ) : null}
           {dev && hud.physicsMenu ? (
             <div className="pointer-events-auto absolute top-[4.75rem] right-6 z-10 hidden sm:block">
               <PhysicsKnobs
@@ -185,27 +184,33 @@ export function Overlay({
           ) : null}
           {hud.phase === "flight" && !hud.adrift ? (
             <div
-              className="absolute left-4 z-10 sm:hidden"
+              className="absolute left-4 z-10 flex flex-col items-start sm:hidden"
               style={{
                 bottom: "calc(1rem + 8px)",
-                height: "min(132px, max(96px, 16vw))",
               }}
             >
-              <KeyTips
-                stack
-                orbitShell={hud.orbitShell}
-                lagrangePoints={hud.lagrangePoints}
-                physicsMenu={hud.physicsMenu}
-                gravityGrid={hud.gravityGrid}
-                verbose={hud.verbose}
-                spectro={hud.spectro}
-                onToggleOrbitShell={onToggleOrbitShell}
-                onToggleLagrange={onToggleLagrange}
-                onToggleGravityGrid={onToggleGravityGrid}
-                onToggleVerbose={onToggleVerbose}
-                onToggleSpectro={onToggleSpectro}
-                dev={dev}
-              />
+              <MuteButton muted={hud.muted} onMute={onMute} className="mb-1 -ml-1" />
+              <div
+                style={{
+                  height: "min(132px, max(96px, 16vw))",
+                }}
+              >
+                <KeyTips
+                  stack
+                  orbitShell={hud.orbitShell}
+                  lagrangePoints={hud.lagrangePoints}
+                  physicsMenu={hud.physicsMenu}
+                  gravityGrid={hud.gravityGrid}
+                  verbose={hud.verbose}
+                  spectro={hud.spectro}
+                  onToggleOrbitShell={onToggleOrbitShell}
+                  onToggleLagrange={onToggleLagrange}
+                  onToggleGravityGrid={onToggleGravityGrid}
+                  onToggleVerbose={onToggleVerbose}
+                  onToggleSpectro={onToggleSpectro}
+                  dev={dev}
+                />
+              </div>
             </div>
           ) : null}
 
@@ -1120,13 +1125,14 @@ function FlightVisor({
         className,
       )}
     >
-      <div className="flex items-center gap-2">
-        <div
-          className={cn(
-            "min-w-0 grid grid-cols-[auto_auto_auto] items-center gap-x-6 gap-y-1",
-            expanded && "sm:grid-cols-[auto_auto_auto_auto_auto_auto]",
-          )}
-        >
+      <div className="flex items-start gap-1 sm:items-center sm:gap-2">
+        <div className="min-w-0">
+          <div
+            className={cn(
+              "grid grid-cols-[auto_auto_auto] items-center gap-x-6 gap-y-1",
+              expanded && "sm:grid-cols-[auto_auto_auto_auto_auto_auto]",
+            )}
+          >
           <p className="min-w-0 truncate font-display text-base leading-tight font-medium tracking-tight text-fg">
             {hud.nearestName ?? "—"}
             <span className="ml-1.5 font-mono text-xs font-normal tabular-nums text-muted">
@@ -1171,6 +1177,20 @@ function FlightVisor({
               <VisorReadout className="hidden sm:flex" label="Thrust" value={fmtStat(thrust)} />
             </>
           ) : null}
+          </div>
+          {expanded ? (
+            <div className="mt-1 grid grid-cols-[auto_auto_auto] items-center gap-x-6 gap-y-1 sm:hidden">
+              <VisorReadout
+                label="Heading"
+                value={`${hud.headingDeg.toFixed(0).padStart(3, "0")}°`}
+              />
+              <VisorReadout label="Engine" value={engine.hud} />
+              <VisorReadout label="Isp" value={fmtStat(isp)} />
+              <VisorReadout label="Mass" value={hud.mass.toFixed(2)} />
+              <VisorReadout label="Mix" value={fuel.hud} />
+              <VisorReadout label="Thrust" value={fmtStat(thrust)} />
+            </div>
+          ) : null}
         </div>
         {onToggleExpand ? (
           <button
@@ -1179,12 +1199,18 @@ function FlightVisor({
             aria-label={expanded ? "Hide instruments" : "Show instruments"}
             aria-expanded={expanded}
             onClick={onToggleExpand}
-            className="pointer-events-auto hidden size-8 shrink-0 place-items-center rounded-md text-muted hover:text-fg sm:grid"
+            className="pointer-events-auto size-8 shrink-0 grid place-items-center rounded-md text-muted hover:text-fg"
           >
             {expanded ? (
-              <ChevronLeft className="size-4" strokeWidth={1.75} />
+              <>
+                <ChevronUp className="size-4 sm:hidden" strokeWidth={1.75} />
+                <ChevronLeft className="hidden size-4 sm:block" strokeWidth={1.75} />
+              </>
             ) : (
-              <ChevronRight className="size-4" strokeWidth={1.75} />
+              <>
+                <ChevronDown className="size-4 sm:hidden" strokeWidth={1.75} />
+                <ChevronRight className="hidden size-4 sm:block" strokeWidth={1.75} />
+              </>
             )}
           </button>
         ) : null}
