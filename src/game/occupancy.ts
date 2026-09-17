@@ -129,11 +129,12 @@ function mineFrac(n: number) {
 /** Primary belt rocks are ≥26. Medium extras sit under 22. */
 export const ASTEROID_MINE_PRIMARY_R = 26;
 
+export type MineBeacon = "beacon" | "flicker" | "off";
+
 export type AsteroidMineTower = {
   /** Body-frame offset from `padAngle`. Shoulders of the pad; never the landing spot. */
   dPad: number;
-  broken: boolean;
-  lamp: boolean;
+  beacon: MineBeacon;
 };
 
 export type AsteroidMine = {
@@ -151,11 +152,37 @@ export function asteroidMine(
   const n = p.radius >= ASTEROID_MINE_PRIMARY_R ? 2 : 1;
   const offsets = n === 1 ? [-0.28] : [-0.28, 0.28];
   const towers: AsteroidMineTower[] = offsets.map((dPad, i) => {
-    const u = mineFrac(seed * 13.1 + i * 7.7);
-    const broken = p.settlement === "abandoned" && u > 0.22;
-    const lamp =
-      p.settlement === "active" || mineFrac(seed * 3.9 + i * 2.3) < 0.4;
-    return { dPad, broken, lamp };
+    const beacon: MineBeacon =
+      p.settlement === "active"
+        ? "beacon"
+        : mineFrac(seed * 3.9 + i * 2.3) < 0.42
+          ? "flicker"
+          : "off";
+    return { dPad, beacon };
   });
   return { towers, padLights: p.settlement === "active" };
+}
+
+/** FAA L-864-ish red beacon: 30 flashes/min. */
+export const MINE_BEACON_PERIOD_MS = 2000;
+const MINE_BEACON_ON = 0.4;
+
+/** Towers on one rock share a phase. Different rocks desync via `phaseMs`. */
+export function mineBeaconLit(
+  nowMs: number,
+  reducedMotion: boolean,
+  phaseMs = 0,
+  kind: MineBeacon = "beacon",
+): boolean {
+  if (kind === "off") return false;
+  if (kind === "beacon") {
+    if (reducedMotion) return true;
+    const t =
+      ((nowMs + phaseMs) % MINE_BEACON_PERIOD_MS + MINE_BEACON_PERIOD_MS) % MINE_BEACON_PERIOD_MS;
+    return t < MINE_BEACON_PERIOD_MS * MINE_BEACON_ON;
+  }
+  if (reducedMotion) return false;
+  const a = mineFrac(nowMs * 0.017 + phaseMs * 0.001);
+  const b = mineFrac(nowMs * 0.043 + phaseMs * 0.002 + 2.1);
+  return a > 0.42 && b > 0.28;
 }

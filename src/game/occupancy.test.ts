@@ -4,6 +4,8 @@ import {
   asteroidMine,
   ASTEROID_MINE_PRIMARY_R,
   flavorBody,
+  MINE_BEACON_PERIOD_MS,
+  mineBeaconLit,
   occupancyLegal,
   padHasFuel,
   type FlavorArgs,
@@ -341,7 +343,7 @@ test("asteroidMine is only landable active/abandoned rocks", () => {
   assert.ok(camp);
   assert.equal(camp!.towers.length, 2);
   assert.equal(camp!.padLights, true);
-  assert.ok(camp!.towers.every((t) => t.lamp && !t.broken));
+  assert.ok(camp!.towers.every((t) => t.beacon === "beacon"));
   const med = asteroidMine({
     kind: "asteroid",
     landable: true,
@@ -352,6 +354,7 @@ test("asteroidMine is only landable active/abandoned rocks", () => {
   assert.ok(med);
   assert.equal(med!.towers.length, 1);
   assert.equal(med!.padLights, false);
+  assert.ok(med!.towers.every((t) => t.beacon === "flicker" || t.beacon === "off"));
 });
 
 test("?mine sugar resolves to camp/belt/settlement", () => {
@@ -416,4 +419,16 @@ test("{mine:both} is a Camp plus an abandoned extra rock", () => {
     const home = sys.planets.find((p) => p.kicker === "Home");
     assert.equal(home!.settlement, "active");
   }
+});
+
+test("mine beacons flash 30/min and stay on under reduced motion", () => {
+  assert.equal(mineBeaconLit(0, false), true);
+  assert.equal(mineBeaconLit(MINE_BEACON_PERIOD_MS * 0.2, false), true);
+  assert.equal(mineBeaconLit(MINE_BEACON_PERIOD_MS * 0.5, false), false);
+  assert.equal(mineBeaconLit(MINE_BEACON_PERIOD_MS * 0.99, false), false);
+  assert.equal(mineBeaconLit(MINE_BEACON_PERIOD_MS, false), true);
+  assert.equal(mineBeaconLit(MINE_BEACON_PERIOD_MS * 0.5, true), true);
+  assert.equal(mineBeaconLit(0, false, MINE_BEACON_PERIOD_MS * 0.5), false);
+  assert.equal(mineBeaconLit(0, false, 0, "off"), false);
+  assert.equal(mineBeaconLit(0, true, 0, "flicker"), false);
 });

@@ -51,7 +51,7 @@ import {
   beltBands,
 } from "./world";
 import { asteroidWorldPath, surfaceRadius } from "./asteroid";
-import { asteroidMine } from "./occupancy";
+import { asteroidMine, MINE_BEACON_PERIOD_MS, mineBeaconLit } from "./occupancy";
 import { beltPhase, moteAt } from "./belt";
 
 type DrawOpts = {
@@ -110,7 +110,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
     const star = sim.planets.find((b) => b.kind === "star") ?? null;
     drawBelts(ctx, sim);
     for (const p of sim.planets) {
-      if (!isGhostBody(p)) drawPlanet(ctx, p, cam, star, sim.planets);
+      if (!isGhostBody(p)) drawPlanet(ctx, p, cam, star, sim.planets, now, sim.reducedMotion);
     }
     drawSolarFlares(ctx, sim);
     drawOrbitShell(ctx, sim);
@@ -1122,15 +1122,66 @@ function traceAsteroid(ctx: CanvasRenderingContext2D, p: Planet) {
 
 const MINE_STEEL = "#8a847c";
 const MINE_WRECK = "#5a5550";
-const MINE_LAMP = "#f0c878";
-const MINE_LAMP_DEAD = "rgba(196, 160, 96, 0.55)";
+const MINE_NIGHT = "#f0c878";
 const MINE_PAD = "#ffe8b0";
+
+function drawMineBeacon(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  cam: Camera,
+  on: boolean,
+  kind: "beacon" | "flicker" | "off",
+) {
+  const z = Math.max(0.08, cam.zoom);
+  const core = Math.max(1.35, 2.5 / z);
+  const dim = kind !== "beacon";
+  ctx.fillStyle = dim ? "#241614" : "#3a1612";
+  ctx.beginPath();
+  ctx.arc(x, y, core * 1.25, 0, Math.PI * 2);
+  ctx.fill();
+  if (!on || kind === "off") {
+    ctx.fillStyle = "rgba(22, 8, 6, 0.94)";
+    ctx.beginPath();
+    ctx.arc(x, y, core * 0.62, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const halo = core * (dim ? 3.4 : 8);
+  const g = ctx.createRadialGradient(x, y, core * 0.12, x, y, halo);
+  if (dim) {
+    g.addColorStop(0, "rgba(180, 40, 28, 0.55)");
+    g.addColorStop(0.28, "rgba(140, 16, 10, 0.18)");
+    g.addColorStop(1, "rgba(60, 0, 0, 0)");
+  } else {
+    g.addColorStop(0, "rgba(255, 244, 238, 1)");
+    g.addColorStop(0.1, "rgba(255, 86, 58, 0.95)");
+    g.addColorStop(0.32, "rgba(220, 16, 12, 0.4)");
+    g.addColorStop(0.65, "rgba(160, 0, 0, 0.12)");
+    g.addColorStop(1, "rgba(80, 0, 0, 0)");
+  }
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, halo, 0, Math.PI * 2);
+  ctx.fill();
+  if (!dim) {
+    ctx.fillStyle = "#fff8f4";
+    ctx.beginPath();
+    ctx.arc(x, y, core * 0.38, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
 
 function drawAsteroidMine(
   ctx: CanvasRenderingContext2D,
   p: Planet,
   cam: Camera,
   star: Planet | null,
+  now: number,
+  reducedMotion: boolean,
 ) {
   const mine = asteroidMine(p);
   if (!mine) return;
@@ -1155,31 +1206,39 @@ function drawAsteroidMine(
     }
   }
 
-  mine.towers.forEach((t, i) => {
+  mine.towers.forEach((t) => {
     const a = pad + t.dPad;
     const sr = surfaceRadius(p, p.rotate + a);
-    const h = p.radius * (t.broken ? 0.2 : 0.36);
-    const lean = t.broken ? (hash((p.shapeSeed ?? 0) + i * 4.1) - 0.5) * 0.85 : 0;
+    const h = p.radius * 0.44;
+    const base = p.radius * 0.13;
+    const crown = p.radius * 0.03;
+    const drill = p.radius * 0.1;
     ctx.save();
-    ctx.rotate(a + lean);
+    ctx.rotate(a);
     ctx.translate(sr, 0);
-    ctx.strokeStyle = t.broken ? MINE_WRECK : MINE_STEEL;
+    ctx.strokeStyle = t.beacon === "beacon" ? MINE_STEEL : MINE_WRECK;
     ctx.lineWidth = lw;
     ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(h, 0);
-    if (!t.broken || hash((p.shapeSeed ?? 0) + i * 9.2) < 0.55) {
-      const arm = p.radius * (t.broken ? 0.08 : 0.13);
-      ctx.moveTo(h * 0.72, -arm);
-      ctx.lineTo(h * 0.72, arm);
-    }
+    ctx.moveTo(0, -base);
+    ctx.lineTo(h, -crown);
+    ctx.lineTo(h, crown);
+    ctx.lineTo(0, base);
+    ctx.closePath();
     ctx.stroke();
-    if (t.lamp) {
-      ctx.fillStyle = p.settlement === "abandoned" ? MINE_LAMP_DEAD : MINE_LAMP;
-      ctx.beginPath();
-      ctx.arc(h, 0, Math.max(1.2, 2.4 / cam.zoom), 0, Math.PI * 2);
-      ctx.fill();
-    }
+    ctx.beginPath();
+    const mid = base * 0.55;
+    ctx.moveTo(h * 0.38, -mid);
+    ctx.lineTo(h * 0.38, mid);
+    ctx.moveTo(h * 0.68, -crown * 2.2);
+    ctx.lineTo(h * 0.68, crown * 2.2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-drill, 0);
+    ctx.lineTo(h * 0.12, 0);
+    ctx.stroke();
+    const phase = hash(p.shapeSeed ?? 0) * MINE_BEACON_PERIOD_MS;
+    const on = mineBeaconLit(now, reducedMotion, phase, t.beacon);
+    drawMineBeacon(ctx, h, 0, cam, on, t.beacon);
     ctx.restore();
   });
   ctx.restore();
@@ -1189,7 +1248,7 @@ function drawAsteroidMine(
   ctx.save();
   traceAsteroid(ctx, p);
   ctx.clip();
-  ctx.fillStyle = MINE_LAMP;
+  ctx.fillStyle = MINE_NIGHT;
   for (let i = 0; i < 3; i++) {
     const a = hash((p.shapeSeed ?? 0) * 1.7 + i * 5.3) * Math.PI * 2;
     const rr = surfaceRadius(p, p.rotate + a) * (0.72 + hash(i * 2.9) * 0.18);
@@ -1210,27 +1269,50 @@ function drawAsteroid(
   p: Planet,
   cam: Camera,
   star: Planet | null,
+  now: number,
+  reducedMotion: boolean,
 ) {
   const r = p.radius;
+  const waste = p.settlement === "abandoned";
   ctx.fillStyle = p.colorA;
   traceAsteroid(ctx, p);
   ctx.fill();
+  if (waste) {
+    ctx.fillStyle = "rgba(10, 9, 8, 0.34)";
+    traceAsteroid(ctx, p);
+    ctx.fill();
+  }
 
   ctx.save();
   traceAsteroid(ctx, p);
   ctx.clip();
   ctx.translate(p.x, p.y);
   ctx.rotate(p.rotate);
-  ctx.fillStyle = p.colorB;
-  const n = 7;
+  ctx.fillStyle = waste ? "#1a1612" : p.colorB;
+  const n = waste ? 18 : 7;
   for (let i = 0; i < n; i++) {
     const a = hash(i * 3.1 + (p.shapeSeed ?? 0)) * Math.PI * 2;
-    const cr = Math.sqrt(hash(i * 7.7 + p.mass)) * r * 0.72;
-    const s = r * (0.04 + hash(i * 2.2) * 0.12);
-    ctx.globalAlpha = 0.4 + hash(i * 5.9) * 0.22;
+    const cr = Math.sqrt(hash(i * 7.7 + p.mass)) * r * (waste ? 0.86 : 0.72);
+    const s = r * (0.04 + hash(i * 2.2) * (waste ? 0.18 : 0.12));
+    ctx.globalAlpha = waste ? 0.55 + hash(i * 5.9) * 0.3 : 0.4 + hash(i * 5.9) * 0.22;
     ctx.beginPath();
     ctx.arc(Math.cos(a) * cr, Math.sin(a) * cr, s, 0, Math.PI * 2);
     ctx.fill();
+  }
+  if (waste) {
+    ctx.fillStyle = "#0e0c0a";
+    ctx.strokeStyle = "rgba(6, 5, 4, 0.65)";
+    ctx.lineWidth = Math.max(0.8, 1.2 / Math.max(0.08, cam.zoom));
+    for (let i = 0; i < 6; i++) {
+      const a = hash(i * 11.3 + (p.shapeSeed ?? 0) * 2.1) * Math.PI * 2;
+      const cr = (0.22 + hash(i * 4.8) * 0.55) * r;
+      const s = r * (0.08 + hash(i * 6.2) * 0.14);
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * cr, Math.sin(a) * cr, s, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
   }
   ctx.globalAlpha = 1;
   ctx.restore();
@@ -1254,7 +1336,7 @@ function drawAsteroid(
   ctx.fillRect(p.x - r * 1.4, p.y - r * 1.4, r * 2.8, r * 2.8);
   ctx.restore();
 
-  drawAsteroidMine(ctx, p, cam, star);
+  drawAsteroidMine(ctx, p, cam, star, now, reducedMotion);
 
   if (p.landable || cam.zoom >= 0.45) {
     ctx.save();
@@ -1274,9 +1356,11 @@ function drawPlanet(
   cam: Camera,
   star: Planet | null,
   bodies: Planet[],
+  now: number,
+  reducedMotion: boolean,
 ) {
   if (p.kind === "asteroid") {
-    drawAsteroid(ctx, p, cam, star);
+    drawAsteroid(ctx, p, cam, star, now, reducedMotion);
     return;
   }
   const r = p.radius;
