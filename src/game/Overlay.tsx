@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Minus, Plus, Volume2, VolumeX } from "lucide-react";
 import type {
   CompositionReadout,
@@ -1078,24 +1078,41 @@ function VisorReadout({
 
 function VisorGauge({
   label,
+  activeLabel,
   frac,
   note,
+  reduced,
 }: {
   label: string;
+  activeLabel: string;
   frac: number;
   note?: boolean;
+  reduced?: boolean;
 }) {
+  const wasNote = useRef(false);
+  const [flash, setFlash] = useState(false);
+  useEffect(() => {
+    const servicing = !!note;
+    if (servicing) setFlash(false);
+    else if (wasNote.current && frac >= 1 - 1e-6 && !reduced) setFlash(true);
+    wasNote.current = servicing;
+  }, [note, frac, reduced]);
+  useEffect(() => {
+    if (!flash) return;
+    const id = window.setTimeout(() => setFlash(false), 250);
+    return () => window.clearTimeout(id);
+  }, [flash]);
   return (
-    <div className="flex min-w-0 items-center gap-1.5">
+    <div className="flex min-w-0 items-center gap-1.5 whitespace-nowrap">
       <span
         className={cn(
           "shrink-0 font-mono text-[10px] tracking-[0.16em] uppercase",
           note ? "text-ok" : "text-muted",
         )}
       >
-        {label}
+        {note ? activeLabel : label}
       </span>
-      <GaugePips frac={frac} />
+      <GaugePips frac={frac} pulse={!!note && !reduced} flash={flash} />
     </div>
   );
 }
@@ -1141,8 +1158,10 @@ function FlightVisor({
           </p>
           <VisorGauge
             label="Fuel"
+            activeLabel="Refuel"
             frac={hud.fuelCapacity > 0 ? hud.fuel / hud.fuelCapacity : 0}
             note={hud.refueling}
+            reduced={hud.reducedMotion}
           />
           <VisorReadout label="Speed" value={fmt(hud.speed)} />
           {expanded ? (
@@ -1164,7 +1183,13 @@ function FlightVisor({
           >
             {statusLabel(hud)}
           </p>
-          <VisorGauge label="Hull" frac={hud.hull / HULL_MAX} note={hud.repairing} />
+          <VisorGauge
+            label="Hull"
+            activeLabel="Repair"
+            frac={hud.hull / HULL_MAX}
+            note={hud.repairing}
+            reduced={hud.reducedMotion}
+          />
           <VisorReadout
             label="Drag"
             value={fmt(hud.drag)}
@@ -1521,16 +1546,32 @@ function PanelRow({
   );
 }
 
-function GaugePips({ frac }: { frac: number }) {
+function GaugePips({
+  frac,
+  pulse,
+  flash,
+}: {
+  frac: number;
+  pulse?: boolean;
+  flash?: boolean;
+}) {
   const t = Math.max(0, Math.min(1, frac));
-  const filled = Math.round(t * FUEL_PIPS);
-  const tone = fuelTone(t);
+  const filled = flash ? FUEL_PIPS : Math.round(t * FUEL_PIPS);
+  const tone = fuelTone(flash ? 1 : t);
   const pip =
     tone === "ok" ? "bg-ok" : tone === "caution" ? "bg-caution" : "bg-warn";
+  const filling =
+    pulse && !flash && t < 1 - 1e-6 ? Math.min(FUEL_PIPS - 1, Math.floor(t * FUEL_PIPS)) : -1;
   return (
     <span className="flex h-3 items-center gap-px rounded-sm bg-bg px-px">
       {Array.from({ length: FUEL_PIPS }, (_, i) => (
-        <span key={i} className={cn("h-2 w-1.5", i < filled ? pip : "bg-surface-2")} />
+        <span
+          key={i}
+          className={cn(
+            "h-2 w-1.5",
+            i === filling ? "bg-ok gauge-pip-fill" : i < filled ? pip : "bg-surface-2",
+          )}
+        />
       ))}
     </span>
   );

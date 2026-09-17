@@ -41,7 +41,7 @@ import {
   STEP,
   THRUST_FORCE,
 } from "./world.ts";
-import { createSim, stepSim } from "./sim.ts";
+import { createSim, shipIsRefueling, stepSim } from "./sim.ts";
 import type { FuelKind } from "./types.ts";
 
 const ship = (fuel = SHIP_FUEL_CAPACITY, fuelKind: FuelKind = DEFAULT_FUEL_KIND) => {
@@ -161,6 +161,39 @@ test("the pad dumps other grades and loads methane from empty", () => {
   const ch4 = ship(40);
   beginPadRefill(ch4);
   assert.equal(ch4.fuel, 40);
+});
+
+test("shipIsRefueling is only a methane pad below capacity", () => {
+  createSystem(1);
+  const sim = createSim();
+  sim.phase = "landed";
+  sim.padZoomLock = false;
+  assert.ok(sim.landedId);
+  sim.ship.fuel = 10;
+  assert.equal(shipIsRefueling(sim), true);
+  sim.ship.fuel = sim.ship.fuelCapacity;
+  assert.equal(shipIsRefueling(sim), false);
+  sim.ship.fuel = 10;
+  sim.ship.fuelKind = "he3";
+  assert.equal(shipIsRefueling(sim), false);
+  sim.ship.fuelKind = "ch4";
+  sim.phase = "flight";
+  assert.equal(shipIsRefueling(sim), false);
+});
+
+test("dry belt rocks are not refueling", () => {
+  createSystem(2, { belt: true });
+  const sim = createSim();
+  const rock = sim.planets.find((p) => p.kind === "asteroid" && p.landable);
+  assert.ok(rock);
+  rock!.kicker = "Rock";
+  sim.phase = "landed";
+  sim.padZoomLock = false;
+  sim.landedId = rock!.id;
+  sim.ship.fuel = 10;
+  assert.equal(shipIsRefueling(sim), false);
+  rock!.kicker = "Camp";
+  assert.equal(shipIsRefueling(sim), true);
 });
 
 test("a landing pumps CH4 over time instead of topping off", () => {

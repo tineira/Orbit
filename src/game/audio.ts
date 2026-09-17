@@ -1,5 +1,6 @@
 import { WARP_BOOM_TIMES } from "./world";
 import { airlockFadeAt, airlockFadeMs, airlockHatchAt } from "./adrift";
+import { hullWeldInterval, type HullRepairKind } from "./hull";
 
 function fillPink(data: Float32Array) {
   let b0 = 0;
@@ -384,6 +385,142 @@ function startLoop(ctx: AudioContext, buffer: AudioBuffer) {
   return src;
 }
 
+/** Pad hose valve: a short thunk plus a filtered click. Opening sits higher. */
+function fireValve(
+  ctx: AudioContext,
+  dest: AudioNode,
+  clickBuf: AudioBuffer,
+  opening: boolean,
+  hush: number,
+) {
+  const t = ctx.currentTime;
+  const nodes: AudioNode[] = [];
+  const push = <T extends AudioNode>(n: T) => {
+    nodes.push(n);
+    return n;
+  };
+  const g = push(ctx.createGain());
+  g.connect(dest);
+
+  const click = ctx.createBufferSource();
+  click.buffer = clickBuf;
+  click.playbackRate.value = opening ? 1.05 : 0.72;
+  const bp = push(ctx.createBiquadFilter());
+  bp.type = "bandpass";
+  bp.frequency.value = opening ? 2100 : 1400;
+  bp.Q.value = 1.6;
+  const cg = push(ctx.createGain());
+  cg.gain.setValueAtTime(0.055 * hush, t);
+  cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+  click.connect(bp);
+  bp.connect(cg);
+  cg.connect(g);
+  click.start(t);
+  click.stop(t + 0.05);
+  push(click);
+
+  const thunk = push(ctx.createOscillator());
+  thunk.type = "sine";
+  const f0 = opening ? 118 : 86;
+  thunk.frequency.setValueAtTime(f0, t);
+  thunk.frequency.exponentialRampToValueAtTime(f0 * 0.62, t + 0.09);
+  const tg = push(ctx.createGain());
+  tg.gain.setValueAtTime(0.0001, t);
+  tg.gain.exponentialRampToValueAtTime(0.045 * hush, t + 0.006);
+  tg.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
+  thunk.connect(tg);
+  tg.connect(g);
+  thunk.start(t);
+  thunk.stop(t + 0.13);
+  thunk.onended = () => tidyNodes(nodes);
+}
+
+/** Quiet autoweld: a high click and a 12 ms spark. Not a hull-stone hit. */
+function fireWeldTick(
+  ctx: AudioContext,
+  dest: AudioNode,
+  whiteBuf: AudioBuffer,
+  clickBuf: AudioBuffer,
+  hush: number,
+) {
+  const t = ctx.currentTime;
+  const nodes: AudioNode[] = [];
+  const push = <T extends AudioNode>(n: T) => {
+    nodes.push(n);
+    return n;
+  };
+  const pan = push(ctx.createStereoPanner());
+  pan.pan.value = (Math.random() - 0.5) * 0.35;
+  pan.connect(dest);
+
+  const click = ctx.createBufferSource();
+  click.buffer = clickBuf;
+  click.playbackRate.value = 1.15 + Math.random() * 0.45;
+  const hp = push(ctx.createBiquadFilter());
+  hp.type = "highpass";
+  hp.frequency.value = 2400;
+  const bp = push(ctx.createBiquadFilter());
+  bp.type = "bandpass";
+  bp.frequency.value = 3200 + Math.random() * 900;
+  bp.Q.value = 2.4;
+  const cg = push(ctx.createGain());
+  cg.gain.setValueAtTime(0.038 * hush, t);
+  cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.018);
+  click.connect(hp);
+  hp.connect(bp);
+  bp.connect(cg);
+  cg.connect(pan);
+  click.start(t);
+  click.stop(t + 0.03);
+  push(click);
+
+  const spark = ctx.createBufferSource();
+  spark.buffer = whiteBuf;
+  const shp = push(ctx.createBiquadFilter());
+  shp.type = "highpass";
+  shp.frequency.value = 3800;
+  const slp = push(ctx.createBiquadFilter());
+  slp.type = "lowpass";
+  slp.frequency.value = 7200;
+  const sg = push(ctx.createGain());
+  sg.gain.setValueAtTime(0.022 * hush, t);
+  sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.014);
+  spark.connect(shp);
+  shp.connect(slp);
+  slp.connect(sg);
+  sg.connect(pan);
+  spark.start(t, Math.random() * 0.4);
+  spark.stop(t + 0.02);
+  push(spark);
+  spark.onended = () => tidyNodes(nodes);
+}
+
+function fireServicePing(
+  ctx: AudioContext,
+  dest: AudioNode,
+  notes: readonly { freq: number; at: number; dur: number; peak: number; tail: number }[],
+) {
+  const t = ctx.currentTime;
+  for (const n of notes) {
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(n.freq, t + n.at);
+    g.gain.setValueAtTime(0.0001, t + n.at);
+    g.gain.exponentialRampToValueAtTime(n.peak, t + n.at + 0.006);
+    g.gain.setValueAtTime(n.peak, t + n.at + n.dur);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + n.at + n.dur + n.tail);
+    osc.connect(g);
+    g.connect(dest);
+    osc.start(t + n.at);
+    osc.stop(t + n.at + n.dur + n.tail + 0.02);
+    osc.onended = () => {
+      osc.disconnect();
+      g.disconnect();
+    };
+  }
+}
+
 type BlastSpec = {
   at?: number;
   /** Mid crack peak. */
@@ -606,6 +743,10 @@ type AudioApi = {
   setSpectro: (mode: "off" | "idle" | "scan" | "done", scanProgress?: number, reduced?: boolean) => void;
   spectroPing: () => void;
   spectroPower: (on: boolean) => void;
+  setRefuel: (on: boolean, reduced?: boolean) => void;
+  setRepair: (on: boolean, kind?: HullRepairKind, reduced?: boolean) => void;
+  refuelDone: () => void;
+  repairDone: () => void;
   warpJump: () => void;
   sonicBooms: (times?: readonly number[]) => void;
   bump: (amount: number) => void;
@@ -678,6 +819,13 @@ export function createAudio(): AudioApi {
   let specScanHp: BiquadFilterNode | null = null;
   let specScanBp: BiquadFilterNode | null = null;
   let specScanHiss: GainNode | null = null;
+  let refuelHp: BiquadFilterNode | null = null;
+  let refuelLp: BiquadFilterNode | null = null;
+  let refuelGain: GainNode | null = null;
+  let pumpOsc: OscillatorNode | null = null;
+  let pumpOscGain: GainNode | null = null;
+  let pumpLfo: OscillatorNode | null = null;
+  let pumpLfoDepth: GainNode | null = null;
   let gravelSrc: AudioBufferSourceNode | null = null;
   let whiteBuf: AudioBuffer | null = null;
   let clickBuf: AudioBuffer | null = null;
@@ -692,6 +840,9 @@ export function createAudio(): AudioApi {
   let adriftAlarmOn = false;
   let adriftAlarmWanted = false;
   let airlockSeqGen = 0;
+  let refuelOn = false;
+  let repairOn = false;
+  let nextWeldAt = 0;
   const clipLoads = new Map<string, Promise<AudioBuffer>>();
   // CRT TV power on/off clip for the mass spec panel. On = the degauss
   // thunk at the head of the clip, off = the double pop at the tail.
@@ -1042,6 +1193,41 @@ export function createAudio(): AudioApi {
     specScanHp.connect(specScanBp);
     specScanBp.connect(specScanHiss);
     specScanHiss.connect(specScanGain);
+
+    // Pad pump: brown compressor bed + 46 Hz motor, AM'd at ~2.4 Hz.
+    // Stays under spectro (128 Hz squares) and well below atmo hiss (320 Hz).
+    refuelHp = ctx.createBiquadFilter();
+    refuelHp.type = "highpass";
+    refuelHp.frequency.value = 55;
+    refuelHp.Q.value = 0.55;
+    refuelLp = ctx.createBiquadFilter();
+    refuelLp.type = "lowpass";
+    refuelLp.frequency.value = 200;
+    refuelLp.Q.value = 0.7;
+    refuelGain = ctx.createGain();
+    refuelGain.gain.value = 0;
+    noiseSrc.connect(refuelHp);
+    refuelHp.connect(refuelLp);
+    refuelLp.connect(refuelGain);
+    refuelGain.connect(sfx);
+
+    pumpOsc = ctx.createOscillator();
+    pumpOsc.type = "sine";
+    pumpOsc.frequency.value = 46;
+    pumpOscGain = ctx.createGain();
+    pumpOscGain.gain.value = 0;
+    pumpOsc.connect(pumpOscGain);
+    pumpOscGain.connect(refuelGain);
+    pumpOsc.start();
+
+    pumpLfo = ctx.createOscillator();
+    pumpLfo.type = "sine";
+    pumpLfo.frequency.value = 2.4;
+    pumpLfoDepth = ctx.createGain();
+    pumpLfoDepth.gain.value = 0;
+    pumpLfo.connect(pumpLfoDepth);
+    pumpLfoDepth.connect(refuelGain.gain);
+    pumpLfo.start();
   };
 
   const unlock = () => {
@@ -1511,6 +1697,42 @@ export function createAudio(): AudioApi {
       note(987.77, 0, 0.075, 0.05, 0.01); // B5 pickup
       note(1318.51, 0.075, 0.06, 0.05, 0.45); // E6 ring-out
     },
+    setRefuel(on, reduced = false) {
+      if (!ctx || !sfx || !refuelGain || !pumpOscGain || !pumpLfoDepth || !clickBuf) return;
+      const t = ctx.currentTime;
+      const hush = reduced ? 0.55 : 1;
+      if (on !== refuelOn) fireValve(ctx, sfx, clickBuf, on, hush);
+      refuelOn = on;
+      refuelGain.gain.setTargetAtTime(on ? 0.026 * hush : 0, t, 0.08);
+      pumpOscGain.gain.setTargetAtTime(on ? 0.011 * hush : 0, t, 0.1);
+      pumpLfoDepth.gain.setTargetAtTime(on && !reduced ? 0.012 * hush : 0, t, 0.12);
+    },
+    setRepair(on, kind: HullRepairKind = "landed", reduced = false) {
+      if (!ctx || !sfx || !whiteBuf || !clickBuf) return;
+      const t = ctx.currentTime;
+      const hush = reduced ? 0.55 : 1;
+      if (on && !repairOn) nextWeldAt = t + 0.12;
+      repairOn = on;
+      if (!on) return;
+      if (t < nextWeldAt) return;
+      fireWeldTick(ctx, sfx, whiteBuf, clickBuf, hush);
+      const gap = hullWeldInterval(kind) * (0.82 + Math.random() * 0.36);
+      nextWeldAt = t + gap;
+    },
+    refuelDone() {
+      if (!ctx || !sfx) return;
+      fireServicePing(ctx, sfx, [
+        { freq: 392, at: 0, dur: 0.05, peak: 0.034, tail: 0.04 },
+        { freq: 523.25, at: 0.07, dur: 0.08, peak: 0.038, tail: 0.22 },
+      ]);
+    },
+    repairDone() {
+      if (!ctx || !sfx) return;
+      fireServicePing(ctx, sfx, [
+        { freq: 659.25, at: 0, dur: 0.04, peak: 0.032, tail: 0.03 },
+        { freq: 880, at: 0.05, dur: 0.07, peak: 0.04, tail: 0.28 },
+      ]);
+    },
     spectroPower(on) {
       ensure();
       if (!ctx || !sfx) return;
@@ -1859,6 +2081,8 @@ export function createAudio(): AudioApi {
         specRf?.stop();
         specRf2?.stop();
         specMod?.stop();
+        pumpOsc?.stop();
+        pumpLfo?.stop();
       } catch {
         /* ignore */
       }

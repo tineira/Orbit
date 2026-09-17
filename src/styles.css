@@ -68,6 +68,20 @@
   }
 }
 
+@keyframes gauge-pip-fill {
+  0%,
+  100% {
+    opacity: 0.28;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.gauge-pip-fill {
+  animation: gauge-pip-fill 0.9s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

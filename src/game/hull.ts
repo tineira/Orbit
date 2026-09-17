@@ -25,6 +25,13 @@ export function hullRepairRate(kind: HullRepairKind) {
   return HULL_REPAIR_LAGRANGE;
 }
 
+/** Seconds between weld ticks. Pad is busy; orbit and Lagrange are a wait. */
+export function hullWeldInterval(kind: HullRepairKind) {
+  if (kind === "landed") return 0.48;
+  if (kind === "orbit") return 1.15;
+  return 1.55;
+}
+
 export function repairHull(hull: number, dt: number, kind: HullRepairKind) {
   return Math.min(HULL_MAX, hull + hullRepairRate(kind) * dt);
 }

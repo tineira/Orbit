@@ -5,9 +5,10 @@ import {
   HULL_MAX,
   hullDamage,
   hullRepairRate,
+  hullWeldInterval,
   repairHull,
 } from "./hull.ts";
-import { bodyMu, createSim, enterWarp, stepSim } from "./sim.ts";
+import { bodyMu, createSim, enterWarp, hullSafeKind, shipIsRepairing, stepSim } from "./sim.ts";
 import { beltBands, createSystem, orbitShellAlts, ORBIT_LOCK_DWELL, STEP } from "./world.ts";
 import type { Planet } from "./types.ts";
 
@@ -69,6 +70,33 @@ test("repair is fastest on the pad, slower in orbit, slowest at Lagrange", () =>
   assert.equal(repairHull(40, 0, "landed"), 40);
   const land = repairHull(0, HULL_MAX / hullRepairRate("landed"), "landed");
   assert.ok(Math.abs(land - HULL_MAX) < 1e-6);
+  assert.ok(hullWeldInterval("landed") < hullWeldInterval("orbit"));
+  assert.ok(hullWeldInterval("orbit") < hullWeldInterval("lagrange"));
+});
+
+test("shipIsRepairing follows pad, orbit lock, and Lagrange", () => {
+  createSystem(1);
+  const sim = createSim();
+  sim.phase = "landed";
+  sim.padZoomLock = false;
+  sim.ship.hull = 40;
+  assert.ok(sim.landedId);
+  assert.equal(hullSafeKind(sim), "landed");
+  assert.equal(shipIsRepairing(sim), true);
+  sim.ship.hull = HULL_MAX;
+  assert.equal(shipIsRepairing(sim), false);
+
+  sim.ship.hull = 40;
+  sim.phase = "flight";
+  sim.landedId = null;
+  assert.equal(shipIsRepairing(sim), false);
+  sim.orbitLockId = sim.planets.find((p) => p.landable)?.id ?? "x";
+  assert.equal(hullSafeKind(sim), "orbit");
+  assert.equal(shipIsRepairing(sim), true);
+  sim.lagrangeLockKey = "star:L1";
+  assert.equal(hullSafeKind(sim), "lagrange");
+  sim.phase = "crashed";
+  assert.equal(shipIsRepairing(sim), false);
 });
 
 test("a fast chip graze spends hull without a crash", () => {

@@ -1974,12 +1974,25 @@ export function spectroScanProgress(sim: Sim) {
   return Math.max(0, Math.min(1, sim.spectroScanT / SCAN_SECONDS));
 }
 
-function hullSafeKind(sim: Sim): HullRepairKind | null {
+export function hullSafeKind(sim: Sim): HullRepairKind | null {
   if (sim.phase === "landed" && sim.landedId) return "landed";
   if (sim.phase !== "flight") return null;
   if (sim.lagrangeLockKey) return "lagrange";
   if (sim.orbitLockId) return "orbit";
   return null;
+}
+
+export function shipIsRepairing(sim: Sim) {
+  return sim.ship.hull < HULL_MAX - 1e-6 && !!hullSafeKind(sim);
+}
+
+export function shipIsRefueling(sim: Sim) {
+  if (sim.phase !== "landed" || !sim.landedId) return false;
+  const ship = sim.ship;
+  if (ship.fuelKind !== DEFAULT_FUEL_KIND) return false;
+  if (ship.fuel >= ship.fuelCapacity - 1e-6) return false;
+  const pad = sim.planets.find((p) => p.id === sim.landedId);
+  return !!pad && padHasFuel(pad);
 }
 
 function repairShipHull(sim: Sim, dt: number) {

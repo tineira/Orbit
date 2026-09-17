@@ -1,6 +1,5 @@
 import { CLOCK_REVEAL_MS } from "./adrift";
 import { createAudio } from "./audio";
-import { padHasFuel } from "./asteroid";
 import { drawFrame } from "./draw";
 import {
   consumePress,
@@ -34,6 +33,9 @@ import {
   spectroScanProgress,
   clearSpectroScan,
   openAirLock,
+  hullSafeKind,
+  shipIsRefueling,
+  shipIsRepairing,
   type Sim,
   type SimViewPrefs,
   type SpectroVoice,
@@ -81,6 +83,8 @@ declare global {
       getSpeed: () => number;
       getFuel?: () => number;
       setFuel?: (v: number) => void;
+      getHull?: () => number;
+      setHull?: (v: number) => void;
       getAdrift?: () => boolean;
       getFoodUntil?: () => number;
       getAdriftStartedAt?: () => number;
@@ -248,6 +252,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let prevPunched = false;
   let prevBoomed = false;
   let prevAirlockSeq = 0;
+  let prevRefueling = false;
+  let prevRepairing = false;
   let lastBeepSec = -1;
   let enterWasDown = false;
   let enterNeedsUp = false;
@@ -297,8 +303,6 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       return;
     }
     const s = sim.ship;
-    const landedId = sim.landedId;
-    const pad = landedId ? sim.planets.find((p) => p.id === landedId) : null;
     const hud: HudSnapshot = {
       phase: sim.phase,
       speed: Math.hypot(s.vx, s.vy),
@@ -308,17 +312,9 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       fuel: s.fuel,
       fuelCapacity: s.fuelCapacity,
       fuelKind: s.fuelKind,
-      refueling:
-        sim.phase === "landed" &&
-        s.fuelKind === "ch4" &&
-        s.fuel < s.fuelCapacity - 1e-6 &&
-        !!pad &&
-        padHasFuel(pad),
+      refueling: shipIsRefueling(sim),
       hull: s.hull,
-      repairing:
-        s.hull < HULL_MAX - 1e-6 &&
-        ((sim.phase === "landed" && !!landedId) ||
-          (sim.phase === "flight" && (!!sim.orbitLockId || !!sim.lagrangeLockKey))),
+      repairing: shipIsRepairing(sim),
       engineKind: s.engineKind,
       tankKind: s.tankKind,
       engineIsp: s.engineIsp,
@@ -458,6 +454,10 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getFuel: () => s.ship.fuel,
       setFuel: (v: number) => {
         s.ship.fuel = Math.max(0, v);
+      },
+      getHull: () => s.ship.hull,
+      setHull: (v: number) => {
+        s.ship.hull = Math.max(0, Math.min(HULL_MAX, v));
       },
       getAdrift: () => s.adrift,
       getFoodUntil: () => s.foodUntil,
@@ -709,6 +709,18 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     audio.setSpectro(specVoice, spectroScanProgress(sim), sim.reducedMotion);
     if (specVoice === "done" && prevSpectroVoice === "scan") audio.spectroPing();
     prevSpectroVoice = specVoice;
+    const refueling = shipIsRefueling(sim);
+    const repairing = shipIsRepairing(sim);
+    audio.setRefuel(refueling, sim.reducedMotion);
+    audio.setRepair(repairing, hullSafeKind(sim) ?? "landed", sim.reducedMotion);
+    if (prevRefueling && !refueling && sim.ship.fuel >= sim.ship.fuelCapacity - 1e-6) {
+      audio.refuelDone();
+    }
+    if (prevRepairing && !repairing && sim.ship.hull >= HULL_MAX - 1e-6) {
+      audio.repairDone();
+    }
+    prevRefueling = refueling;
+    prevRepairing = repairing;
     const beat = sim.phase === "transit" ? transitBeat(sim.transitAge, sim.reducedMotion) : "off";
     const lostFade = sim.reducedMotion ? WARP_LOST_FADE_REDUCED : WARP_LOST_FADE;
     if (sim.warpLost) {
@@ -793,6 +805,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     prevTrauma = 0;
     prevSpectroVoice = "off";
     prevAirlockSeq = 0;
+    prevRefueling = false;
+    prevRepairing = false;
     const keys = held(input.state);
     oWasDown = keys.has("KeyO");
     lWasDown = keys.has("KeyL");
