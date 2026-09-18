@@ -8,6 +8,7 @@ import type {
   CompositionReadout,
   CrashKind,
   FlightStatus,
+  HudMode,
   Particle,
   Planet,
   Ship,
@@ -148,6 +149,8 @@ export type Sim = {
   showPhysics: boolean;
   showGravityGrid: boolean;
   showSpectro: boolean;
+  /** H: all = paths+cues, low = cues only, off = neither. */
+  hudMode: HudMode;
   /** performance.now() of the last spectro power-on / power-off, for CRT anims. */
   spectroOnAt: number;
   spectroOffAt: number;
@@ -262,6 +265,7 @@ export function createSim(): Sim {
     showPhysics: false,
     showGravityGrid: false,
     showSpectro: false,
+    hudMode: "all",
     spectroOnAt: -1e9,
     spectroOffAt: -1e9,
     scannedIds: new Set(),
@@ -343,6 +347,7 @@ export type SimViewPrefs = {
   showPhysics: boolean;
   showGravityGrid: boolean;
   showSpectro: boolean;
+  hudMode: HudMode;
   userZoom: number;
 };
 
@@ -355,6 +360,7 @@ export function simViewPrefs(sim: Sim): SimViewPrefs {
     showPhysics: sim.showPhysics,
     showGravityGrid: sim.showGravityGrid,
     showSpectro: sim.showSpectro,
+    hudMode: sim.hudMode,
     userZoom: sim.camera.userZoom,
   };
 }
@@ -367,6 +373,7 @@ export function applySimViewPrefs(sim: Sim, prefs: SimViewPrefs) {
   sim.showPhysics = prefs.showPhysics;
   sim.showGravityGrid = prefs.showGravityGrid;
   sim.showSpectro = !!prefs.showSpectro;
+  sim.hudMode = prefs.hudMode === "low" || prefs.hudMode === "off" ? prefs.hudMode : "all";
   if (sim.padZoomLock) lockPadCamera(sim);
   else {
     sim.camera.userZoom = prefs.userZoom;
@@ -2746,6 +2753,21 @@ function decayParticles(sim: Sim, dt: number) {
     p.vy *= 0.98;
     if (p.life <= 0) p.alive = false;
   }
+}
+
+const HUD_MODES: HudMode[] = ["all", "low", "off"];
+
+export function cycleHudMode(mode: HudMode): HudMode {
+  const i = HUD_MODES.indexOf(mode);
+  return HUD_MODES[(i + 1) % HUD_MODES.length]!;
+}
+
+export function hudShowsPaths(mode: HudMode) {
+  return mode === "all";
+}
+
+export function hudShowsCues(mode: HudMode) {
+  return mode !== "off";
 }
 
 export const USER_ZOOM_MIN = 0.12;

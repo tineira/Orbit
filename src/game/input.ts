@@ -23,6 +23,7 @@ const GAME_CODES = new Set([
   "KeyG",
   "KeyN",
   "KeyM",
+  "KeyH",
   "KeyE",
   "KeyT",
 ]);

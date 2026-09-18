@@ -4,6 +4,7 @@ import type {
   CompositionReadout,
   EngineKind,
   FuelKind,
+  HudMode,
   HudSnapshot,
   TankKind,
 } from "./types";
@@ -37,6 +38,7 @@ type Props = {
   onToggleLagrange: () => void;
   onToggleGravityGrid: () => void;
   onToggleSpectro: () => void;
+  onCycleHud: () => void;
   onOpenAirLock: () => void;
 };
 
@@ -60,6 +62,7 @@ export function Overlay({
   onToggleLagrange,
   onToggleGravityGrid,
   onToggleSpectro,
+  onCycleHud,
   onOpenAirLock,
 }: Props) {
   const landed = hud.landedId ? planetById(hud.landedId) : null;
@@ -127,11 +130,13 @@ export function Overlay({
           orbitShell={hud.orbitShell}
           lagrangePoints={hud.lagrangePoints}
           gravityGrid={hud.gravityGrid}
+          hudMode={hud.hudMode}
           onToggleOrbitShell={onToggleOrbitShell}
           onToggleLagrange={onToggleLagrange}
           onToggleGravityGrid={onToggleGravityGrid}
           spectro={hud.spectro}
           onToggleSpectro={onToggleSpectro}
+          onCycleHud={onCycleHud}
           onCycleDrive={() => onCycleFuel(1)}
           onCycleTank={() => onCycleTank(1)}
           dev={dev}
@@ -189,10 +194,12 @@ export function Overlay({
                   physicsMenu={hud.physicsMenu}
                   gravityGrid={hud.gravityGrid}
                   spectro={hud.spectro}
+                  hudMode={hud.hudMode}
                   onToggleOrbitShell={onToggleOrbitShell}
                   onToggleLagrange={onToggleLagrange}
                   onToggleGravityGrid={onToggleGravityGrid}
                   onToggleSpectro={onToggleSpectro}
+                  onCycleHud={onCycleHud}
                   onCycleDrive={() => onCycleFuel(1)}
                   onCycleTank={() => onCycleTank(1)}
                   dev={dev}
@@ -211,10 +218,12 @@ export function Overlay({
                 physicsMenu={hud.physicsMenu}
                 gravityGrid={hud.gravityGrid}
                 spectro={hud.spectro}
+                hudMode={hud.hudMode}
                 onToggleOrbitShell={onToggleOrbitShell}
                 onToggleLagrange={onToggleLagrange}
                 onToggleGravityGrid={onToggleGravityGrid}
                 onToggleSpectro={onToggleSpectro}
+                onCycleHud={onCycleHud}
                 onCycleDrive={() => onCycleFuel(1)}
                 onCycleTank={() => onCycleTank(1)}
                 dev={dev}
@@ -320,11 +329,13 @@ function Title({
   orbitShell,
   lagrangePoints,
   gravityGrid,
+  hudMode,
   onToggleOrbitShell,
   onToggleLagrange,
   onToggleGravityGrid,
   spectro,
   onToggleSpectro,
+  onCycleHud,
   onCycleDrive,
   onCycleTank,
   dev,
@@ -335,11 +346,13 @@ function Title({
   orbitShell: boolean;
   lagrangePoints: boolean;
   gravityGrid: boolean;
+  hudMode: HudMode;
   spectro: boolean;
   onToggleOrbitShell: () => void;
   onToggleLagrange: () => void;
   onToggleGravityGrid: () => void;
   onToggleSpectro: () => void;
+  onCycleHud: () => void;
   onCycleDrive: () => void;
   onCycleTank: () => void;
   dev: boolean;
@@ -391,10 +404,12 @@ function Title({
               physicsMenu={physicsMenu}
               gravityGrid={gravityGrid}
               spectro={spectro}
+              hudMode={hudMode}
               onToggleOrbitShell={onToggleOrbitShell}
               onToggleLagrange={onToggleLagrange}
               onToggleGravityGrid={onToggleGravityGrid}
               onToggleSpectro={onToggleSpectro}
+              onCycleHud={onCycleHud}
               onCycleDrive={onCycleDrive}
               onCycleTank={onCycleTank}
               dev={dev}
@@ -1132,10 +1147,12 @@ function KeyTips({
   physicsMenu,
   gravityGrid,
   spectro,
+  hudMode,
   onToggleOrbitShell,
   onToggleLagrange,
   onToggleGravityGrid,
   onToggleSpectro,
+  onCycleHud,
   onCycleDrive,
   onCycleTank,
   dev,
@@ -1147,10 +1164,12 @@ function KeyTips({
   physicsMenu: boolean;
   gravityGrid: boolean;
   spectro: boolean;
+  hudMode: HudMode;
   onToggleOrbitShell: () => void;
   onToggleLagrange: () => void;
   onToggleGravityGrid: () => void;
   onToggleSpectro: () => void;
+  onCycleHud: () => void;
   onCycleDrive?: () => void;
   onCycleTank?: () => void;
   dev: boolean;
@@ -1169,6 +1188,15 @@ function KeyTips({
             : "flex-wrap gap-x-2 gap-y-1 sm:gap-x-3",
       )}
     >
+      <KeyTip
+        code="H"
+        rest="ud"
+        label="HUD"
+        tone={hudTipTone(hudMode)}
+        onToggle={onCycleHud}
+        legend={asLegend}
+        fill={stack}
+      />
       <KeyTip
         code="O"
         rest="rbit"
@@ -1239,11 +1267,18 @@ function KeyTips({
   );
 }
 
+function hudTipTone(mode: HudMode): "ok" | "caution" | "off" {
+  if (mode === "all") return "ok";
+  if (mode === "low") return "caution";
+  return "off";
+}
+
 function KeyTip({
   code,
   rest,
   label,
   on,
+  tone,
   onToggle,
   className,
   legend,
@@ -1253,23 +1288,33 @@ function KeyTip({
   rest?: string;
   label: string;
   on?: boolean;
+  tone?: "ok" | "caution" | "off";
   onToggle?: () => void;
   className?: string;
   legend?: boolean;
   fill?: boolean;
 }) {
-  const color = on ? "text-ok" : "text-muted";
+  const level = tone ?? (on ? "ok" : "off");
+  const color =
+    level === "ok" ? "text-ok" : level === "caution" ? "text-caution" : "text-muted";
+  const keyColor =
+    level === "ok" ? "text-ok" : level === "caution" ? "text-caution" : "text-fg";
+  const pressed = level === "ok" ? true : level === "caution" ? "mixed" : false;
   const legendWord =
     legend && rest != null ? (
       <span className="font-mono text-sm leading-none tracking-normal">
-        <span className={on ? "text-ok" : "text-fg"}>[{code}]</span>{rest}
+        <span className={keyColor}>[{code}]</span>{rest}
       </span>
     ) : null;
   const kbd = (
     <kbd
       className={cn(
         "font-mono text-[10px] tracking-widest uppercase px-1.5 py-0.5 rounded border",
-        on ? "border-ok/40 text-ok" : "border-border text-fg/70",
+        level === "ok"
+          ? "border-ok/40 text-ok"
+          : level === "caution"
+            ? "border-caution/40 text-caution"
+            : "border-border text-fg/70",
       )}
     >
       {code}
@@ -1280,8 +1325,12 @@ function KeyTip({
       <button
         type="button"
         data-ui
-        aria-label={label}
-        aria-pressed={on}
+        aria-label={
+          tone
+            ? `HUD ${level === "ok" ? "all" : level === "caution" ? "low" : "off"}`
+            : label
+        }
+        aria-pressed={pressed}
         onClick={(e) => {
           e.stopPropagation();
           onToggle();

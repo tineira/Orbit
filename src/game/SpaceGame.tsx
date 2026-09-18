@@ -46,6 +46,7 @@ const INITIAL: HudSnapshot = {
   physicsMenu: false,
   gravityGrid: false,
   spectro: false,
+  hudMode: "all",
   spectroScan: 0,
   spectroScanning: false,
   composition: null,
@@ -122,6 +123,9 @@ export function SpaceGame() {
   const onToggleSpectro = useCallback(() => {
     gameRef.current?.toggleSpectro();
   }, []);
+  const onCycleHud = useCallback(() => {
+    gameRef.current?.cycleHud();
+  }, []);
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-bg text-fg">
@@ -148,6 +152,7 @@ export function SpaceGame() {
         onToggleLagrange={onToggleLagrange}
         onToggleGravityGrid={onToggleGravityGrid}
         onToggleSpectro={onToggleSpectro}
+        onCycleHud={onCycleHud}
       />
     </div>
   );

@@ -6,6 +6,8 @@ import {
   bodyMu,
   forwardOf,
   gravityPulls,
+  hudShowsCues,
+  hudShowsPaths,
   LAGRANGE_CAPTURE_R,
   listLagrangePoints,
   lockedOrbitPolyline,
@@ -795,6 +797,7 @@ function drawOrbitShell(ctx: CanvasRenderingContext2D, sim: Sim) {
 }
 
 function drawLockRing(ctx: CanvasRenderingContext2D, sim: Sim) {
+  if (!hudShowsPaths(sim.hudMode)) return;
   const ring = lockedOrbitPolyline(sim);
   if (ring.length < 2) return;
   ctx.save();
@@ -811,7 +814,7 @@ function drawLockRing(ctx: CanvasRenderingContext2D, sim: Sim) {
 }
 
 function drawPath(ctx: CanvasRenderingContext2D, path: { x: number; y: number }[], sim: Sim) {
-  if (path.length < 2 || sim.phase === "title") return;
+  if (!hudShowsPaths(sim.hudMode) || path.length < 2 || sim.phase === "title") return;
   ctx.beginPath();
   ctx.moveTo(sim.ship.x, sim.ship.y);
   for (const p of path) ctx.lineTo(p.x, p.y);
@@ -823,6 +826,7 @@ function drawPath(ctx: CanvasRenderingContext2D, path: { x: number; y: number }[
 }
 
 function drawRelativePath(ctx: CanvasRenderingContext2D, sim: Sim) {
+  if (!hudShowsPaths(sim.hudMode)) return;
   const target = relativePathTarget(sim);
   if (!target) return;
   const path = predictRelativePath(sim, target, 24);
@@ -838,6 +842,7 @@ function drawRelativePath(ctx: CanvasRenderingContext2D, sim: Sim) {
 }
 
 function drawPlanetPaths(ctx: CanvasRenderingContext2D, sim: Sim) {
+  if (!hudShowsPaths(sim.hudMode)) return;
   if (
     sim.phase === "creating" ||
     sim.phase === "crashed" ||
@@ -900,6 +905,7 @@ function hexRgbaLift(hex: string, alpha: number, lift = 0.42) {
 }
 
 function drawGravityArrows(ctx: CanvasRenderingContext2D, sim: Sim) {
+  if (!hudShowsCues(sim.hudMode)) return;
   if (
     sim.phase === "landed" ||
     sim.phase === "crashed" ||
@@ -1666,6 +1672,7 @@ function warpGasPath(
 }
 
 function drawWarpAims(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH: number) {
+  if (!hudShowsCues(sim.hudMode)) return;
   if (sim.phase !== "flight" || sim.nearby.length === 0) return;
   if (Math.hypot(sim.ship.vx, sim.ship.vy) < WARP_BAR_SPEED && sim.status !== "warp") return;
   const dir = { x: sim.ship.vx, y: sim.ship.vy };
@@ -2063,6 +2070,7 @@ function drawLockBarLabel(
 }
 
 function drawShipLockBars(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera) {
+  if (!hudShowsCues(sim.hudMode)) return;
   if (
     sim.phase === "creating" ||
     sim.phase === "title" ||

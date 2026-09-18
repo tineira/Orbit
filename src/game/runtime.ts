@@ -16,6 +16,7 @@ import {
   applySimViewPrefs,
   atmoDrag,
   createSim,
+  cycleHudMode,
   listLagrangePoints,
   predictPlanetPaths,
   launchSim,
@@ -68,6 +69,7 @@ export type GameHandle = {
   toggleLagrange: () => void;
   toggleGravityGrid: () => void;
   toggleSpectro: () => void;
+  cycleHud: () => void;
   cycleDrive: (dir: number) => void;
   cycleFuel: (dir: number) => void;
   cycleEngine: (dir: number) => void;
@@ -131,6 +133,7 @@ declare global {
       getPlanetPaths?: () => { id: string; n: number; travel: number }[];
       getUserZoom?: () => number;
       getOrbitShell?: () => boolean;
+      getHudMode?: () => string;
       getLagrangeLock?: () => string | null;
       getLagrangeShown?: () => boolean;
       getLagrangePoints?: () => {
@@ -202,6 +205,7 @@ const CREATING_HUD: HudSnapshot = {
   physicsMenu: false,
   gravityGrid: false,
   spectro: false,
+  hudMode: "all",
   spectroScan: 0,
   spectroScanning: false,
   composition: null,
@@ -259,6 +263,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let gWasDown = false;
   let mWasDown = false;
   let nWasDown = false;
+  let hWasDown = false;
   let eWasDown = false;
   let tWasDown = false;
   let pendingPrefs: SimViewPrefs | null = null;
@@ -340,6 +345,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       lagrangeLabel: (sim.lagrangeLockKey ?? sim.lagrangeDwellKey)?.split(":")[1] ?? null,
       physicsMenu: devTools && sim.showPhysics,
       gravityGrid: sim.showGravityGrid,
+      hudMode: sim.hudMode,
       ...spectroHud(sim),
       dev: devTools,
       warpCharge: sim.warpCharge,
@@ -417,6 +423,12 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   const consumeSpectro = () => {
     const { pressed, down } = consumePress(input.state, "KeyM", mWasDown);
     mWasDown = down;
+    return pressed;
+  };
+
+  const consumeHud = () => {
+    const { pressed, down } = consumePress(input.state, "KeyH", hWasDown);
+    hWasDown = down;
     return pressed;
   };
 
@@ -561,6 +573,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getOrbitHint: () => s.orbitHint,
       getUserZoom: () => s.camera.userZoom,
       getOrbitShell: () => s.showOrbitShell,
+      getHudMode: () => s.hudMode,
       getLagrangeLock: () => s.lagrangeLockKey,
       getLagrangeShown: () => s.showLagrange,
       getPhysicsMenu: () => s.showPhysics,
@@ -629,6 +642,10 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     }
     if (consumeSpectro()) {
       flipSpectro();
+      publish();
+    }
+    if (consumeHud()) {
+      sim.hudMode = cycleHudMode(sim.hudMode);
       publish();
     }
     if (consumeDrive() && devTools) {
@@ -823,6 +840,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     gWasDown = keys.has("KeyG");
     mWasDown = keys.has("KeyM");
     nWasDown = keys.has("KeyN");
+    hWasDown = keys.has("KeyH");
     eWasDown = keys.has("KeyE");
     tWasDown = keys.has("KeyT");
     input.state.presses.clear();
@@ -872,6 +890,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getOrbitHint: () => null,
       getUserZoom: () => 1,
       getOrbitShell: () => false,
+      getHudMode: () => "all",
       getLagrangeLock: () => null,
       getLagrangeShown: () => false,
       getLagrangePoints: () => [],
@@ -960,6 +979,11 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     },
     toggleSpectro() {
       flipSpectro();
+      publish();
+    },
+    cycleHud() {
+      if (!sim) return;
+      sim.hudMode = cycleHudMode(sim.hudMode);
       publish();
     },
     cycleDrive(dir) {

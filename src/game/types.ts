@@ -209,6 +209,9 @@ export type CompositionReadout = {
   bulk: string | null;
 };
 
+/** H cycles chart overlays: paths+cues, cues only, then none. */
+export type HudMode = "all" | "low" | "off";
+
 export type HudSnapshot = {
   phase: Phase;
   speed: number;
@@ -251,6 +254,8 @@ export type HudSnapshot = {
   physicsMenu: boolean;
   gravityGrid: boolean;
   spectro: boolean;
+  /** all = paths+cues, low = cues only, off = neither. */
+  hudMode: HudMode;
   spectroScan: number;
   spectroScanning: boolean;
   composition: CompositionReadout | null;
