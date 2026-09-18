@@ -53,7 +53,7 @@ import {
   beltBands,
 } from "./world";
 import { asteroidWorldPath, surfaceRadius } from "./asteroid";
-import { asteroidMine, MINE_BEACON_PERIOD_MS, mineBeaconLit } from "./occupancy";
+import { asteroidMine, MINE_BEACON_PERIOD_MS, mineBeaconLit, rockySettlement } from "./occupancy";
 import { beltPhase, moteAt } from "./belt";
 
 type DrawOpts = {
@@ -1356,6 +1356,96 @@ function drawAsteroid(
   }
 }
 
+const ROCKY_LIGHT = "#ffe4b0";
+const ROCKY_ROOF = "rgba(58, 50, 42, 0.82)";
+const ROCKY_PAD = "rgba(196, 168, 132, 0.55)";
+const ROCKY_RUIN = "rgba(28, 24, 22, 0.88)";
+
+function drawRockyDistrict(
+  ctx: CanvasRenderingContext2D,
+  i: number,
+  site: { a: number; s: number },
+  r: number,
+  far: boolean,
+  lit: boolean,
+  home: boolean,
+) {
+  const n = far ? 2 : home ? 5 : 4;
+  const u = r * site.s * (far ? 0.055 : 0.038);
+  for (let j = 0; j < n; j++) {
+    const ox = (hash(i * 9.1 + j * 2.7) - 0.5) * u * 3.2;
+    const oy = (hash(i * 4.4 + j * 6.1) - 0.5) * u * 2.4;
+    const w = u * (0.7 + hash(j * 3.3 + i) * (lit ? 1.1 : 1.4));
+    const h = u * (0.45 + hash(j * 5.8 + i) * 0.7);
+    if (lit) {
+      ctx.fillStyle = j % 3 === 0 ? ROCKY_PAD : ROCKY_ROOF;
+    } else {
+      ctx.fillStyle = ROCKY_RUIN;
+    }
+    ctx.globalAlpha = lit ? 0.9 : 0.92;
+    ctx.fillRect(ox - w / 2, oy - h / 2, w, h);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawRockySettlement(
+  ctx: CanvasRenderingContext2D,
+  p: Planet,
+  cam: Camera,
+  star: Planet | null,
+) {
+  const spec = rockySettlement(p);
+  if (!spec) return;
+  const r = p.radius;
+  const L = lightDir(p, star);
+  const far = r * cam.zoom < 14;
+  const specks = far ? 1 : spec.home ? 4 : 3;
+  const core = Math.max(0.9, (spec.home ? 2.4 : 1.8) / Math.max(0.08, cam.zoom));
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.clip();
+
+  for (let i = 0; i < spec.sites.length; i++) {
+    const site = spec.sites[i]!;
+    const ang = p.rotate + site.a;
+    const lx = Math.cos(ang);
+    const ly = Math.sin(ang);
+    const day = lx * L.x + ly * L.y;
+    const px = lx * site.u * r;
+    const py = ly * site.u * r;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(p.rotate);
+    drawRockyDistrict(ctx, i, site, r, far, spec.lit, spec.home);
+    ctx.restore();
+    if (!spec.lit || day > -0.08) continue;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const halo = core * (far ? 2.2 : 3.4) * site.s;
+    const g = ctx.createRadialGradient(px, py, 0, px, py, halo);
+    g.addColorStop(0, spec.home ? "rgba(255, 236, 200, 0.95)" : "rgba(255, 220, 160, 0.8)");
+    g.addColorStop(0.35, "rgba(240, 170, 70, 0.35)");
+    g.addColorStop(1, "rgba(180, 90, 20, 0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(px, py, halo, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = ROCKY_LIGHT;
+    for (let j = 0; j < specks; j++) {
+      const ja = site.a + hash(i * 8.1 + j * 3.3) * 1.4;
+      const ju = (0.35 + hash(j * 4.4 + i) * 0.7) * site.s * r * (far ? 0.012 : 0.028);
+      ctx.globalAlpha = 0.75;
+      ctx.beginPath();
+      ctx.arc(px + Math.cos(ja) * ju, py + Math.sin(ja) * ju, core * 0.28, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 function drawPlanet(
   ctx: CanvasRenderingContext2D,
   p: Planet,
@@ -1388,6 +1478,12 @@ function drawPlanet(
   ctx.beginPath();
   ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.fill();
+  if (p.kind === "rocky" && p.settlement === "abandoned") {
+    ctx.fillStyle = "rgba(12, 10, 9, 0.16)";
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   ctx.save();
   ctx.beginPath();
@@ -1460,6 +1556,7 @@ function drawPlanet(
     ctx.fillStyle = shade;
     ctx.fill();
     if (star) stampBodyShadows(ctx, p, star, bodies);
+    if (p.kind === "rocky") drawRockySettlement(ctx, p, cam, star);
   }
 
   ctx.restore();

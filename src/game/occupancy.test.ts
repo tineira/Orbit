@@ -8,6 +8,7 @@ import {
   mineBeaconLit,
   occupancyLegal,
   padHasFuel,
+  rockySettlement,
   type FlavorArgs,
 } from "./occupancy.ts";
 import { chartFlagsFromSearch, createSystem, withMineFlags } from "./world.ts";
@@ -431,4 +432,63 @@ test("mine beacons flash 30/min and stay on under reduced motion", () => {
   assert.equal(mineBeaconLit(0, false, MINE_BEACON_PERIOD_MS * 0.5), false);
   assert.equal(mineBeaconLit(0, false, 0, "off"), false);
   assert.equal(mineBeaconLit(0, true, 0, "flicker"), false);
+});
+
+test("rockySettlement is night sites on active/abandoned rockies only", () => {
+  assert.equal(
+    rockySettlement({
+      kind: "rocky",
+      kicker: "Workshop",
+      settlement: "unexplored",
+      radius: 80,
+      mass: 10,
+    }),
+    null,
+  );
+  assert.equal(
+    rockySettlement({
+      kind: "moon",
+      kicker: "Moon",
+      settlement: "active",
+      radius: 30,
+      mass: 4,
+    }),
+    null,
+  );
+  const home = rockySettlement({
+    kind: "rocky",
+    kicker: "Home",
+    settlement: "active",
+    radius: 80,
+    mass: 10,
+  });
+  assert.ok(home);
+  assert.equal(home!.lit, true);
+  assert.equal(home!.dust, false);
+  assert.equal(home!.home, true);
+  assert.equal(home!.sites.length, 9);
+  const dead = rockySettlement({
+    kind: "rocky",
+    kicker: "Workshop",
+    settlement: "abandoned",
+    radius: 80,
+    mass: 10,
+  });
+  const live = rockySettlement({
+    kind: "rocky",
+    kicker: "Workshop",
+    settlement: "active",
+    radius: 80,
+    mass: 10,
+  });
+  assert.ok(dead);
+  assert.ok(live);
+  assert.equal(dead!.lit, false);
+  assert.equal(dead!.dust, true);
+  assert.equal(dead!.sites.length, 5);
+  assert.equal(live!.sites.length, 5);
+  assert.deepEqual(
+    dead!.sites.map((s) => [s.a, s.u]),
+    live!.sites.map((s) => [s.a, s.u]),
+  );
 });

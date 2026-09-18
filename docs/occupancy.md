@@ -146,7 +146,9 @@ Charting is local and procedural. `createSystem` in `src/game/world.ts` builds a
 
 13. **Kicker is an occupancy-invariant key for Home / Camp / Shard.** `occupancyLegal` reads `kicker` and `landable`. `padHasFuel` does not.
 
-14. **Asteroid occupancy is a mining camp on the pad.** Active and abandoned landable rocks share derrick sites (1 on medium, 2 on primary). Unexplored rocks and shards have no towers. Rocky / moon settlement drawing is later.
+14. **Asteroid occupancy is a mining camp on the pad.** Active and abandoned landable rocks share derrick sites (1 on medium, 2 on primary). Unexplored rocks and shards have no towers.
+
+15. **Rocky occupancy is power on the night side.** Active: warm window clusters on the umbra (Home densest). Abandoned: same sites as dark day-side ticks, light dust wash, no extra craters. Unexplored: unmarked. No derricks, no red beacons, no skylines. Moons are later.
 
 ---
 
@@ -512,7 +514,29 @@ Camps still force `asteroid-silicate` when inhabited (pass 1). Occupancy does no
 
 ### Canvas / HUD
 
-Rocky worlds and moons are still unmarked. Overlay title list and landing card keep printing `kicker` and `body`.
+Moons are still unmarked. Overlay title list and landing card keep printing `kicker` and `body`.
+
+#### Rocky worlds (human, locked)
+
+Layout lives in `rockySettlement` (`src/game/occupancy.ts`); `drawRockySettlement` in `src/game/draw.ts` hashes sites from radius/mass so they spin with the disc. You can land anywhere — no pad, no derricks. Unexplored rockies stay the current six blobs.
+
+| Body | Night sites |
+|---|---|
+| Home | 9 (always active, densest glow) |
+| Other rocky (Workshop / Signal / Archive / Twin) | 5 |
+| Unexplored | 0 |
+
+Same sites for active and abandoned. Occupancy is lit vs dead, not kicker architecture.
+
+| | Active | Abandoned |
+|---|---|---|
+| Districts | Pale pads + dark roofs at every site, day and night. Spin with the disc. | Same sites, darker broken blocks, no pale pads |
+| Night | Warm amber glow on top of the district (`lighter`). Steady; not obstruction flashes. | No glow. Night districts vanish into the umbra. |
+| Day | Districts read as built patches on the lit face | Darker ruin patches, more contrast, light dust wash |
+| Surface | Current blobs | Light dust wash only — **not** extra craters |
+| Atmo halo | Unchanged | Unchanged |
+
+LOD: at system zoom, districts are 2 blocks per site (Home still densest). Close up they break into 4–5 hashed rects. Night glow still only on the umbra. Twins follow the same rules independently.
 
 #### Asteroid mines (human, locked)
 
@@ -818,12 +842,12 @@ These stay out of PR-1–2. Each is its own change when a civ has a **name** and
 - **Depends on:** PR-2
 - **Description:** Done for asteroids. Active Camp: two lit derricks + pad dots. Abandoned Rock: same sites, wrecked, pad dark. `?mine=active|abandoned|both` for debug.
 
-#### F-3 — City drawing (rocky / moons)
+#### F-3 — Rocky night lights
 
-- **Title:** `Draw settlement marks on active rockies`
-- **Files:** `src/game/draw.ts`
-- **Depends on:** F-2
-- **Description:** Still not a new `Planet` field. Moons are one outpost, not a city. Keep it cheap in 2D canvas.
+- **Title:** `Draw night-side settlements on rocky worlds`
+- **Files:** `src/game/occupancy.ts` (`rockySettlement`), `src/game/draw.ts` (`drawRockySettlement`)
+- **Depends on:** PR-2
+- **Description:** Done for rockies. Active: amber umbra clusters. Abandoned: dust + day-side ruin ticks. Home densest. Moons still later (one outpost, not a city).
 
 #### F-4 — Alien fuel / fittings
 
@@ -852,3 +876,4 @@ These stay out of PR-1–2. Each is its own change when a civ has a **name** and
 - Initial draft, 2026-09-17. Locks two flat occupancy fields, human-only first pass, charting weights, shard=`unexplored`, `?camp` / `?settlement=` flags.
 - Revision 2, 2026-09-17. Locked flag precedence (`makeSystem` implies belt from `flags.camp`; camp wins over `belt=0`; shards and Home ignore `?settlement=`; Camp kicker always active human; leftover Rock may be active without renaming). `occupancyLegal` encodes Home / Camp / shard. Occupancy is a second pass after the moon loop; forced camp still consumes one `rng()` before `extraLand`. Copy cell set is exhaustive; missing key throws. PR-1 retargets `fuel.test.ts` kicker mutations and imports `padHasFuel` in `sim.ts` only (`shipIsRefueling` is the HUD gate). Dry-pad + hull proof moved to PR-2; PR-3 dropped. Weight-band tolerances pinned. HUD call sites and references corrected.
 - Revision 3, 2026-09-17. Asteroid mines: 1–2 derricks on the pad shoulders, active vs wrecked. `?mine=active|abandoned|both` debug sugar. Rocky / moon drawing still later.
+- Revision 4, 2026-09-17. Rocky worlds: night-side amber clusters (Home densest); abandoned is dust + day-side ruin ticks, not craters. Moons still later.

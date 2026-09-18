@@ -186,3 +186,42 @@ export function mineBeaconLit(
   const b = mineFrac(nowMs * 0.043 + phaseMs * 0.002 + 2.1);
   return a > 0.42 && b > 0.28;
 }
+
+export type RockySite = {
+  /** Body-frame angle from +X. */
+  a: number;
+  /** Radius as a fraction of the disc. */
+  u: number;
+  s: number;
+};
+
+export type RockySettlement = {
+  sites: RockySite[];
+  lit: boolean;
+  dust: boolean;
+  home: boolean;
+};
+
+/** Night-side cities / dead districts. Unexplored rockies have none. Moons are later. */
+export function rockySettlement(
+  p: Pick<Planet, "kind" | "kicker" | "settlement" | "radius" | "mass">,
+): RockySettlement | null {
+  if (p.kind !== "rocky") return null;
+  if (p.settlement !== "active" && p.settlement !== "abandoned") return null;
+  const home = p.kicker === "Home";
+  const n = home ? 9 : 5;
+  const sites: RockySite[] = [];
+  for (let i = 0; i < n; i++) {
+    sites.push({
+      a: mineFrac(i * 3.1 + p.radius) * Math.PI * 2,
+      u: 0.3 + mineFrac(i * 7.7 + p.mass) * 0.5,
+      s: 0.65 + mineFrac(i * 2.2) * 0.7,
+    });
+  }
+  return {
+    sites,
+    lit: p.settlement === "active",
+    dust: p.settlement === "abandoned",
+    home,
+  };
+}
