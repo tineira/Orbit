@@ -140,6 +140,7 @@ export function Overlay({
           onCycleDrive={() => onCycleFuel(1)}
           onCycleTank={() => onCycleTank(1)}
           dev={dev}
+          cometAvailable={hud.cometAvailable}
         />
       ) : null}
 
@@ -203,6 +204,7 @@ export function Overlay({
                   onCycleDrive={() => onCycleFuel(1)}
                   onCycleTank={() => onCycleTank(1)}
                   dev={dev}
+                  cometAvailable={hud.cometAvailable}
                 />
               </div>
             </div>
@@ -227,6 +229,7 @@ export function Overlay({
                 onCycleDrive={() => onCycleFuel(1)}
                 onCycleTank={() => onCycleTank(1)}
                 dev={dev}
+                cometAvailable={hud.cometAvailable}
               />
             )}
           </div>
@@ -339,6 +342,7 @@ function Title({
   onCycleDrive,
   onCycleTank,
   dev,
+  cometAvailable,
 }: {
   onLaunch: () => void;
   onNewWorld: () => void;
@@ -356,6 +360,7 @@ function Title({
   onCycleDrive: () => void;
   onCycleTank: () => void;
   dev: boolean;
+  cometAvailable: boolean;
 }) {
   const destinations = getPlanets().filter((p) => {
     if (p.kind === "star" || isGhostBody(p)) return false;
@@ -413,6 +418,7 @@ function Title({
               onCycleDrive={onCycleDrive}
               onCycleTank={onCycleTank}
               dev={dev}
+              cometAvailable={cometAvailable}
             />
           </p>
           <div className="flex flex-wrap items-center gap-3">
@@ -1156,6 +1162,7 @@ function KeyTips({
   onCycleDrive,
   onCycleTank,
   dev,
+  cometAvailable,
   stack,
   legend,
 }: {
@@ -1173,6 +1180,7 @@ function KeyTips({
   onCycleDrive?: () => void;
   onCycleTank?: () => void;
   dev: boolean;
+  cometAvailable: boolean;
   stack?: boolean;
   legend?: boolean;
 }) {
@@ -1253,6 +1261,9 @@ function KeyTips({
           legend={asLegend}
           className="hidden sm:inline-flex"
         />
+      ) : null}
+      {dev && cometAvailable ? (
+        <KeyTip code="C" rest="omet" label="comet" legend={asLegend} fill={stack} />
       ) : null}
       <KeyTip
         code="G"

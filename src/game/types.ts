@@ -181,11 +181,24 @@ export type BurnCause = "flare" | "star";
 
 export type CrashKind = "burn" | "wreck" | "sink" | "lost" | "airlock" | "starve";
 
+export type NearbyHeadingKind = "star" | "comet";
+
 export type NearbyHeading = {
   angle: number;
   color: string;
   pal: [string, string, string];
   name: string;
+  kind: NearbyHeadingKind;
+};
+
+export type Comet = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+  /** Felt by nothing. Present so a later minigame can land. */
+  mass: number;
 };
 
 export type LostCopy = {
@@ -267,6 +280,7 @@ export type HudSnapshot = {
   foodUntil: number;
   airlockSeqAt: number;
   reducedMotion: boolean;
+  cometAvailable: boolean;
 };
 
 export type InputState = {

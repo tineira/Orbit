@@ -27,6 +27,7 @@ import {
   stepSim,
   STEP,
   takeoff,
+  trySpawnComet,
   wrapPi,
   spectroHud,
   spectroVoice,
@@ -157,6 +158,10 @@ declare global {
       getTransitBoomed?: () => boolean;
       getTransitAge?: () => number;
       getNearby?: () => { angle: number; name: string }[];
+      getComet?: () => { x: number; y: number; vx: number; vy: number; radius: number } | null;
+      getCometSpent?: () => boolean;
+      getCometHeading?: () => { angle: number; kind: string; name: string } | null;
+      spawnComet?: () => boolean;
       newWorld?: () => void;
       adjustGravity?: (dir: number) => void;
       adjustAtmo?: (dir: number) => void;
@@ -217,6 +222,7 @@ const CREATING_HUD: HudSnapshot = {
   foodUntil: 0,
   airlockSeqAt: 0,
   reducedMotion: false,
+  cometAvailable: false,
 };
 
 export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameHandle {
@@ -248,6 +254,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let prevCrashed: string | null = null;
   let prevTrauma = 0;
   let prevPhase: string | null = null;
+  let prevCometEntered = false;
   let prevSpectroVoice: SpectroVoice = "off";
   let prevPunched = false;
   let prevBoomed = false;
@@ -266,6 +273,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let hWasDown = false;
   let eWasDown = false;
   let tWasDown = false;
+  let cWasDown = false;
   let pendingPrefs: SimViewPrefs | null = null;
 
   const resize = () => {
@@ -355,6 +363,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       foodUntil: sim.foodUntil,
       airlockSeqAt: sim.airlockSeqAt,
       reducedMotion: sim.reducedMotion,
+      cometAvailable: devTools && !sim.cometSpent,
     };
     onUi(hud);
   };
@@ -461,6 +470,12 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   const consumeTank = () => {
     const { pressed, down } = consumePress(input.state, "KeyT", tWasDown);
     tWasDown = down;
+    return pressed;
+  };
+
+  const consumeComet = () => {
+    const { pressed, down } = consumePress(input.state, "KeyC", cWasDown);
+    cWasDown = down;
     return pressed;
   };
 
@@ -592,6 +607,16 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getTransitBoomed: () => s.transitBoomed,
       getTransitAge: () => s.transitAge,
       getNearby: () => s.nearby.map((n) => ({ angle: n.angle, name: n.name })),
+      getComet: () =>
+        s.comet
+          ? { x: s.comet.x, y: s.comet.y, vx: s.comet.vx, vy: s.comet.vy, radius: s.comet.radius }
+          : null,
+      getCometSpent: () => s.cometSpent,
+      getCometHeading: () =>
+        s.cometHeading
+          ? { angle: s.cometHeading.angle, kind: s.cometHeading.kind, name: s.cometHeading.name }
+          : null,
+      spawnComet: () => trySpawnComet(s),
       newWorld: () => chartNewWorld(),
       getLagrangePoints: () =>
         listLagrangePoints(s).map((p) => ({
@@ -654,6 +679,10 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     }
     if (consumeTank() && devTools) {
       stepTank(sim.ship, cycleDir());
+      publish();
+    }
+    if (consumeComet() && devTools) {
+      trySpawnComet(sim);
       publish();
     }
 
@@ -765,6 +794,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     if (sim.phase === "transit" && prevPhase !== "transit") {
       audio.warpJump();
     }
+    if (sim.cometEntered && !prevCometEntered) audio.cometEnter();
+    prevCometEntered = sim.cometEntered;
     prevPunched = sim.transitPunched;
     if (sim.transitBoomed && !prevBoomed) audio.sonicBooms();
     prevBoomed = sim.transitBoomed;
@@ -829,6 +860,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     prevLanded = sim.landedId;
     prevCrashed = null;
     prevTrauma = 0;
+    prevCometEntered = false;
     prevSpectroVoice = "off";
     prevAirlockSeq = 0;
     prevRefueling = false;
@@ -843,6 +875,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     hWasDown = keys.has("KeyH");
     eWasDown = keys.has("KeyE");
     tWasDown = keys.has("KeyT");
+    cWasDown = keys.has("KeyC");
     input.state.presses.clear();
     publish();
     raf = requestAnimationFrame(frame);

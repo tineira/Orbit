@@ -82,7 +82,7 @@ test("dev tools stay off unless ?dev is set", () => {
 });
 
 test("debug warp dir locks a nearby chart or misses them", () => {
-  const n = { angle: 0.4, color: "#fff", pal: ["#fff", "#fff", "#fff"] as [string, string, string], name: "Aim" };
+  const n = { angle: 0.4, color: "#fff", pal: ["#fff", "#fff", "#fff"] as [string, string, string], name: "Aim", kind: "star" as const };
   const on = debugWarpDir([n], true);
   const lock = headingVec(n.angle);
   assert.ok(on.x * lock.x + on.y * lock.y > 0.999);
@@ -92,7 +92,7 @@ test("debug warp dir locks a nearby chart or misses them", () => {
 
 test("warp heading lock is a tight cone", () => {
   const pal: [string, string, string] = ["#fff", "#000", "rgba(0,0,0,0)"];
-  const n = { angle: 0, color: "#fff", pal, name: "Ember" };
+  const n = { angle: 0, color: "#fff", pal, name: "Ember", kind: "star" as const };
   const v = headingVec(0);
   assert.ok(lockedNearby(v.x, v.y, [n], WARP_AIM_DEG));
   const miss = headingVec((WARP_AIM_DEG + 2) * (Math.PI / 180));

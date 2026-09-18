@@ -530,19 +530,20 @@ function pick<T>(rng: () => number, list: T[]): T {
   return list[Math.floor(rng() * list.length)]!;
 }
 
-function angDiff(a: number, b: number) {
+export const HEADING_MIN_SEP = (52 * Math.PI) / 180;
+
+export function angDiff(a: number, b: number) {
   let d = Math.abs(a - b) % (Math.PI * 2);
   if (d > Math.PI) d = Math.PI * 2 - d;
   return d;
 }
 
 function scatterHeadings(rng: () => number, n: number): number[] {
-  const minSep = (52 * Math.PI) / 180;
   const angles: number[] = [];
   let guard = 0;
   while (angles.length < n && guard++ < 90) {
     const a = rng() * Math.PI * 2;
-    if (angles.every((b) => angDiff(a, b) >= minSep)) angles.push(a);
+    if (angles.every((b) => angDiff(a, b) >= HEADING_MIN_SEP)) angles.push(a);
   }
   if (angles.length < n) {
     const base = rng() * Math.PI * 2;
@@ -563,7 +564,7 @@ function rollNearby(rng: () => number, used: Set<string>): NearbyHeading[] {
   }
   return angles.map((angle, i) => {
     const pal = pals[i % pals.length]!;
-    return { angle, color: pal[0], pal, name: takeName(rng, STAR_NAMES, used) };
+    return { angle, color: pal[0], pal, name: takeName(rng, STAR_NAMES, used), kind: "star" };
   });
 }
 

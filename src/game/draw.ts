@@ -53,6 +53,7 @@ import {
   beltBands,
 } from "./world";
 import { asteroidWorldPath, surfaceRadius } from "./asteroid";
+import { COMET_RED, warpHeadings } from "./comet";
 import {
   asteroidMine,
   MINE_BEACON_PERIOD_MS,
@@ -121,6 +122,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
       if (!isGhostBody(p)) drawPlanet(ctx, p, cam, star, sim.planets, now, sim.reducedMotion);
     }
     drawSolarFlares(ctx, sim);
+    drawComet(ctx, sim);
     drawOrbitShell(ctx, sim);
     drawLagrangePoints(ctx, sim, cam);
     drawRelativePath(ctx, sim);
@@ -766,6 +768,166 @@ function drawSolarFlares(ctx: CanvasRenderingContext2D, sim: Sim) {
       }
     }
   }
+  ctx.restore();
+}
+
+function cometOnScreen(sim: Sim, x: number, y: number, pad: number) {
+  const cam = sim.camera;
+  const z = Math.max(1e-6, cam.zoom);
+  const hx = ((sim.viewCssW || 1280) * 0.5) / z + pad;
+  const hy = ((sim.viewCssH || 800) * 0.5) / z + pad;
+  return Math.abs(x - cam.x) <= hx && Math.abs(y - cam.y) <= hy;
+}
+
+function traceCometNucleus(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
+  const n = 9;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const u = 0.7 + hash(i * 4.17 + 11.3) * 0.42;
+    const px = x + Math.cos(a) * r * u;
+    const py = y + Math.sin(a) * r * u;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+
+function drawComet(ctx: CanvasRenderingContext2D, sim: Sim) {
+  const c = sim.comet;
+  if (!c) return;
+  const r = c.radius;
+  const z = Math.max(0.04, sim.camera.zoom);
+  const tailLen = Math.min(920, Math.max(240, 32 / z));
+  if (!cometOnScreen(sim, c.x, c.y, r * 4 + tailLen)) return;
+
+  const star = sim.planets.find((p) => p.kind === "star") ?? null;
+  const sx = star?.x ?? 0;
+  const sy = star?.y ?? 0;
+  const awayX = c.x - sx;
+  const awayY = c.y - sy;
+  const away = Math.hypot(awayX, awayY) || 1;
+  const tx = awayX / away;
+  const ty = awayY / away;
+  const nx = -ty;
+  const ny = tx;
+  const sp = Math.hypot(c.vx, c.vy);
+  const vx = sp > 1e-6 ? c.vx / sp : 0;
+  const vy = sp > 1e-6 ? c.vy / sp : 0;
+
+  if (sim.reducedMotion) {
+    ctx.save();
+    ctx.strokeStyle = "rgba(160, 210, 255, 0.38)";
+    ctx.lineWidth = Math.max(1.2, r * 0.22);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(c.x, c.y);
+    ctx.lineTo(c.x + tx * tailLen * 0.55, c.y + ty * tailLen * 0.55);
+    ctx.stroke();
+    ctx.restore();
+  } else {
+    const now = performance.now();
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.lineCap = "round";
+    const glow = ctx.createLinearGradient(c.x, c.y, c.x + tx * tailLen, c.y + ty * tailLen);
+    glow.addColorStop(0, "rgba(210, 236, 255, 0.42)");
+    glow.addColorStop(0.22, "rgba(120, 190, 255, 0.22)");
+    glow.addColorStop(1, "rgba(90, 160, 255, 0)");
+    ctx.strokeStyle = glow;
+    ctx.lineWidth = r * 0.85;
+    ctx.beginPath();
+    ctx.moveTo(c.x, c.y);
+    ctx.lineTo(c.x + tx * tailLen, c.y + ty * tailLen);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(230, 246, 255, 0.55)";
+    ctx.lineWidth = Math.max(1.1, r * 0.18);
+    ctx.beginPath();
+    ctx.moveTo(c.x, c.y);
+    ctx.lineTo(c.x + tx * tailLen * 0.72, c.y + ty * tailLen * 0.72);
+    ctx.stroke();
+    for (let i = 0; i < 16; i++) {
+      const u = (hash(i * 5.7) + now * 0.0002) % 1;
+      const along = u * tailLen;
+      const side = (hash(i * 3.3) - 0.5) * (6 + u * 28);
+      const fade = (1 - u) * (1 - u);
+      ctx.strokeStyle = `rgba(170, 220, 255, ${0.16 * fade})`;
+      ctx.lineWidth = 0.7 + (1 - u) * 1.4;
+      const px = c.x + tx * along + nx * side;
+      const py = c.y + ty * along + ny * side;
+      const sl = 9 + (1 - u) * 16;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px + tx * sl, py + ty * sl);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    if (sp > 1e-6) {
+      ctx.save();
+      const dustLen = Math.min(220, tailLen * 0.28);
+      for (let i = 0; i < 12; i++) {
+        const u = (hash(i * 2.9 + 4) + now * 0.00014) % 1;
+        const along = 6 + u * dustLen;
+        const side = (hash(i * 8.1) - 0.5) * (5 + u * 18);
+        const px = c.x - vx * along + -vy * side;
+        const py = c.y - vy * along + vx * side;
+        const fade = (1 - u) * (0.35 + hash(i * 1.7) * 0.4);
+        ctx.globalAlpha = fade;
+        ctx.fillStyle = hash(i * 6.2) > 0.55 ? "#c4b49a" : "#ece6d8";
+        ctx.beginPath();
+        ctx.arc(px, py, 0.7 + (1 - u) * 1.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  ctx.save();
+  ctx.fillStyle = "#d5e2ee";
+  traceCometNucleus(ctx, c.x, c.y, r);
+  ctx.fill();
+  ctx.save();
+  traceCometNucleus(ctx, c.x, c.y, r);
+  ctx.clip();
+  ctx.fillStyle = "#8ea4b8";
+  for (let i = 0; i < 5; i++) {
+    const a = hash(i * 3.1 + 2.2) * Math.PI * 2;
+    const cr = Math.sqrt(hash(i * 7.7 + 1.4)) * r * 0.7;
+    const s = r * (0.08 + hash(i * 2.2) * 0.16);
+    ctx.globalAlpha = 0.38 + hash(i * 5.9) * 0.22;
+    ctx.beginPath();
+    ctx.arc(c.x + Math.cos(a) * cr, c.y + Math.sin(a) * cr, s, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  let Lx = -0.55;
+  let Ly = -0.62;
+  if (star) {
+    const lx = star.x - c.x;
+    const ly = star.y - c.y;
+    const llen = Math.hypot(lx, ly) || 1;
+    Lx = lx / llen;
+    Ly = ly / llen;
+  }
+  const shade = ctx.createLinearGradient(
+    c.x - Lx * r,
+    c.y - Ly * r,
+    c.x + Lx * r,
+    c.y + Ly * r,
+  );
+  shade.addColorStop(0, "rgba(7,8,12,0.78)");
+  shade.addColorStop(0.46, "rgba(7,8,12,0.38)");
+  shade.addColorStop(0.58, "rgba(7,8,12,0)");
+  shade.addColorStop(1, "rgba(7,8,12,0)");
+  ctx.fillStyle = shade;
+  ctx.fillRect(c.x - r * 1.5, c.y - r * 1.5, r * 3, r * 3);
+  ctx.fillStyle = "rgba(236, 246, 255, 0.55)";
+  ctx.beginPath();
+  ctx.arc(c.x + Lx * r * 0.28, c.y + Ly * r * 0.28, r * 0.22, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
   ctx.restore();
 }
 
@@ -1851,13 +2013,14 @@ function warpGasPath(
 
 function drawWarpAims(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH: number) {
   if (!hudShowsCues(sim.hudMode)) return;
-  if (sim.phase !== "flight" || sim.nearby.length === 0) return;
+  const headings = warpHeadings(sim.nearby, sim.cometHeading);
+  if (sim.phase !== "flight" || headings.length === 0) return;
   if (Math.hypot(sim.ship.vx, sim.ship.vy) < WARP_BAR_SPEED && sim.status !== "warp") return;
   const dir = { x: sim.ship.vx, y: sim.ship.vy };
   const sp = Math.hypot(dir.x, dir.y) || 1;
   const hx = dir.x / sp;
   const hy = dir.y / sp;
-  const locked = lockedNearby(dir.x, dir.y, sim.nearby, WARP_AIM_DEG);
+  const locked = lockedNearby(dir.x, dir.y, headings, WARP_AIM_DEG);
   const origin = worldToScreen(sim.camera, sim.ship.x, sim.ship.y, cssW, cssH);
   const ring = Math.min(cssW, cssH) * 0.42;
   ctx.save();
@@ -1881,12 +2044,12 @@ function drawWarpAims(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, css
   ctx.stroke();
 
   ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
-  for (const n of sim.nearby) {
+  for (const n of headings) {
     const v = headingVec(n.angle);
     const x = origin.x + v.x * ring;
     const y = origin.y + v.y * ring;
     const on = n === locked;
-    const col = on ? "#7d9b86" : "#c45c4a";
+    const col = n.kind === "comet" ? (on ? "#ff6a58" : COMET_RED) : on ? "#7d9b86" : "#c45c4a";
     ctx.fillStyle = col;
     ctx.strokeStyle = col;
     ctx.lineWidth = 1.35;
@@ -2789,6 +2952,12 @@ function drawMinimap(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number, cssH
     ctx.arc(px, py, pipR, 0, Math.PI * 2);
     ctx.fill();
   }
+  if (sim.comet && Math.hypot(sim.comet.x, sim.comet.y) <= worldR) {
+    ctx.beginPath();
+    ctx.fillStyle = COMET_RED;
+    ctx.arc(cx + sim.comet.x * scale, cy + sim.comet.y * scale, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.restore();
 
   const pip = sinkAlpha(sim);
@@ -2842,11 +3011,11 @@ function drawMinimapNearby(
   size: number,
   radius: number,
 ) {
-  if (sim.nearby.length === 0) return;
+  const headings = warpHeadings(sim.nearby, sim.cometHeading);
+  if (headings.length === 0) return;
   const inset = 8;
   ctx.font = '500 8px "IBM Plex Mono", ui-monospace, monospace';
-  ctx.fillStyle = "rgba(140, 142, 148, 0.88)";
-  for (const n of sim.nearby) {
+  for (const n of headings) {
     const v = headingVec(n.angle);
     const hit = rayHitRoundedRect(
       v.x * 1000,
@@ -2857,9 +3026,11 @@ function drawMinimapNearby(
     );
     const px = cx + hit.x;
     const py = cy + hit.y;
-    drawMinimapEdgeArrow(ctx, px, py, hit.ux, hit.uy, "rgba(140, 142, 148, 0.88)");
+    const color = n.kind === "comet" ? COMET_RED : "rgba(140, 142, 148, 0.88)";
+    drawMinimapEdgeArrow(ctx, px, py, hit.ux, hit.uy, color);
     const lx = px - hit.ux * 9;
     const ly = py - hit.uy * 9;
+    ctx.fillStyle = color;
     ctx.textAlign = hit.ux > 0.35 ? "right" : hit.ux < -0.35 ? "left" : "center";
     ctx.textBaseline = hit.uy > 0.35 ? "bottom" : hit.uy < -0.35 ? "top" : "middle";
     ctx.fillText(n.name, lx, ly);

@@ -753,6 +753,7 @@ type AudioApi = {
   land: () => void;
   crash: () => void;
   warn: () => void;
+  cometEnter: () => void;
   clockBeep: () => void;
   airlockReady: () => void;
   setAdriftAlarm: (on: boolean) => void;
@@ -1950,6 +1951,41 @@ export function createAudio(): AudioApi {
       };
       chirp(880, 0, 0.11, 0.09);
       chirp(520, 0.14, 0.16, 0.11);
+    },
+    cometEnter() {
+      ensure();
+      if (!ctx || !sfx) return;
+      void ctx.resume();
+      const t = ctx.currentTime;
+      // Icy sighting sting: rising sine + glassy triangle. Not the 880/520 square chirp.
+      const tone = (
+        type: OscillatorType,
+        freq0: number,
+        freq1: number,
+        at: number,
+        dur: number,
+        peak: number,
+      ) => {
+        const osc = ctx!.createOscillator();
+        const g = ctx!.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq0, t + at);
+        osc.frequency.exponentialRampToValueAtTime(freq1, t + at + dur);
+        g.gain.setValueAtTime(0.0001, t + at);
+        g.gain.exponentialRampToValueAtTime(peak, t + at + 0.016);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + at + dur);
+        osc.connect(g);
+        g.connect(sfx!);
+        osc.start(t + at);
+        osc.stop(t + at + dur + 0.02);
+        osc.onended = () => {
+          osc.disconnect();
+          g.disconnect();
+        };
+      };
+      tone("sine", 1244, 1865, 0, 0.24, 0.085);
+      tone("triangle", 622, 933, 0.05, 0.3, 0.06);
+      tone("sine", 2488, 1662, 0.14, 0.2, 0.03);
     },
     clockBeep() {
       if (!ctx || !sfx || !clickBuf) return;

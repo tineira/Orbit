@@ -5,6 +5,7 @@ import { scanBeltHull, type BeltTick } from "./belt.ts";
 import type {
   BurnCause,
   Camera,
+  Comet,
   CompositionReadout,
   CrashKind,
   FlightStatus,
@@ -18,6 +19,7 @@ import type {
   LostCopy,
   NearbyHeading,
 } from "./types.ts";
+import { makeCometHeading, separateCometHeading, spawnComet, warpHeadings } from "./comet.ts";
 import {
   G,
   GRAVITY_BASE,
@@ -167,6 +169,10 @@ export type Sim = {
   crashKind: CrashKind | null;
   lostCopy: LostCopy | null;
   nearby: NearbyHeading[];
+  comet: Comet | null;
+  cometSpent: boolean;
+  cometHeading: NearbyHeading | null;
+  cometEntered: boolean;
   warpTarget: NearbyHeading | null;
   warpLost: boolean;
   crashAge: number;
@@ -281,6 +287,10 @@ export function createSim(): Sim {
     crashKind: null,
     lostCopy: null,
     nearby: getNearbyHeadings(),
+    comet: null,
+    cometSpent: false,
+    cometHeading: null,
+    cometEntered: false,
     warpTarget: null,
     warpLost: false,
     crashAge: 0,
@@ -310,8 +320,16 @@ export function createSim(): Sim {
     foodUntil: 0,
     airlockSeqAt: 0,
   };
+  resetCometChart(sim);
   landOnHome(sim);
   return sim;
+}
+
+export function resetCometChart(sim: Sim) {
+  sim.comet = null;
+  sim.cometSpent = false;
+  sim.cometHeading = null;
+  sim.cometEntered = false;
 }
 
 function freshShip(): Ship {
@@ -462,6 +480,15 @@ function clearFlightLocks(sim: Sim) {
   sim.ionTrail = [];
 }
 
+/** Reserved comet lock: stay on this chart. No transit, no createSystem. */
+function beginCometWarp(sim: Sim) {
+  const dir = shipTravelDir(sim.ship);
+  const speed = WARP_JUMP_SPEED - 1;
+  sim.ship.vx = dir.x * speed;
+  sim.ship.vy = dir.y * speed;
+  sim.orbitHint = "Comet — not yet";
+}
+
 /** Drop into the tunnel. The new chart is generated on the punch, not here. */
 export function enterWarp(sim: Sim, lost = false) {
   clearFlightLocks(sim);
@@ -509,6 +536,7 @@ function punchWarp(sim: Sim, settle = false) {
   sim.planets = copyPlanets(sys.planets);
   sim.nearby = sys.nearby.slice();
   sim.warpTarget = null;
+  resetCometChart(sim);
   clearSpectroChart(sim);
   applySimViewPrefs(sim, prefs);
   const mag = Math.hypot(sim.transitDirX, sim.transitDirY) || 1;
@@ -1514,6 +1542,43 @@ function updateMoons(sim: Sim, dt: number) {
   stepOrbitingBodies(sim.planets, dt, sim.gravityScale);
 }
 
+export function stepComet(
+  c: Comet,
+  planets: Planet[],
+  gravityScale: number,
+  atmoScale: number,
+  dt: number,
+) {
+  const g = gravityAt(c.x, c.y, planets, gravityScale);
+  const d = dragNear(c.x, c.y, c.vx, c.vy, planets, atmoScale);
+  c.vx += (g.ax + d.ax) * dt;
+  c.vy += (g.ay + d.ay) * dt;
+  c.x += c.vx * dt;
+  c.y += c.vy * dt;
+}
+
+function stepLiveComet(sim: Sim, dt: number) {
+  const c = sim.comet;
+  if (!c) return;
+  const R = getMinimapWorldR();
+  stepComet(c, sim.planets, sim.gravityScale, sim.atmoScale, dt);
+  const r1 = Math.hypot(c.x, c.y);
+  if (r1 <= R) sim.cometEntered = true;
+  if (sim.cometEntered && r1 > R) {
+    sim.cometHeading = makeCometHeading(separateCometHeading(Math.atan2(c.y, c.x), sim.nearby));
+    sim.comet = null;
+  }
+}
+
+export function trySpawnComet(sim: Sim): boolean {
+  if (sim.cometSpent) return false;
+  if (sim.phase !== "landed" && sim.phase !== "flight") return false;
+  sim.comet = spawnComet(sim.planets, Math.random);
+  sim.cometSpent = true;
+  sim.cometEntered = false;
+  return true;
+}
+
 function applySteer(ship: Ship, controls: { steer: number; aimYaw: number | null }, dt: number) {
   if (controls.aimYaw != null) {
     let d = wrapPi(controls.aimYaw - ship.yaw);
@@ -2081,6 +2146,7 @@ export function stepSim(
 
   stepSpectro(sim, dt);
   updateMoons(sim, dt);
+  stepLiveComet(sim, dt);
   invalidateLagrange(sim);
   stepFlares(sim, dt);
   for (const ring of sim.warpRings) ring.age += dt;
@@ -2167,8 +2233,15 @@ export function stepSim(
 
   if (!sim.adrift && Math.hypot(ship.vx, ship.vy) >= WARP_JUMP_SPEED) {
     const dir = shipTravelDir(ship);
-    const aim = lockedNearby(dir.x, dir.y, sim.nearby, WARP_AIM_DEG);
+    const aim = lockedNearby(dir.x, dir.y, warpHeadings(sim.nearby, sim.cometHeading), WARP_AIM_DEG);
     if (aim) {
+      if (aim.kind === "comet") {
+        sim.warpTarget = aim;
+        beginCometWarp(sim);
+        decayParticles(sim, dt);
+        updateCamera(sim, dt);
+        return;
+      }
       sim.warpTarget = aim;
       enterWarp(sim);
     } else {
