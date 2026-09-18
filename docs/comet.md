@@ -72,7 +72,7 @@ Charting stays local and procedural. `createSystem` still builds an in-memory `C
 - Add a `Comet` sim actor that is not a `Planet`. No occupancy, no mix, no Kepler rail, not a source in `gravityAt`.
 - Integrate it ship-like: it **feels** `gravityAt` and `dragNear`; nothing feels it back.
 - Uncatchable in the current chart: too fast to intercept before exit; nucleus is not a `collidePlanets` target here. The ship must use warp to catch it (minigame).
-- Path: enter from one side of `getMinimapWorldR()`, periapsis close to the star but outside stellar burn / flare kill volume, leave the opposite side. Mini-map crossing on the order of **6–10 s**.
+- Path: enter from one side of `getMinimapWorldR()`, periapsis close to the star but outside stellar burn / flare kill volume, leave the opposite side. Mini-map crossing on the order of **15–25 s**.
 - Mini-map: warning sound on enter, then a fast **red** pip while inside the chart.
 - After exit: persistent red edge arrow + warp-HUD mark, `kind: "comet"`, angular separation from star headings comparable to `scatterHeadings` (~52°).
 - Warp commit on that heading does **not** call `createSystem`. Stub until the minigame spec: reserved no-op, current chart preserved.
@@ -102,7 +102,7 @@ Charting stays local and procedural. `createSystem` still builds an in-memory `C
 
 2. **Ship-like physics, not n-body.** The comet **feels** `gravityAt(x, y, sim.planets, gravityScale)` and `dragNear(...)` exactly as the ship does in `stepSim`. It is **not** passed into `gravityAt` as a source. Planets, the ship, and belt motes do not feel it. No `orbitR` / `orbitA` / `orbitW` — `stepOrbitingBodies` never sees it.
 
-3. **Uncatchable in the current chart.** Crossing speed is on the order of 2 × `getMinimapWorldR()` / 6–10 s (≳ 2000 u/s vs `WARP_JUMP_SPEED = 1500`). The nucleus is **not** a `collidePlanets` target on this chart: no land, no wreck, no burn-from-comet. Sighting only. Catching is warp → minigame.
+3. **Uncatchable in the current chart.** Crossing is 2 × `getMinimapWorldR()` / 15–25 s (~864–1440 u/s on a 10800 chart; `WARP_JUMP_SPEED = 1500`). The nucleus is **not** a `collidePlanets` target on this chart: no land, no wreck, no burn-from-comet. Sighting only. Catching is warp → minigame.
 
 4. **Periapsis is a sighting, not a second flare.** Closest approach to the star stays outside the stellar kill volume: corona `STAR_ATMO_FACTOR = 2.1` and long-flare max reach `4.0 × star.radius` (`spawnFlare` in `sim.ts`). One locked floor, used by spawn **and** tests: nucleus-center to star-center ≥ `COMET_PERI_CLEAR = 4.2 * star.radius + COMET_NUCLEUS_R`. Spawn impact parameter `b` **is** that quantity (sign random). Path still reads “next to the star” on the mini-map.
 
@@ -198,22 +198,22 @@ flowchart TD
 
 ### Flyby geometry
 
-Chart radius `R = getMinimapWorldR()` (floor 10800 in `createSystem`; typical charts are that or larger). Chord ≈ `2R`. Target crossing **6–10 s** on the mini-map:
+Chart radius `R = getMinimapWorldR()` (floor 10800 in `createSystem`; typical charts are that or larger). Chord ≈ `2R`. Target crossing **15–25 s** on the mini-map:
 
-| R | T = 6 s | T = 10 s |
+| R | T = 15 s | T = 25 s |
 |---|---|---|
-| 10800 | ~3600 u/s | ~2160 u/s |
-| 14000 | ~4667 u/s | ~2800 u/s |
+| 10800 | ~1440 u/s | ~864 u/s |
+| 14000 | ~1867 u/s | ~1120 u/s |
 
-`WARP_JUMP_SPEED = 1500` is slower than the slow end of that band. The ship cannot beat the comet to the far edge in this chart. That is the uncatchable lock, not a tuning suggestion.
+`WARP_JUMP_SPEED = 1500` sits at the fast end of that band. The leftover warp heading is still the catch path; the nucleus is not a collision target on this chart.
 
 Spawn (`spawnComet` in `src/game/comet.ts`):
 
 - Pick inbound bearing `theta` uniformly. Retry `theta` (cap ~12) if the unperturbed chord’s closest approach to a **gas** disk is inside that giant’s radius, so `dragNear` on a cloud deck cannot fake a periapsis dip. If retries exhaust, keep the last `theta` — the star floor still holds.
 - Place the nucleus at `(cos theta, sin theta) * R * COMET_SPAWN_OUT` with `COMET_SPAWN_OUT ≈ 1.02` so the first frame is still outside — enter SFX is a real crossing, not the keypress. `cometEntered` stays false until the inward `R` crossing.
 - Aim across the origin with impact parameter `b = COMET_PERI_CLEAR = 4.2 * star.radius + COMET_NUCLEUS_R`, sign random. That **is** the periapsis floor, not a guess to iterate in review.
-- Speed `v = (2 * R) / T` with `T ∈ [6, 10]`.
-- Nucleus radius: small, readable at system zoom. Suggested `COMET_NUCLEUS_R ≈ 12` (between a shard pip and a moon). Not a sacred gameplay number; do not size it like a rocky world.
+- Speed `v = (2 * R) / T` with `T ∈ [15, 25]`.
+- Nucleus radius: `COMET_NUCLEUS_R = 27` (about a small landable asteroid; ship hull is 9). Not sized like a rocky world.
 
 `stepComet` lives in `src/game/sim.ts` (export for tests):
 
@@ -369,7 +369,7 @@ Comets are not occupiable. `isOccupiableKind` unchanged. Flares keep owning the 
 
 ### `src/game/comet.ts` (new)
 
-`COMET_RED = "#e24b3a"`, `COMET_PERI_CLEAR` helper (`4.2 * star.radius + COMET_NUCLEUS_R`), `COMET_NUCLEUS_R`, `COMET_CROSS_MIN_S = 6`, `COMET_CROSS_MAX_S = 10`. Import `HEADING_MIN_SEP` / `angDiff` from `world.ts` — do not duplicate 52°.
+`COMET_RED = "#e24b3a"`, `COMET_PERI_CLEAR` helper (`4.2 * star.radius + COMET_NUCLEUS_R`), `COMET_NUCLEUS_R`, `COMET_CROSS_MIN_S = 15`, `COMET_CROSS_MAX_S = 25`. Import `HEADING_MIN_SEP` / `angDiff` from `world.ts` — do not duplicate 52°.
 
 Slice API only: `spawnComet(planets, rng): Comet`, `warpHeadings(nearby, cometHeading)`, `separateCometHeading`, `makeCometHeading(angle)`. **Not** `stepComet`. **Not** `trySpawnComet`. Do **not** import `sim.ts` or `draw.ts`.
 
@@ -585,7 +585,7 @@ flowchart LR
 - **Files / components:**
   - `src/game/types.ts` — `Comet`, `NearbyHeadingKind`, `kind` on `NearbyHeading`, `HudSnapshot.cometAvailable`
   - `src/game/comet.ts` — new: `COMET_RED`, `spawnComet(planets, rng)` (`b = COMET_PERI_CLEAR`), periapsis helpers, `warpHeadings` / `makeCometHeading` (heading helpers may be unused until PR-2). **No** `stepComet`. **No** `trySpawnComet`. **No** `sim.ts` / `draw.ts` import
-  - `src/game/comet.test.ts` — new: C-only spawn via `trySpawnComet(sim)`; spent after fire (`true` then `false`); ignore title/transit/crashed without spending; reboot does not restock; `createSim` reset does; star `punchWarp` reset does (spawn, `sim.reducedMotion = true`, `enterWarp`, assert `comet == null`, `cometSpent === false`, `cometHeading == null`, `cometEntered === false`); integrated min star-center distance ≥ `4.2 * star.radius + COMET_NUCLEUS_R`; chord time across `2R` in 6–10 s (± small gravity slack); `spawnComet` / `trySpawnComet` does not change `sim.planets` ids; `gravityAt(ship.x, ship.y, sim.planets, …)` equal before/after spawn; nucleus not in `sim.planets`
+  - `src/game/comet.test.ts` — new: C-only spawn via `trySpawnComet(sim)`; spent after fire (`true` then `false`); ignore title/transit/crashed without spending; reboot does not restock; `createSim` reset does; star `punchWarp` reset does (spawn, `sim.reducedMotion = true`, `enterWarp`, assert `comet == null`, `cometSpent === false`, `cometHeading == null`, `cometEntered === false`); integrated min star-center distance ≥ `4.2 * star.radius + COMET_NUCLEUS_R`; chord time across `2R` in 15–25 s (± small gravity slack); `spawnComet` / `trySpawnComet` does not change `sim.planets` ids; `gravityAt(ship.x, ship.y, sim.planets, …)` equal before/after spawn; nucleus not in `sim.planets`
   - `src/game/world.ts` — `rollNearby` sets `kind: "star"`; export `HEADING_MIN_SEP` and `angDiff`
   - `src/game/sim.ts` — `Sim` fields; `resetCometChart`; `createSim` init; `rebootSim` does **not** clear comet state; **star `punchWarp` calls `resetCometChart`** after copying the new chart; `stepComet` and **`trySpawnComet(sim): boolean`** implemented here (`stepComet` next to `updateMoons`; skipped during title / `padZoomLock`)
   - `src/game/draw.ts` — import `COMET_RED` from `comet.ts`; red mini-map pip while the live comet is inside `getMinimapWorldR()`; no leftover arrow yet; no world-space nucleus yet

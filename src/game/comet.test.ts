@@ -179,14 +179,14 @@ function integrateFlyby(planets: ReturnType<typeof boot>["planets"], rng: () => 
   assert.ok(Math.hypot(c.x, c.y) > R, "spawn starts outside the minimap");
   assert.ok(
     T >= COMET_CROSS_MIN_S - 1e-6 && T <= COMET_CROSS_MAX_S + 1e-6,
-    `spawn T=${T.toFixed(2)} not in 6–10s`,
+    `spawn T=${T.toFixed(2)} not in ${COMET_CROSS_MIN_S}–${COMET_CROSS_MAX_S}s`,
   );
   let minD = Infinity;
   let enteredAt: number | null = null;
   let exitedAt: number | null = null;
   const dt = 1 / 60;
   let t = 0;
-  for (let i = 0; i < 60 * 20; i++) {
+  for (let i = 0; i < 60 * 40; i++) {
     stepComet(c, planets, 1, 1, dt);
     t += dt;
     const r = Math.hypot(c.x, c.y);
@@ -212,8 +212,8 @@ test("integrated periapsis stays outside COMET_PERI_CLEAR on seeds 1–48", () =
     assert.ok(flyby.enteredAt != null && flyby.exitedAt != null, `seed ${seed} never crossed`);
     const chord = flyby.exitedAt! - flyby.enteredAt!;
     assert.ok(
-      chord >= 3 && chord <= 14,
-      `seed ${seed}: chord ${chord.toFixed(2)}s (T=${flyby.T.toFixed(2)}) not in 6–10s ± gravity slack`,
+      chord >= COMET_CROSS_MIN_S - 5 && chord <= COMET_CROSS_MAX_S + 6,
+      `seed ${seed}: chord ${chord.toFixed(2)}s (T=${flyby.T.toFixed(2)}) not in ${COMET_CROSS_MIN_S}–${COMET_CROSS_MAX_S}s ± gravity slack`,
     );
   }
 });
@@ -290,7 +290,7 @@ test("leftover comet heading persists across rebootSim", () => {
   parkShip(sim);
   assert.equal(trySpawnComet(sim), true);
   const dt = 1 / 60;
-  for (let i = 0; i < 60 * 20; i++) {
+  for (let i = 0; i < 60 * 40; i++) {
     stepSim(sim, dt, idle);
     if (sim.cometHeading && !sim.comet) break;
   }
@@ -357,7 +357,7 @@ test("cometEntered is false while spawn is outside R, then sticky after inward c
   assert.ok(stillInside || sim.cometEntered);
   for (let i = 0; i < 8; i++) stepSim(sim, 1 / 60, idle);
   assert.equal(sim.cometEntered, true);
-  for (let i = 0; i < 60 * 20 && sim.comet; i++) stepSim(sim, 1 / 60, idle);
+  for (let i = 0; i < 60 * 40 && sim.comet; i++) stepSim(sim, 1 / 60, idle);
   assert.equal(sim.comet, null);
   assert.equal(sim.cometEntered, true);
 });

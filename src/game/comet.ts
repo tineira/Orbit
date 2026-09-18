@@ -2,9 +2,9 @@ import type { Comet, NearbyHeading, Planet } from "./types.ts";
 import { angDiff, G, GRAVITY_BASE, getMinimapWorldR, HEADING_MIN_SEP } from "./world.ts";
 
 export const COMET_RED = "#e24b3a";
-export const COMET_NUCLEUS_R = 12;
-export const COMET_CROSS_MIN_S = 6;
-export const COMET_CROSS_MAX_S = 10;
+export const COMET_NUCLEUS_R = 27;
+export const COMET_CROSS_MIN_S = 15;
+export const COMET_CROSS_MAX_S = 25;
 
 const COMET_SPAWN_OUT = 1.02;
 const COMET_THETA_TRIES = 12;
