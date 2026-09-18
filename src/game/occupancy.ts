@@ -202,7 +202,7 @@ export type RockySettlement = {
   home: boolean;
 };
 
-/** Night-side cities / dead districts. Unexplored rockies have none. Moons are later. */
+/** Night-side cities / dead districts. Unexplored rockies have none. */
 export function rockySettlement(
   p: Pick<Planet, "kind" | "kicker" | "settlement" | "radius" | "mass">,
 ): RockySettlement | null {
@@ -223,5 +223,23 @@ export function rockySettlement(
     lit: p.settlement === "active",
     dust: p.settlement === "abandoned",
     home,
+  };
+}
+
+export type MoonOutpost = {
+  /** Body-frame longitude of the single outpost. */
+  a: number;
+  lit: boolean;
+};
+
+/** One pad in the giant's shadow. Unexplored moons have none. */
+export function moonOutpost(
+  p: Pick<Planet, "kind" | "settlement" | "radius" | "mass">,
+): MoonOutpost | null {
+  if (p.kind !== "moon") return null;
+  if (p.settlement !== "active" && p.settlement !== "abandoned") return null;
+  return {
+    a: mineFrac(p.radius * 1.7 + p.mass) * Math.PI * 2,
+    lit: p.settlement === "active",
   };
 }

@@ -148,7 +148,9 @@ Charting is local and procedural. `createSystem` in `src/game/world.ts` builds a
 
 14. **Asteroid occupancy is a mining camp on the pad.** Active and abandoned landable rocks share derrick sites (1 on medium, 2 on primary). Unexplored rocks and shards have no towers.
 
-15. **Rocky occupancy is power on the night side.** Active: warm window clusters on the umbra (Home densest). Abandoned: same sites as dark day-side ticks, light dust wash, no extra craters. Unexplored: unmarked. No derricks, no red beacons, no skylines. Moons are later.
+15. **Rocky occupancy is power on the night side.** Active: warm window clusters on the umbra (Home densest). Abandoned: same sites as dark day-side ticks, light dust wash, no extra craters. Unexplored: unmarked. No derricks, no red beacons, no skylines.
+
+16. **Moon occupancy is one outpost.** A pad, comms dish, and a tight cluster of sheds on the limb — not a moon-wide city, not a mine. Active glows at night. Abandoned is the same buildings in charcoal/grey, no lights. Unexplored moons stay cratered discs.
 
 ---
 
@@ -514,7 +516,7 @@ Camps still force `asteroid-silicate` when inhabited (pass 1). Occupancy does no
 
 ### Canvas / HUD
 
-Moons are still unmarked. Overlay title list and landing card keep printing `kicker` and `body`.
+Overlay title list and landing card keep printing `kicker` and `body`.
 
 #### Rocky worlds (human, locked)
 
@@ -537,6 +539,19 @@ Same sites for active and abandoned. Occupancy is lit vs dead, not kicker archit
 | Atmo halo | Unchanged | Unchanged |
 
 LOD: at system zoom, districts are 2 blocks per site (Home still densest). Close up they break into 4–5 hashed rects. Night glow still only on the umbra. Twins follow the same rules independently.
+
+#### Moons (human, locked)
+
+One outpost in the giant’s shadow. Layout lives in `moonOutpost`; `drawMoonOutpost` parents to `rotate` so the pad sits on the limb. The mast/dish sticks **out** of the silhouette so it reads at system zoom.
+
+| | Active | Abandoned | Unexplored |
+|---|---|---|---|
+| Pad | Pale landing apron | Dark apron | None |
+| Habitat | Roof box plus a tight cluster of extra sheds around the pad | Same cluster, charcoal / grey, no pale pads | None |
+| Mast | Steel spike + dish | Complete, rustier | None |
+| Night | Warm glow on the habitat if the outpost is in umbra | No glow | — |
+
+Still one outpost, not a moon-wide city. Not a mine (no derrick, no red beacon). Same site for active and abandoned.
 
 #### Asteroid mines (human, locked)
 
@@ -847,7 +862,7 @@ These stay out of PR-1–2. Each is its own change when a civ has a **name** and
 - **Title:** `Draw night-side settlements on rocky worlds`
 - **Files:** `src/game/occupancy.ts` (`rockySettlement`), `src/game/draw.ts` (`drawRockySettlement`)
 - **Depends on:** PR-2
-- **Description:** Done for rockies. Active: amber umbra clusters. Abandoned: dust + day-side ruin ticks. Home densest. Moons still later (one outpost, not a city).
+- **Description:** Done for rockies (districts + night glow) and moons (one outpost on the limb).
 
 #### F-4 — Alien fuel / fittings
 
@@ -877,3 +892,4 @@ These stay out of PR-1–2. Each is its own change when a civ has a **name** and
 - Revision 2, 2026-09-17. Locked flag precedence (`makeSystem` implies belt from `flags.camp`; camp wins over `belt=0`; shards and Home ignore `?settlement=`; Camp kicker always active human; leftover Rock may be active without renaming). `occupancyLegal` encodes Home / Camp / shard. Occupancy is a second pass after the moon loop; forced camp still consumes one `rng()` before `extraLand`. Copy cell set is exhaustive; missing key throws. PR-1 retargets `fuel.test.ts` kicker mutations and imports `padHasFuel` in `sim.ts` only (`shipIsRefueling` is the HUD gate). Dry-pad + hull proof moved to PR-2; PR-3 dropped. Weight-band tolerances pinned. HUD call sites and references corrected.
 - Revision 3, 2026-09-17. Asteroid mines: 1–2 derricks on the pad shoulders, active vs wrecked. `?mine=active|abandoned|both` debug sugar. Rocky / moon drawing still later.
 - Revision 4, 2026-09-17. Rocky worlds: night-side amber clusters (Home densest); abandoned is dust + day-side ruin ticks, not craters. Moons still later.
+- Revision 5, 2026-09-17. Moons: one limb outpost (pad, box, dish). Active glows at night; abandoned is dark complete gear.

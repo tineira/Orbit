@@ -53,7 +53,13 @@ import {
   beltBands,
 } from "./world";
 import { asteroidWorldPath, surfaceRadius } from "./asteroid";
-import { asteroidMine, MINE_BEACON_PERIOD_MS, mineBeaconLit, rockySettlement } from "./occupancy";
+import {
+  asteroidMine,
+  MINE_BEACON_PERIOD_MS,
+  mineBeaconLit,
+  moonOutpost,
+  rockySettlement,
+} from "./occupancy";
 import { beltPhase, moteAt } from "./belt";
 
 type DrawOpts = {
@@ -1446,6 +1452,80 @@ function drawRockySettlement(
   ctx.restore();
 }
 
+function drawMoonOutpost(
+  ctx: CanvasRenderingContext2D,
+  p: Planet,
+  cam: Camera,
+  star: Planet | null,
+) {
+  const spec = moonOutpost(p);
+  if (!spec) return;
+  const r = p.radius;
+  const L = lightDir(p, star);
+  const ang = p.rotate + spec.a;
+  const night = Math.cos(ang) * L.x + Math.sin(ang) * L.y < -0.08;
+  const lw = Math.max(1.05, 1.5 / Math.max(0.08, cam.zoom));
+  const padW = r * 0.28;
+  const padD = r * 0.1;
+  const mast = r * 0.32;
+  const dish = r * 0.07;
+
+  ctx.save();
+  ctx.rotate(ang);
+  ctx.translate(r, 0);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  ctx.fillStyle = spec.lit ? ROCKY_PAD : ROCKY_RUIN;
+  ctx.fillRect(-padD * 0.25, -padW / 2, padD, padW);
+  ctx.fillStyle = spec.lit ? ROCKY_ROOF : "rgba(22, 20, 18, 0.92)";
+  ctx.fillRect(-padD * 0.05, -padW * 0.18, r * 0.12, padW * 0.36);
+
+  const n = 5;
+  for (let i = 0; i < n; i++) {
+    const along = (hash(i * 3.1 + p.radius) - 0.5) * padW * 1.35;
+    const inward = -padD * (0.55 + hash(i * 5.2 + p.mass) * 1.1);
+    const bw = r * (0.055 + hash(i * 2.2) * 0.07);
+    const bh = r * (0.045 + hash(i * 4.1) * 0.055);
+    if (spec.lit) {
+      ctx.fillStyle = i % 3 === 0 ? ROCKY_PAD : ROCKY_ROOF;
+    } else {
+      ctx.fillStyle = i % 3 === 0 ? "rgba(16, 15, 14, 0.95)" : "rgba(38, 36, 34, 0.92)";
+    }
+    ctx.fillRect(inward - bw / 2, along - bh / 2, bw, bh);
+  }
+
+  ctx.strokeStyle = spec.lit ? MINE_STEEL : MINE_WRECK;
+  ctx.lineWidth = lw;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(mast, 0);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(mast, 0, dish, -0.95, 0.95);
+  ctx.stroke();
+
+  if (spec.lit && night) {
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const core = Math.max(1.1, 2.2 / Math.max(0.08, cam.zoom));
+    const g = ctx.createRadialGradient(r * 0.05, 0, 0, r * 0.05, 0, core * 4);
+    g.addColorStop(0, "rgba(255, 230, 180, 0.9)");
+    g.addColorStop(0.35, "rgba(240, 170, 70, 0.35)");
+    g.addColorStop(1, "rgba(180, 90, 20, 0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(r * 0.05, 0, core * 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = ROCKY_LIGHT;
+    ctx.beginPath();
+    ctx.arc(r * 0.05, 0, core * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 function drawPlanet(
   ctx: CanvasRenderingContext2D,
   p: Planet,
@@ -1557,6 +1637,7 @@ function drawPlanet(
     ctx.fill();
     if (star) stampBodyShadows(ctx, p, star, bodies);
     if (p.kind === "rocky") drawRockySettlement(ctx, p, cam, star);
+    if (p.kind === "moon") drawMoonOutpost(ctx, p, cam, star);
   }
 
   ctx.restore();

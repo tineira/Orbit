@@ -8,6 +8,7 @@ import {
   mineBeaconLit,
   occupancyLegal,
   padHasFuel,
+  moonOutpost,
   rockySettlement,
   type FlavorArgs,
 } from "./occupancy.ts";
@@ -491,4 +492,22 @@ test("rockySettlement is night sites on active/abandoned rockies only", () => {
     dead!.sites.map((s) => [s.a, s.u]),
     live!.sites.map((s) => [s.a, s.u]),
   );
+});
+
+test("moonOutpost is a single pad on active/abandoned moons only", () => {
+  assert.equal(
+    moonOutpost({ kind: "moon", settlement: "unexplored", radius: 32, mass: 4 }),
+    null,
+  );
+  assert.equal(
+    moonOutpost({ kind: "rocky", settlement: "active", radius: 80, mass: 10 }),
+    null,
+  );
+  const live = moonOutpost({ kind: "moon", settlement: "active", radius: 32, mass: 4 });
+  const dead = moonOutpost({ kind: "moon", settlement: "abandoned", radius: 32, mass: 4 });
+  assert.ok(live);
+  assert.ok(dead);
+  assert.equal(live!.lit, true);
+  assert.equal(dead!.lit, false);
+  assert.equal(live!.a, dead!.a);
 });
