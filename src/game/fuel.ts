@@ -250,6 +250,16 @@ export function fillGrade(ship: Fueled, kind: FuelKind) {
   syncFuelMass(ship);
 }
 
+/** Snap to this engine if the current fuel cell allows it. Does not refill. */
+export function installEngine(ship: Fueled, engine: EngineKind) {
+  const cell = driveCell(ship.fuelKind, engine);
+  if (!cell) return false;
+  ship.engineKind = engine;
+  ship.tankKind = snapTank(ship.tankKind, cell.tanks);
+  applyLoadout(ship);
+  return true;
+}
+
 /** Pads load methane. Other grades dump; leftover CH4 keeps pumping from here. */
 export function beginPadRefill(ship: Fueled) {
   if (ship.fuelKind !== DEFAULT_FUEL_KIND) {

@@ -9,6 +9,20 @@ import {
 import { flavorBody, isOccupiableKind, rollSettlement } from "./occupancy.ts";
 import type { LostCopy, NearbyHeading, Planet, Settlement, TransitBeat } from "./types.ts";
 
+/** One active landable asteroid per chart may carry V2. Not occupancy. */
+export function assignEngineUnlocks(planets: Planet[]) {
+  for (const p of planets) p.unlocksEngine = null;
+  const candidates = planets.filter(
+    (p) => p.kind === "asteroid" && p.landable && p.settlement === "active",
+  );
+  if (candidates.length === 0) return;
+  let pick = candidates[0]!;
+  for (const p of candidates) {
+    if (p.radius > pick.radius) pick = p;
+  }
+  pick.unlocksEngine = "v2";
+}
+
 /** Gravity constant in world units. a = G * GRAVITY_BASE * M / r² */
 export const G = 1;
 /** Default well strength. 1× on the gravity knob is this multiple of the raw G M / r². */
@@ -1451,6 +1465,7 @@ function makeSystem(
   }
 
   assignOccupancy(planets, flags, rng);
+  assignEngineUnlocks(planets);
   return planets;
 }
 

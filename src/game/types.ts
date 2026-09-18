@@ -47,6 +47,12 @@ export type MatterProfileId =
 export type Settlement = "active" | "abandoned" | "unexplored";
 export type CivId = "human";
 
+export type FuelKind = "ch4" | "nh3" | "h2" | "ntr" | "d" | "he3" | "lumen" | "hush";
+
+export type EngineKind = "v1" | "v2" | "thermal" | "torch" | "lumen" | "coil";
+
+export type TankKind = "fuel" | "long" | "cryo" | "hold" | "cistern";
+
 export type Planet = {
   id: string;
   name: string;
@@ -86,13 +92,9 @@ export type Planet = {
   matter: MatterProfileId | null;
   bulk: Mix;
   atmosphere: Mix;
+  /** World unlock on this body. Null/absent = none. V2 is an active asteroid. */
+  unlocksEngine?: EngineKind | null;
 };
-
-export type FuelKind = "ch4" | "nh3" | "h2" | "ntr" | "d" | "he3" | "lumen" | "hush";
-
-export type EngineKind = "v1" | "v2" | "thermal" | "torch" | "lumen" | "coil";
-
-export type TankKind = "fuel" | "long" | "cryo" | "hold" | "cistern";
 
 export type Ship = {
   x: number;

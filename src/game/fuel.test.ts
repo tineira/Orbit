@@ -16,6 +16,7 @@ import {
   fuelGrade,
   fuelMass,
   beginPadRefill,
+  installEngine,
   PAD_REFILL_RATE,
   pumpPadRefill,
   refillFuel,
@@ -35,16 +36,19 @@ import {
 } from "./fuel.ts";
 import {
   CH4_FULL_MASS,
+  assignEngineUnlocks,
   createSystem,
   FUEL_BURN_MAIN,
   FUEL_MAIN_SECONDS,
   RETRO_FORCE,
   SHIP_FUEL_CAPACITY,
+  SHIP_HULL,
   SHIP_MASS,
   STEP,
   THRUST_FORCE,
 } from "./world.ts";
 import { createSim, shipIsRefueling, shipIsRepairing, stepSim } from "./sim.ts";
+import { padHasFuel } from "./occupancy.ts";
 import type { FuelKind } from "./types.ts";
 
 const ship = (fuel = SHIP_FUEL_CAPACITY, fuelKind: FuelKind = DEFAULT_FUEL_KIND) => {
@@ -413,4 +417,86 @@ test("HUD labels and names", () => {
   assert.equal(fuelGrade("he3").hud, "He3");
   assert.equal(fuelGrade("lumen").hud, "LUMEN");
   assert.equal(fuelGrade("hush").hud, "HUSH");
+});
+
+test("exactly one active landable asteroid unlocks V2", () => {
+  const sys = createSystem(1, { camp: true });
+  const flagged = sys.planets.filter((p) => p.unlocksEngine === "v2");
+  assert.equal(flagged.length, 1);
+  const camp = flagged[0]!;
+  assert.equal(camp.kind, "asteroid");
+  assert.equal(camp.landable, true);
+  assert.equal(camp.settlement, "active");
+  assert.equal(camp.kicker, "Camp");
+  assert.ok(sys.planets.every((p) => p.kicker !== "Home" || !p.unlocksEngine));
+});
+
+test("a belt without a Camp does not unlock V2", () => {
+  const sys = createSystem(1, { belt: true, camp: false });
+  assert.ok(sys.planets.some((p) => p.kind === "asteroid"));
+  assert.ok(sys.planets.every((p) => p.unlocksEngine !== "v2"));
+});
+
+test("installEngine upgrades CH4 V1 to V2 and refuses an illegal cell", () => {
+  const s = ship();
+  assert.equal(installEngine(s, "v2"), true);
+  assert.equal(s.engineKind, "v2");
+  assert.equal(s.engineIsp, engineGrade("v2").isp);
+  const hush = ship(80, "hush");
+  hush.engineKind = "coil";
+  applyLoadout(hush);
+  assert.equal(installEngine(hush, "v2"), false);
+  assert.equal(hush.engineKind, "coil");
+});
+
+test("a V2 Camp landing dumps torch onto CH4 V2", () => {
+  const s = ship(80, "he3");
+  s.engineKind = "torch";
+  s.tankKind = "cryo";
+  applyLoadout(s);
+  beginPadRefill(s);
+  assert.equal(installEngine(s, "v2"), true);
+  assert.equal(s.fuelKind, "ch4");
+  assert.equal(s.engineKind, "v2");
+});
+
+test("landing on the flagged Camp installs V2; Home does not", () => {
+  createSystem(1, { camp: true });
+  const sim = createSim();
+  assert.equal(sim.ship.engineKind, "v1");
+  const home = sim.planets.find((p) => p.kicker === "Home");
+  assert.ok(home);
+  assert.ok(!home!.unlocksEngine);
+  const camp = sim.planets.find((p) => p.unlocksEngine === "v2");
+  assert.ok(camp);
+  sim.phase = "flight";
+  sim.padZoomLock = false;
+  sim.landedId = null;
+  sim.takeoffIgnoreId = null;
+  sim.ship.x = camp!.x;
+  sim.ship.y = camp!.y;
+  sim.ship.vx = camp!.vx;
+  sim.ship.vy = camp!.vy;
+  stepSim(sim, 0, {
+    steer: 0,
+    forward: false,
+    reverse: false,
+    aimYaw: null,
+    aimThrust: false,
+  });
+  assert.equal(sim.phase, "landed");
+  assert.equal(sim.landedId, camp!.id);
+  assert.equal(sim.ship.engineKind, "v2");
+  assert.equal(sim.ship.fuelKind, "ch4");
+});
+
+test("an inactive asteroid with a V2 flag does not install", () => {
+  const sys = createSystem(1, { belt: true, camp: false });
+  assignEngineUnlocks(sys.planets);
+  assert.ok(sys.planets.every((p) => p.unlocksEngine !== "v2"));
+  const rock = sys.planets.find((p) => p.kind === "asteroid" && p.landable);
+  assert.ok(rock);
+  rock!.unlocksEngine = "v2";
+  rock!.settlement = "unexplored";
+  assert.equal(padHasFuel(rock!), false);
 });

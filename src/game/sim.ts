@@ -96,6 +96,7 @@ import {
   engineForce,
   beginPadRefill,
   fillGrade,
+  installEngine,
   pumpPadRefill,
   sipField,
   DEFAULT_ENGINE_KIND,
@@ -2699,7 +2700,10 @@ function collidePlanets(sim: Sim) {
       endAdrift(sim);
       s.vx = p.vx;
       s.vy = p.vy;
-      if (padHasFuel(p)) beginPadRefill(s);
+      if (padHasFuel(p)) {
+        beginPadRefill(s);
+        if (p.unlocksEngine) installEngine(s, p.unlocksEngine);
+      }
       stickToPlanet(sim, p);
       faceRadial(sim);
       sim.camera.trauma = Math.min(1, sim.camera.trauma + 0.18);
