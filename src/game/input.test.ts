@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   consumePress,
   dropHeldPresses,
+  isTypingTarget,
   steerFrom,
   thrustFrom,
 } from "./input.ts";
@@ -52,6 +53,16 @@ test("an arrow tap still steers after keyup", () => {
   assert.equal(steerFrom(s), 1);
   dropHeldPresses(s);
   assert.equal(steerFrom(s), 0);
+});
+
+test("typing targets skip game keys", () => {
+  assert.equal(isTypingTarget(null), false);
+  const input = { tagName: "INPUT", isContentEditable: false };
+  const p = { tagName: "P", isContentEditable: false };
+  const edit = { tagName: "DIV", isContentEditable: true };
+  assert.equal(isTypingTarget(input as unknown as EventTarget), true);
+  assert.equal(isTypingTarget(p as unknown as EventTarget), false);
+  assert.equal(isTypingTarget(edit as unknown as EventTarget), true);
 });
 
 test("a thrust tap still counts after keyup", () => {

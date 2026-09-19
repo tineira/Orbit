@@ -92,6 +92,29 @@
   }
 }
 
+.visor-voice-radio {
+  animation: visor-voice-radio 1.8s ease-in-out infinite;
+}
+
+@keyframes visor-voice-radio {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 0.82;
+  }
+  62% {
+    opacity: 0.96;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .visor-voice-radio {
+    animation: none;
+  }
+}
+
 @keyframes creating-pulse {
   0%,
   100% {

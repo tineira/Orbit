@@ -9,7 +9,7 @@
 
 This document locks the visor voice channel. Product decisions in **Key Decisions** are final — do not reopen them in implementation PRs. **Line copy is not locked.** Sentences live on Historia and must not be published to GitHub until they are closed there.
 
-Canonical Notion page: https://app.notion.com/p/3dfa554c3c40812bb79eee3fb015c23b under Orbit parent `3d9a554c3c4081739622ed800df2f0f5`.
+Canonical Notion page: https://app.notion.com/p/3dfa554c3c40812bb79eee3fb015c23b under Orbit parent `3d9a554c3c4081739622ed800df2f0f5`. This file is a **repo mirror of the gameplay lock**, not a PR plan. Line copy stays on Historia.
 
 This is not shipped. The visor today shows gauges, hints, and landing cards. There is no voice channel.
 
@@ -131,6 +131,8 @@ Until then the ladder is: thoughts → ship → human radio.
 
 Shipped: visor (`FlightVisor` in `Overlay.tsx`), `OrbitHint`, landing cards (`flavorBody`), occupancy `settlement` / `civ`, cabin audio (spec CRT, life support), mute, reduced motion.
 
-Not now: voice queue, subtitle strip, PTT, ship grammar, range radio, VO.
+DEV probe (`?dev`): type a line, pick a tag (`thought` / `ship` / `radio` / `static` / `alien`), Play. The visor strip and a per-tag bed + speech synth (no recorded VO). `static` is abandoned radio (no speech). `alien` is a timbre preview, not civ 2. Mute still keeps the text. Not a PTT key and not world triggers.
 
-When implementing (do not reopen this lock): a queue of `source` + `text` + `ttl` in something like `src/game/voice.ts`; publish on `HudSnapshot`; draw under the visor next to `OrbitHint`; audio beds per source; triggers from events that already exist (takeoff, lock, land, adrift, comet enter, `settlement === "active"`).
+Not now: PTT, ship grammar, range radio, event-driven thoughts, recorded VO, Historia copy.
+
+When implementing the real channel (do not reopen this lock): keep the queue in `src/game/voice.ts` (`source` + `text` + `ttl`); publish on `HudSnapshot`; draw under the visor next to `OrbitHint`; audio beds per source; triggers from events that already exist (takeoff, lock, land, adrift, comet enter, `settlement === "active"`). The `?dev` probe stays a probe.

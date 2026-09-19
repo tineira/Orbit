@@ -13,6 +13,14 @@ import { HULL_MAX } from "./hull";
 import { SCAN_SECONDS } from "./matter";
 import { ATMO_STEPS, GRAVITY_STEPS, ORBIT_DRAG_BREAK, getPlanets, isGhostBody, planetById } from "./world";
 import { AIRLOCK_DELAY_MS, CLOCK_REVEAL_MS, airlockScreenFade, splitFoodClock, usesLostCard } from "./adrift";
+import { isTypingTarget } from "./input";
+import {
+  VOICE_SOURCES,
+  VOICE_SOURCE_LABEL,
+  voiceDisplayText,
+  type VoiceSnapshot,
+  type VoiceSource,
+} from "./voice";
 import { cn } from "@/lib/utils";
 
 const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
@@ -40,10 +48,15 @@ type Props = {
   onToggleSpectro: () => void;
   onCycleHud: () => void;
   onOpenAirLock: () => void;
+  onPlayVoice: (source: VoiceSource, text: string) => void;
 };
 
 function isEnterKey(e: KeyboardEvent) {
   return e.code === "Enter" || e.code === "NumpadEnter" || e.key === "Enter";
+}
+
+function isOverlayTyping(e: KeyboardEvent) {
+  return isTypingTarget(e.target);
 }
 
 export function Overlay({
@@ -64,6 +77,7 @@ export function Overlay({
   onToggleSpectro,
   onCycleHud,
   onOpenAirLock,
+  onPlayVoice,
 }: Props) {
   const landed = hud.landedId ? planetById(hud.landedId) : null;
   const crashed = hud.crashedId ? planetById(hud.crashedId) : null;
@@ -73,7 +87,7 @@ export function Overlay({
   useEffect(() => {
     if (hud.phase !== "title") return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.repeat || !isEnterKey(e)) return;
+      if (isOverlayTyping(e) || e.repeat || !isEnterKey(e)) return;
       e.preventDefault();
       onLaunch();
     };
@@ -84,7 +98,7 @@ export function Overlay({
   useEffect(() => {
     if (hud.phase !== "crashed") return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.repeat) return;
+      if (isOverlayTyping(e) || e.repeat) return;
       if (e.code === "KeyR" || e.code === "Space" || isEnterKey(e)) {
         e.preventDefault();
         onReboot();
@@ -97,7 +111,7 @@ export function Overlay({
   useEffect(() => {
     if (hud.phase !== "landed") return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.repeat || !isEnterKey(e)) return;
+      if (isOverlayTyping(e) || e.repeat || !isEnterKey(e)) return;
       e.preventDefault();
       onTakeoff();
     };
@@ -108,7 +122,7 @@ export function Overlay({
   useEffect(() => {
     if (hud.phase !== "title" && hud.phase !== "crashed") return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.repeat || e.code !== "KeyN") return;
+      if (isOverlayTyping(e) || e.repeat || e.code !== "KeyN") return;
       e.preventDefault();
       onNewWorld();
     };
@@ -153,6 +167,7 @@ export function Overlay({
             className={cn(
               "px-4 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6 sm:pt-5",
               dev && hud.physicsMenu ? "pr-[13rem]" : "pr-4 sm:pr-6",
+              dev && !hud.physicsMenu ? "sm:pr-[18rem]" : null,
             )}
           />
           {dev && hud.physicsMenu ? (
@@ -248,6 +263,23 @@ export function Overlay({
             />
           ) : null}
         </div>
+      ) : null}
+
+      {dev && hud.phase !== "creating" && hud.phase !== "transit" ? (
+        <VoiceProbe
+          line={hud.voice}
+          reduced={hud.reducedMotion}
+          onPlay={onPlayVoice}
+          className={cn(
+            "absolute z-20 w-[min(17.5rem,calc(100%-1.5rem))]",
+            hud.phase === "title"
+              ? hud.physicsMenu
+                ? "top-[max(11.5rem,calc(env(safe-area-inset-top)+10.5rem))] right-4 sm:right-8"
+                : "top-[max(4.75rem,calc(env(safe-area-inset-top)+3.75rem))] right-4 sm:right-8"
+              : "bottom-[max(5.5rem,calc(env(safe-area-inset-bottom)+5rem))] right-3 sm:top-[max(0.75rem,env(safe-area-inset-top))] sm:bottom-auto sm:right-6",
+            hud.physicsMenu && hud.phase !== "title" ? "sm:right-[14.5rem]" : null,
+          )}
+        />
       ) : null}
 
       {hud.phase === "flight" && hud.adrift ? (
@@ -1143,6 +1175,9 @@ function FlightVisor({
       {hud.composition ? <BodyMixLines className="mt-1.5" mix={hud.composition} /> : null}
       {hud.spectroScanning ? <ScanPips frac={hud.spectroScan} /> : null}
       <OrbitHint hud={hud} className="mt-2" />
+      {hud.voice ? (
+        <VoiceStrip line={hud.voice} reduced={hud.reducedMotion} className="mt-2 max-w-lg" />
+      ) : null}
     </header>
   );
 }
@@ -1373,6 +1408,137 @@ function KeyTip({
         </>
       )}
     </span>
+  );
+}
+
+function voiceTagClass(source: VoiceSource) {
+  if (source === "thought") return "text-muted";
+  if (source === "ship") return "text-ok";
+  if (source === "radio") return "text-accent";
+  if (source === "static") return "text-muted";
+  return "text-caution";
+}
+
+function VoiceStrip({
+  line,
+  reduced,
+  className,
+}: {
+  line: VoiceSnapshot;
+  reduced: boolean;
+  className?: string;
+}) {
+  const body = voiceDisplayText(line);
+  const flicker = line.source === "radio" && !reduced;
+  return (
+    <div
+      className={cn("min-w-0", className)}
+      role="status"
+      aria-live="polite"
+    >
+      <p
+        className={cn(
+          "font-mono text-[10px] tracking-[0.16em] uppercase",
+          voiceTagClass(line.source),
+        )}
+      >
+        {line.source === "thought" ? "·" : VOICE_SOURCE_LABEL[line.source]}
+      </p>
+      <p
+        className={cn(
+          "mt-0.5 text-sm leading-snug",
+          line.source === "thought" ? "italic text-fg/90" : "font-mono text-fg",
+          line.source === "static" ? "text-muted" : null,
+          flicker ? "visor-voice-radio" : null,
+        )}
+      >
+        {body || "—"}
+      </p>
+    </div>
+  );
+}
+
+function VoiceProbe({
+  line,
+  reduced,
+  onPlay,
+  className,
+}: {
+  line: VoiceSnapshot | null;
+  reduced: boolean;
+  onPlay: (source: VoiceSource, text: string) => void;
+  className?: string;
+}) {
+  const [source, setSource] = useState<VoiceSource>("thought");
+  const [text, setText] = useState("");
+  const play = () => {
+    onPlay(source, text);
+  };
+  return (
+    <div
+      data-ui
+      className={cn(
+        "pointer-events-auto rounded-lg border border-border bg-surface/80 p-2 text-left backdrop-blur-sm",
+        className,
+      )}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <p className="font-mono text-[10px] tracking-[0.16em] uppercase text-muted">visor probe</p>
+      <div className="mt-2 flex flex-wrap gap-1">
+        {VOICE_SOURCES.map((tag) => {
+          const on = tag === source;
+          return (
+            <button
+              key={tag}
+              type="button"
+              data-ui
+              aria-pressed={on}
+              onClick={() => setSource(tag)}
+              className={cn(
+                "rounded-md border px-1.5 py-0.5 font-mono text-[10px] tracking-wide uppercase",
+                on
+                  ? "border-fg/40 text-fg"
+                  : "border-border text-muted hover:text-fg",
+              )}
+            >
+              {VOICE_SOURCE_LABEL[tag]}
+            </button>
+          );
+        })}
+      </div>
+      <label className="mt-2 block">
+        <span className="sr-only">Visor line</span>
+        <input
+          data-ui
+          type="text"
+          value={text}
+          placeholder="type a line"
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || e.shiftKey) return;
+            e.preventDefault();
+            e.stopPropagation();
+            play();
+          }}
+          className="mt-0.5 h-9 w-full rounded-md border border-border bg-bg px-2 font-mono text-xs text-fg placeholder:text-subtle focus:border-border-strong focus:outline-none"
+        />
+      </label>
+      <button
+        type="button"
+        data-ui
+        onClick={play}
+        className="mt-2 h-9 w-full rounded-md bg-fg text-accent-fg text-xs font-medium tracking-wide hover:opacity-90 active:scale-[0.98] transition-[opacity,transform] duration-[var(--motion-quick)] ease-[var(--ease-out)]"
+      >
+        Play
+      </button>
+      {line ? (
+        <VoiceStrip line={line} reduced={reduced} className="mt-2 border-t border-border pt-2" />
+      ) : (
+        <p className="mt-2 font-mono text-[10px] tracking-wide text-subtle">
+          Hear and read. Mute keeps the text.
+        </p>
+      )}
+    </div>
   );
 }
 

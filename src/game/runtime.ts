@@ -45,6 +45,13 @@ import { cycleDrive as stepDrive, cycleTank as stepTank } from "./fuel";
 import { HULL_MAX } from "./hull";
 import type { GameUiHandler, HudSnapshot } from "./types";
 import {
+  isVoiceSource,
+  makeVoiceLine,
+  voiceSnapshot,
+  type VoiceLine,
+  type VoiceSource,
+} from "./voice.ts";
+import {
   createSystem,
   devToolsFromSearch,
   getSystem,
@@ -75,6 +82,7 @@ export type GameHandle = {
   cycleFuel: (dir: number) => void;
   cycleEngine: (dir: number) => void;
   cycleTank: (dir: number) => void;
+  playVoice: (source: VoiceSource, text: string) => void;
   destroy: () => void;
 };
 
@@ -162,6 +170,8 @@ declare global {
       getCometSpent?: () => boolean;
       getCometHeading?: () => { angle: number; kind: string; name: string } | null;
       spawnComet?: () => boolean;
+      playVoice?: (source: string, text: string) => void;
+      getVoice?: () => { source: string; text: string } | null;
       newWorld?: () => void;
       adjustGravity?: (dir: number) => void;
       adjustAtmo?: (dir: number) => void;
@@ -223,6 +233,7 @@ const CREATING_HUD: HudSnapshot = {
   airlockSeqAt: 0,
   reducedMotion: false,
   cometAvailable: false,
+  voice: null,
 };
 
 export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameHandle {
@@ -275,6 +286,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let tWasDown = false;
   let cWasDown = false;
   let pendingPrefs: SimViewPrefs | null = null;
+  let voiceLine: VoiceLine | null = null;
+  let voiceTimer = 0;
 
   const resize = () => {
     const rect = canvas.getBoundingClientRect();
@@ -364,8 +377,28 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       airlockSeqAt: sim.airlockSeqAt,
       reducedMotion: sim.reducedMotion,
       cometAvailable: devTools && !sim.cometSpent,
+      voice: voiceSnapshot(voiceLine, performance.now()),
     };
     onUi(hud);
+  };
+
+  const playVoiceLine = (source: VoiceSource, text: string) => {
+    if (!devTools) return;
+    audio.unlock();
+    const now = performance.now();
+    voiceLine = makeVoiceLine(source, text, now);
+    window.clearTimeout(voiceTimer);
+    voiceTimer = window.setTimeout(() => {
+      voiceLine = null;
+      audio.stopVoice();
+      publish();
+    }, Math.max(0, voiceLine.until - now));
+    publish();
+    try {
+      audio.playVoice(source, voiceLine.text);
+    } catch {
+      /* speech / bed optional */
+    }
   };
 
   const aimYaw = (): number | null => {
@@ -617,6 +650,11 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
           ? { angle: s.cometHeading.angle, kind: s.cometHeading.kind, name: s.cometHeading.name }
           : null,
       spawnComet: () => trySpawnComet(s),
+      playVoice: (source, text) => {
+        if (!isVoiceSource(source)) return;
+        playVoiceLine(source, text);
+      },
+      getVoice: () => voiceSnapshot(voiceLine, performance.now()),
       newWorld: () => chartNewWorld(),
       getLagrangePoints: () =>
         listLagrangePoints(s).map((p) => ({
@@ -893,6 +931,9 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     input.state.qaSteer = null;
     input.state.presses.clear();
     window.clearTimeout(bootTimer);
+    window.clearTimeout(voiceTimer);
+    voiceLine = null;
+    audio.stopVoice();
     cancelAnimationFrame(raf);
     sim = null;
     paintBoot();
@@ -1039,9 +1080,13 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       stepTank(sim.ship, dir);
       publish();
     },
+    playVoice(source, text) {
+      playVoiceLine(source, text);
+    },
     destroy() {
       running = false;
       window.clearTimeout(bootTimer);
+      window.clearTimeout(voiceTimer);
       cancelAnimationFrame(raf);
       ro.disconnect();
       input.destroy();

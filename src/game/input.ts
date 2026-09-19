@@ -1,6 +1,14 @@
 import type { InputState } from "./types";
 import { USER_ZOOM_MAX, USER_ZOOM_MIN } from "./sim.ts";
 
+export function isTypingTarget(el: EventTarget | null): boolean {
+  const t = el as HTMLElement | null;
+  if (!t) return false;
+  const tag = t.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  return Boolean(t.isContentEditable);
+}
+
 const GAME_CODES = new Set([
   "ArrowUp",
   "ArrowDown",
@@ -102,13 +110,7 @@ export function createInput(
     return !!t?.closest("[data-ui]");
   };
 
-  const isTyping = (e: Event) => {
-    const t = e.target as HTMLElement | null;
-    if (!t) return false;
-    const tag = t.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-    return t.isContentEditable;
-  };
+  const isTyping = (e: Event) => isTypingTarget(e.target);
 
   const isZoomKey = (e: KeyboardEvent) => {
     const { code, key } = e;

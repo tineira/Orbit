@@ -1,3 +1,5 @@
+import type { VoiceSnapshot } from "./voice.ts";
+
 export type PlanetKind = "star" | "rocky" | "gas" | "moon" | "asteroid" | "barycenter";
 
 /** Closed catalog. What a body or its atmosphere can be made of. */
@@ -283,6 +285,7 @@ export type HudSnapshot = {
   airlockSeqAt: number;
   reducedMotion: boolean;
   cometAvailable: boolean;
+  voice: VoiceSnapshot | null;
 };
 
 export type InputState = {

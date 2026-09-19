@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Overlay } from "./Overlay";
 import { startGame, type GameHandle } from "./runtime";
 import type { HudSnapshot } from "./types";
+import type { VoiceSource } from "./voice";
 import { HULL_MAX } from "./hull";
 import { SHIP_FUEL_CAPACITY } from "./world";
 
@@ -59,6 +60,7 @@ const INITIAL: HudSnapshot = {
   airlockSeqAt: 0,
   reducedMotion: false,
   cometAvailable: false,
+  voice: null,
 };
 
 export function SpaceGame() {
@@ -127,6 +129,9 @@ export function SpaceGame() {
   const onCycleHud = useCallback(() => {
     gameRef.current?.cycleHud();
   }, []);
+  const onPlayVoice = useCallback((source: VoiceSource, text: string) => {
+    gameRef.current?.playVoice(source, text);
+  }, []);
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-bg text-fg">
@@ -154,6 +159,7 @@ export function SpaceGame() {
         onToggleGravityGrid={onToggleGravityGrid}
         onToggleSpectro={onToggleSpectro}
         onCycleHud={onCycleHud}
+        onPlayVoice={onPlayVoice}
       />
     </div>
   );

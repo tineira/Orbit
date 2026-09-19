@@ -1,6 +1,7 @@
 import { WARP_BOOM_TIMES } from "./world";
 import { airlockFadeAt, airlockFadeMs, airlockHatchAt } from "./adrift";
 import { hullWeldInterval, type HullRepairKind } from "./hull";
+import type { VoiceSource } from "./voice.ts";
 
 function fillPink(data: Float32Array) {
   let b0 = 0;
@@ -113,6 +114,168 @@ function tidyNodes(nodes: AudioNode[]) {
       /* already gone */
     }
   }
+}
+
+const VOICE_SPEECH: Record<
+  Exclude<VoiceSource, "static">,
+  { rate: number; pitch: number; volume: number }
+> = {
+  thought: { rate: 0.94, pitch: 0.84, volume: 0.55 },
+  ship: { rate: 0.76, pitch: 0.42, volume: 0.72 },
+  radio: { rate: 1.04, pitch: 1.12, volume: 0.82 },
+  alien: { rate: 0.58, pitch: 0.22, volume: 0.68 },
+};
+
+function fireVoiceBed(
+  ctx: AudioContext,
+  dest: AudioNode,
+  whiteBuf: AudioBuffer,
+  clickBuf: AudioBuffer | null,
+  source: VoiceSource,
+  nodes: AudioNode[],
+) {
+  const t = ctx.currentTime;
+  const push = (n: AudioNode) => {
+    nodes.push(n);
+  };
+  const stoppable = (n: AudioBufferSourceNode | OscillatorNode, when: number) => {
+    n.start(t);
+    n.stop(when);
+    n.onended = () => {
+      try {
+        n.disconnect();
+      } catch {
+        /* already gone */
+      }
+    };
+    push(n);
+  };
+
+  if (source === "thought") {
+    if (clickBuf) {
+      const click = ctx.createBufferSource();
+      click.buffer = clickBuf;
+      click.playbackRate.value = 1.35;
+      const bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.value = 2400;
+      bp.Q.value = 1.4;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.05, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+      click.connect(bp);
+      bp.connect(g);
+      g.connect(dest);
+      push(bp);
+      push(g);
+      stoppable(click, t + 0.09);
+    }
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(1680, t);
+    osc.frequency.exponentialRampToValueAtTime(980, t + 0.07);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.028, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
+    osc.connect(g);
+    g.connect(dest);
+    push(g);
+    stoppable(osc, t + 0.13);
+    return;
+  }
+
+  if (source === "ship") {
+    const blip = (freq: number, at: number, dur: number, peak: number) => {
+      const osc = ctx.createOscillator();
+      osc.type = "square";
+      osc.frequency.setValueAtTime(freq, t + at);
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.value = 680;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t + at);
+      g.gain.exponentialRampToValueAtTime(peak, t + at + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + at + dur);
+      osc.connect(lp);
+      lp.connect(g);
+      g.connect(dest);
+      push(lp);
+      push(g);
+      osc.start(t + at);
+      osc.stop(t + at + dur + 0.02);
+      osc.onended = () => {
+        try {
+          osc.disconnect();
+        } catch {
+          /* already gone */
+        }
+      };
+      push(osc);
+    };
+    blip(128, 0, 0.09, 0.04);
+    blip(192, 0.07, 0.07, 0.028);
+    return;
+  }
+
+  if (source === "radio" || source === "static") {
+    const hiss = ctx.createBufferSource();
+    hiss.buffer = whiteBuf;
+    hiss.loop = true;
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = source === "static" ? 700 : 900;
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.value = source === "static" ? 1400 : 1800;
+    bp.Q.value = 0.9;
+    const g = ctx.createGain();
+    const peak = source === "static" ? 0.055 : 0.038;
+    const hold = source === "static" ? 1.6 : 0.45;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + 0.04);
+    g.gain.setValueAtTime(peak, t + hold);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + hold + 0.35);
+    hiss.connect(hp);
+    hp.connect(bp);
+    bp.connect(g);
+    g.connect(dest);
+    push(hp);
+    push(bp);
+    push(g);
+    stoppable(hiss, t + hold + 0.4);
+    if (source === "radio") {
+      const carrier = ctx.createOscillator();
+      carrier.type = "sine";
+      carrier.frequency.setValueAtTime(1180, t);
+      const cg = ctx.createGain();
+      cg.gain.setValueAtTime(0.0001, t);
+      cg.gain.exponentialRampToValueAtTime(0.02, t + 0.01);
+      cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+      carrier.connect(cg);
+      cg.connect(dest);
+      push(cg);
+      stoppable(carrier, t + 0.14);
+    }
+    return;
+  }
+
+  const a = ctx.createOscillator();
+  a.type = "sine";
+  a.frequency.setValueAtTime(73, t);
+  const b = ctx.createOscillator();
+  b.type = "sine";
+  b.frequency.setValueAtTime(91.5, t);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.05, t + 0.04);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+  a.connect(g);
+  b.connect(g);
+  g.connect(dest);
+  push(g);
+  stoppable(a, t + 0.95);
+  stoppable(b, t + 0.95);
 }
 
 /** Large hail on a car roof: ice crack + short damped thunk. Not a ringing plate. */
@@ -759,6 +922,8 @@ type AudioApi = {
   setAdriftAlarm: (on: boolean) => void;
   airlockSequence: (reduced?: boolean) => void;
   cancelAirlockSequence: () => void;
+  playVoice: (source: VoiceSource, text: string) => void;
+  stopVoice: () => void;
   setMuted: (muted: boolean) => void;
   destroy: () => void;
 };
@@ -848,6 +1013,8 @@ export function createAudio(): AudioApi {
   // CRT TV power on/off clip for the mass spec panel. On = the degauss
   // thunk at the head of the clip, off = the double pop at the tail.
   let tvLoad: Promise<AudioBuffer> | null = null;
+  const voiceNodes: AudioNode[] = [];
+  let voiceUtter: SpeechSynthesisUtterance | null = null;
 
   const decodeUrl = async (url: string) => {
     const res = await fetch(url);
@@ -1231,6 +1398,49 @@ export function createAudio(): AudioApi {
     pumpLfo.start();
   };
 
+  const stopVoice = () => {
+    voiceUtter = null;
+    try {
+      window.speechSynthesis?.cancel();
+    } catch {
+      /* no speech */
+    }
+    for (const n of voiceNodes) {
+      try {
+        if ("stop" in n && typeof (n as OscillatorNode).stop === "function") {
+          (n as OscillatorNode).stop();
+        }
+        n.disconnect();
+      } catch {
+        /* already gone */
+      }
+    }
+    voiceNodes.length = 0;
+  };
+
+  const speakVoice = (source: VoiceSource, text: string) => {
+    if (muted || source === "static" || !text) return;
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    const spec = VOICE_SPEECH[source];
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = spec.rate;
+    utter.pitch = spec.pitch;
+    utter.volume = spec.volume;
+    utter.onend = () => {
+      if (voiceUtter === utter) voiceUtter = null;
+    };
+    utter.onerror = () => {
+      if (voiceUtter === utter) voiceUtter = null;
+    };
+    voiceUtter = utter;
+    try {
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utter);
+    } catch {
+      voiceUtter = null;
+    }
+  };
+
   const unlock = () => {
     ensure();
     if (ctx && ctx.state === "suspended") void ctx.resume();
@@ -1576,6 +1786,7 @@ export function createAudio(): AudioApi {
     unlock,
     setMuted(next) {
       muted = next;
+      if (next) stopVoice();
       if (master && ctx) {
         master.gain.setTargetAtTime(next ? 0 : 0.9, ctx.currentTime, 0.04);
       }
@@ -2075,6 +2286,15 @@ export function createAudio(): AudioApi {
       stopAirlockNodes();
       restoreWorldGain();
     },
+    playVoice(source, text) {
+      unlock();
+      stopVoice();
+      if (!ctx || !sfx || !whiteBuf) return;
+      void ctx.resume();
+      fireVoiceBed(ctx, sfx, whiteBuf, clickBuf, source, voiceNodes);
+      speakVoice(source, text);
+    },
+    stopVoice,
     crash() {
       if (!ctx || !sfx) return;
       const t = ctx.currentTime;
@@ -2102,6 +2322,7 @@ export function createAudio(): AudioApi {
       osc2.stop(t + 0.22);
     },
     destroy() {
+      stopVoice();
       stopAirlockNodes();
       stopAdriftAlarm();
       document.removeEventListener("visibilitychange", onVis);
