@@ -1,15 +1,17 @@
-# Orbit docs (implementation)
+# Docs de Orbit (implementación)
 
-Notion holds **definition, gameplay, and history**. This folder holds **how to build it**: PR splits, types, files, tests.
+Prosa en **tuteo** (tú / tienes / eres). Nunca voseo (vos / tenés / sos). Los identificadores de código quedan en inglés.
 
-Canonical Notion space: [Orbit](https://app.notion.com/p/3d9a554c3c4081739622ed800df2f0f5). Start there for product. Start here before writing a PR.
+Notion guarda **definición, gameplay e historia**. Esta carpeta guarda **cómo se construye**: tipos, archivos, tests, split de PRs.
 
-| File | What it is | Notion sibling (player-facing) |
+Espacio canónico: [Orbit](https://app.notion.com/p/3d9a554c3c4081739622ed800df2f0f5). Empieza ahí para producto. Empieza aquí antes de un PR.
+
+| Archivo | Qué es | Hermano en Notion (jugador) |
 |---|---|---|
-| `occupancy.md` | Settlement / civ types, weights, flags, PR split | [Mundos](https://app.notion.com/p/3dfa554c3c40810b838edf3fe5cceecd) |
-| `comet.md` | Visitor actor, leftover warp heading, KeyC, PRs | [Cometa](https://app.notion.com/p/3dfa554c3c408183b66cd95df28a84da) |
-| `voice.md` | Mirror of the visor-channel **lock** (not a PR plan). Line copy stays off GitHub. | [Voz](https://app.notion.com/p/3dfa554c3c40812bb79eee3fb015c23b) |
+| `occupancy.md` | Tipos settlement / civ, pesos, flags | [Mundos](https://app.notion.com/p/3dfa554c3c40810b838edf3fe5cceecd) |
+| `comet.md` | Actor visitante, rumbo leftover, KeyC | [Cometa](https://app.notion.com/p/3dfa554c3c408183b66cd95df28a84da) |
+| `voice.md` | Espejo del lock del canal del visor (no es un plan de PRs). El copy de líneas no va a GitHub. | [Voz](https://app.notion.com/p/3dfa554c3c40812bb79eee3fb015c23b) |
 
-Do not put PR plans, file lists, or TypeScript sketches on Notion. Do not put lore, line copy, or closed product tables in this folder.
+No pongas planes de PRs, listas de archivos ni sketches de TypeScript en Notion. No pongas lore, copy de líneas ni tablas de producto cerradas aquí.
 
-Runtime facts: `src/game/` wins if a note disagrees with code.
+Hechos de runtime: gana `src/game/` si una nota discrepa del código.

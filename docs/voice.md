@@ -1,138 +1,138 @@
-# Voz: Visor Channel (Thoughts, Ship, Radio)
+# Voz: canal del visor (pensamientos, nave, radio)
 
-| Field | Value |
+| Campo | Valor |
 |---|---|
-| **Author** | Orbit |
-| **Date** | 2026-09-18 |
-| **Status** | Locked |
-| **Scope** | Client-side 2D space-flight (`src/game/*`). Visor headset. No campaign save, no LLM chat, no 3D walking. |
+| **Autor** | Orbit |
+| **Fecha** | 2026-09-18 |
+| **Estado** | Locked |
+| **Alcance** | Vuelo 2D en cliente (`src/game/*`). Headset del visor. Sin save de campaña, sin chat LLM, sin caminar en 3D. |
 
-This document locks the visor voice channel. Product decisions in **Key Decisions** are final — do not reopen them in implementation PRs. **Line copy is not locked.** Sentences live on Historia and must not be published to GitHub until they are closed there.
+Lock del canal de voz del visor. Las **Decisiones cerradas** son finales: no las reabras en un PR de implementación. **El copy de líneas no está lockeado.** Las frases viven en Historia y no se publican a GitHub hasta que estén cerradas ahí.
 
-Canonical Notion page: https://app.notion.com/p/3dfa554c3c40812bb79eee3fb015c23b under Orbit parent `3d9a554c3c4081739622ed800df2f0f5`. This file is a **repo mirror of the gameplay lock**, not a PR plan. Line copy stays on Historia.
+Página canónica: [Voz](https://app.notion.com/p/3dfa554c3c40812bb79eee3fb015c23b) bajo Orbit `3d9a554c3c4081739622ed800df2f0f5`. Este archivo es un **espejo del lock de gameplay**, no un plan de PRs.
 
-This is not shipped. The visor today shows gauges, hints, and landing cards. There is no voice channel.
+Esto no está shipped. El visor hoy muestra gauges, hints y landing cards. No hay canal de voz.
 
-Sibling locks: occupancy (`docs/occupancy.md`) — radio **reads** `settlement` / `civ`, it does not add fields. Estética (Notion) — the channel is a cabin instrument. Combustible / Composición / Reabastecimiento / comet stay closed. Do not reopen them here.
-
----
-
-## Overview
-
-One visor channel. Four listeners. Not four UIs.
-
-The player is the pilot. The ship is an apparatus. First-person is the 2D craft visor, not a walking FPS. You always have a headset. What changes is **who can answer**.
-
-Landing cards stay world-voice (`flavorBody`, third person). Thoughts are first person. Do not merge them.
-
-Hear and read together. Mute kills audio; text stays. Reduced motion skips pulse, not words.
+Hermanos: occupancy (`docs/occupancy.md`) — la radio **lee** `settlement` / `civ`, no agrega campos. Estética (Notion) — el canal es un instrumento de cabina. Combustible / Composición / Reabastecimiento / cometa siguen cerrados.
 
 ---
 
-## Ladder
+## Principio
 
-| When | Tag | Who speaks | Player talks |
+Un canal de visor. Cuatro oyentes. No cuatro UIs.
+
+Eres el piloto. La nave es un aparato. First-person es el visor de la craft 2D, no un FPS a pie. Siempre hay un headset. Lo que cambia es **quién puede contestar**.
+
+Las landing cards siguen siendo voz del mundo (`flavorBody`, tercera persona). Los pensamientos son primera persona. No los mezcles.
+
+Oyes y lees juntos. Mute apaga el audio; el texto queda. Reduced motion salta el pulso, no las palabras.
+
+---
+
+## Escalera
+
+| Cuándo | Tag | Quién habla | El jugador habla |
 |---|---|---|---|
-| From first takeoff | `thought` | you, to yourself | no — automatic |
-| After first orbit lock or landing | `ship` | cabin computer | later: hold-to-talk. If nobody is in radio range, the key reaches the ship |
-| Near active humans (Camp, Home, staffed pad) | `radio` | people on that body | same key; range picks the listener |
-| After a named civ 2 exists | `radio` (different timbre) | them | same key; maybe you do not understand yet |
+| Desde el primer despegue | `thought` | tú, a ti | no — automático |
+| Después del primer lock o aterrizaje | `ship` | el computador de cabina | después: hold-to-talk. Si no hay radio en rango, la tecla llega a la nave |
+| Cerca de humanos active (Camp, Home, pad staffed) | `radio` | gente en ese cuerpo | la misma tecla; el rango elige al oyente |
+| Cuando exista un civ 2 con nombre | `radio` (timbre distinto) | ellos | la misma tecla; quizá no se entiende todavía |
 
-Camp is the first “other humans nearby” beat. Abandoned Signal is the opposite beat: the mast still points, nobody answers.
+Camp es el primer beat de “otros humanos cerca”. Signal abandoned es el beat contrario: el mástil apunta, nadie contesta.
 
 ---
 
-## Thoughts
+## Pensamientos
 
-Automatic. No key. Short. **Firsts and states**, not a chatterbox.
+Automáticos. Sin tecla. Cortos. Por **primeros y estados**, no un chatterbox.
 
-Audio is dry, close, in-head. Cabin-instrument family (not world synth). First pass may be visor text + tick, no recorded VO.
+Audio seco, cerca, en la cabeza. Familia de instrumentos de cabina (no synth del mundo). La primera pasada puede ser texto + tick del visor, sin VO grabada.
 
-Triggers (one line, then quiet):
+Disparos (una línea, después silencio):
 
-- first takeoff
-- first orbit lock
-- first landing
-- empty tank / adrift clock
-- first Camp on the scope
-- comet warning
+- primer despegue
+- primer orbit lock
+- primer aterrizaje
+- tanque vacío / reloj adrift
+- primer Camp en el scope
+- warning del cometa
 - warp / lost
 
-No loop. No reminder every orbit. Historia owns the sentences; the runtime owns **when** they fire.
+No loop. No recordatorio cada órbita. Historia dueña de las frases; el runtime dueño de **cuándo** disparan.
 
-Procedural flavor: a line may name **this** Camp, then go quiet. No campaign save.
+Sabor procedural: la línea puede nombrar **este** Camp, y callar. No hay save de campaña.
 
 ---
 
-## Ship
+## Nave
 
-Same strip, tag `SHIP`. Cabin instrument: CRT, recorded clip. Inherits Estética, not Asteroids.
+Mismo strip, tag `SHIP`. Instrumento de cabina: CRT, clip grabado. Hereda Estética, no Asteroids.
 
-Not a chatbot. Small grammar over sim state: orbit, fuel, hull, “nobody on that mast.”
+No es un chatbot. Gramática chica sobre estado del sim: órbita, combustible, casco, “nadie en ese mástil”.
 
-**Talking to it** is hold-to-talk (no typing, no menu). One key, two listeners: radio if in range, else the ship.
+**Hablarle** es hold-to-talk (no tipear, no menú). Una tecla, dos oyentes: radio si hay rango, si no la nave.
 
-It turns on as an instrument after the first Kepler lock or the first landing. The opening is still just your own head.
+Se enciende como aparato después del primer lock Kepler o el primer aterrizaje. El arranque sigue siendo sólo tu cabeza.
 
 ---
 
 ## Radio
 
-Occupancy readout. Not a new world field.
+Readout de occupancy. No es un campo nuevo del mundo.
 
-- **Active human** (Home, Camp, staffed Workshop / Archive / Moon / Rock): carrier, someone answers.
-- **Abandoned:** you key, static, nobody answers.
-- **Unexplored:** no carrier.
-- **Star / giant / barycenter:** occupancy null → no radio.
+- **Active human** (Home, Camp, Workshop / Archive / Moon / Rock staffed): hay portadora, alguien contesta.
+- **Abandoned:** pulsas, estático, nadie contesta.
+- **Unexplored:** no hay portadora.
+- **Star / giant / barycenter:** occupancy null → no hay radio.
 
-Range: **orbit lock or landed on that body**. Not a free-space phone. You fly to them, then you talk.
+Rango: **orbit lock o aterrizado en ese cuerpo**. No es un teléfono de espacio libre. Vuelas hasta ellos, después hablas.
 
-Do not pause flight. One or two short replies, then they go quiet. You can land and read the card after.
+No se pausa el vuelo. Una o dos réplicas cortas, y callan. Después puedes aterrizar y leer la card.
 
 ---
 
 ## Aliens
 
-Not now. `CivId` is still `"human"`. Occupancy already requires a name plus one mechanical difference (copy is enough) before civ 2. When that exists, it is the same PTT with a different timbre, not a new UI.
+No ahora. `CivId` sigue siendo `"human"`. Occupancy ya pide nombre + una diferencia mecánica (el copy basta) antes de civ 2. Cuando exista, es el mismo PTT con otro timbre, no una UI nueva.
 
-Until then the ladder is: thoughts → ship → human radio.
-
----
-
-## Key Decisions
-
-1. **POV is the pilot.** The ship is an apparatus. First-person = 2D craft visor, not walking in 3D.
-2. **One channel, four listeners.** No thought-log + console + radio panel + translator.
-3. **Hear and read together.** Mute = audio off, text on. Reduced motion does not drop the text.
-4. **Thoughts first, automatic, event-driven.** One line per first/state.
-5. **Landing cards stay separate.** They remain `flavorBody` (third person). Thoughts are first person.
-6. **One PTT key.** Range decides radio vs ship. No typing. No LLM. No dialogue tree that pauses yaw/burn.
-7. **Radio reads occupancy.** Active answers; abandoned = static; unexplored = no carrier; null = no radio. Range = lock or landed. Camp is the first human beat.
-8. **Aliens only with a named civ 2.** Do not invent alien radio or occupancy fields.
-9. **Occupancy, Composición, Reabastecimiento, comet, and the Asteroids default stay closed.** The channel inherits the cabin CRT family.
-10. **Copy is not locked.** Sentences live on Historia. Do not publish lines to GitHub until they are closed there.
-11. **PTT key, ship name, and recorded VO vs visor tick are not locked.** `KeyV` is free after verbose was removed; it is a candidate, not a decision.
-12. **Rollback is git revert.** No persistence of “I already talked to this Camp” across charts.
+Hasta entonces la escalera es: pensamientos → nave → radio humana.
 
 ---
 
-## What this is not
+## Decisiones cerradas
 
-- Four UIs.
-- Typing, LLM chat, or RPG trees on top of flight.
-- Recorded clips on hail, spool, yaw, burn, warp.
-- Walking around a Camp in 3D. Radio is the social beat; landing stays the 2D pad.
-- Publishing copy to GitHub before Historia.
-- New occupancy fields, alien fuel, or the comet as a voice.
+1. **El punto de vista es el piloto.** La nave es un aparato. First-person = visor de la craft 2D, no caminar en 3D.
+2. **Un canal, cuatro oyentes.** No thought-log + consola + panel de radio + traductor.
+3. **Oír y leer juntos.** Mute = audio off, texto on. Reduced motion no borra el texto.
+4. **Pensamientos primero, automáticos, por eventos.** Una línea por primer/estado.
+5. **Landing cards no se mezclan.** Siguen `flavorBody` (tercera persona). Pensamientos = primera persona.
+6. **Una tecla PTT.** El rango decide radio vs nave. No tipear. No LLM. No árbol de diálogo que pause el yaw/burn.
+7. **Radio lee occupancy.** Active contesta; abandoned = estático; unexplored = sin portadora; null = sin radio. Rango = lock o landed. Camp es el primer beat humano.
+8. **Aliens sólo con civ 2 nombrado.** No inventes radio alien ni campos de occupancy.
+9. **Occupancy, Composición, Reabastecimiento, cometa y el default Asteroids no se reabren.** El canal hereda la familia CRT de cabina.
+10. **Copy no está lockeada.** Las frases viven en Historia. No publiques líneas a GitHub hasta Decisiones cerradas ahí.
+11. **Tecla PTT, nombre de la nave y VO grabada vs tick no están lockeados.** `KeyV` quedó libre al sacar verbose; es candidata, no decisión.
+12. **Rollback es git revert.** No hay persistencia de “ya hablé con este Camp” entre charts.
 
 ---
 
-## Shipped vs this lock
+## Qué no
 
-Shipped: visor (`FlightVisor` in `Overlay.tsx`), `OrbitHint`, landing cards (`flavorBody`), occupancy `settlement` / `civ`, cabin audio (spec CRT, life support), mute, reduced motion.
+- Cuatro UIs.
+- Tipear, chat LLM, o árboles RPG encima del vuelo.
+- Clips grabados en hail, spool, yaw, burn, warp.
+- Caminar en un Camp en 3D. La radio es el beat social; el aterrizaje sigue siendo el pad 2D.
+- Publicar copy a GitHub antes de Historia.
+- Campos nuevos de occupancy, fuel alien, o el cometa como voz.
 
-DEV probe (`?dev`): type a line, pick a tag (`thought` / `ship` / `radio` / `static` / `alien`), Play. The visor strip and a per-tag bed + speech synth (no recorded VO). `static` is abandoned radio (no speech). `alien` is a timbre preview, not civ 2. Mute still keeps the text. Not a PTT key and not world triggers.
+---
 
-Not now: PTT, ship grammar, range radio, event-driven thoughts, recorded VO, Historia copy.
+## Qué hay en código y qué no
 
-When implementing the real channel (do not reopen this lock): keep the queue in `src/game/voice.ts` (`source` + `text` + `ttl`); publish on `HudSnapshot`; draw under the visor next to `OrbitHint`; audio beds per source; triggers from events that already exist (takeoff, lock, land, adrift, comet enter, `settlement === "active"`). The `?dev` probe stays a probe.
+Hecho: visor (`FlightVisor` en `Overlay.tsx`), `OrbitHint`, landing cards (`flavorBody`), occupancy `settlement` / `civ`, audio de cabina (spec CRT, life support), mute, reduced motion.
+
+Probe `?dev`: escribes una línea, eliges un tag (`thought` / `ship` / `radio` / `static` / `alien`), Play. Strip del visor y un bed por tag + speech synth (sin VO grabada). `static` es radio abandoned (sin habla). `alien` es un preview de timbre, no civ 2. Mute sigue dejando el texto. No es tecla PTT ni triggers del mundo.
+
+No ahora: PTT, gramática de la nave, radio por rango, pensamientos disparados por eventos, VO grabada, copy de Historia.
+
+Cuando implementes el canal de verdad (no reabras este lock): deja la cola en `src/game/voice.ts` (`source` + `text` + `ttl`); publica en `HudSnapshot`; dibuja bajo el visor junto a `OrbitHint`; beds de audio por source; triggers desde eventos que ya existen (takeoff, lock, land, adrift, comet enter, `settlement === "active"`). El probe `?dev` sigue siendo probe.
