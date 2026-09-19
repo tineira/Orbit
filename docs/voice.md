@@ -11,7 +11,7 @@ Lock del canal de voz del visor. Las **Decisiones cerradas** son finales: no las
 
 Página canónica: [Voz](https://app.notion.com/p/3dfa554c3c40812bb79eee3fb015c23b) bajo Orbit `3d9a554c3c4081739622ed800df2f0f5`. Este archivo es un **espejo del lock de gameplay**, no un plan de PRs.
 
-Esto no está shipped. El visor hoy muestra gauges, hints y landing cards. No hay canal de voz.
+El **canal** está lockeado. El **habla** (qué motor, qué boca por tag) es **WIP** — ver abajo. El visor shipped muestra gauges, hints y landing cards. El habla solo vive en el probe `?dev`.
 
 Hermanos: occupancy (`docs/occupancy.md`) — la radio **lee** `settlement` / `civ`, no agrega campos. Estética (Notion) — el canal es un instrumento de cabina. Combustible / Composición / Reabastecimiento / cometa siguen cerrados.
 
@@ -127,12 +127,34 @@ Hasta entonces la escalera es: pensamientos → nave → radio humana.
 
 ---
 
+## Habla (WIP, 19 sep 2026)
+
+No es una decisión cerrada. No reabras el lock del canal para pelear el motor. VO grabada vs tick sigue abierta.
+
+Referencias de tono (no son assets, no se clonan):
+- Roles: NEW ORBIT (BLACKISH, 2012) — tú a ti, computador frío, otra persona en radio.
+- Pensamiento: *Memento*, escena “Okay, so what am I doing?” — bajo, cerca, inseguro, buscando. No un narrador seguro.
+
+Motor actual del probe `?dev`: Kitten TTS nano ONNX (`KittenML/kitten-tts-nano-0.8`) en `src/game/speak.ts`. Mismas bocas en cada browser/OS. No Web Speech. No SAM. No la lengua del sistema. El WASM de onnxruntime-web se sirve desde jsDelivr `1.30.0`; un hilo (sin COI).
+
+| Tag | Boca Kitten | Speed | Filtro |
+|---|---|---|---|
+| `thought` | Hugo | 0.8 | chest + in-head (lowshelf, lowpass ~1750) |
+| `ship` | Bruno | 0.84 | speaker CRT |
+| `radio` | Leo | 1.02 | bandpass + estático |
+| `alien` | Kiki | 0.8 | ring |
+| `static` | — | — | hiss, sin habla |
+
+Probe: escribes una línea, eliges tag, Play. Strip en el visor + bed. Primera Play baja ~25 MB de Hugging Face y puede tardar; el panel dice “loading mouths…”. Si el habla falla, el error queda en el panel (no solo SFX). Mute deja el texto.
+
+No es PTT. No dispara eventos del mundo. El copy de líneas sigue en Historia.
+
+Archivos: `src/game/speak.ts`, `src/game/voice.ts`, `Overlay.tsx` (`VoiceStrip` / `VoiceProbe`), `audio.ts` (`playVoice`).
+
 ## Qué hay en código y qué no
 
-Hecho: visor (`FlightVisor` en `Overlay.tsx`), `OrbitHint`, landing cards (`flavorBody`), occupancy `settlement` / `civ`, audio de cabina (spec CRT, life support), mute, reduced motion.
-
-Probe `?dev`: escribes una línea, eliges un tag (`thought` / `ship` / `radio` / `static` / `alien`), Play. Strip del visor y un bed por tag + speech synth (sin VO grabada). `static` es radio abandoned (sin habla). `alien` es un preview de timbre, no civ 2. Mute sigue dejando el texto. No es tecla PTT ni triggers del mundo.
+Hecho: visor (`FlightVisor` en `Overlay.tsx`), `OrbitHint`, landing cards (`flavorBody`), occupancy `settlement` / `civ`, audio de cabina (spec CRT, life support), mute, reduced motion, cola + strip + probe `?dev` (WIP habla).
 
 No ahora: PTT, gramática de la nave, radio por rango, pensamientos disparados por eventos, VO grabada, copy de Historia.
 
-Cuando implementes el canal de verdad (no reabras este lock): deja la cola en `src/game/voice.ts` (`source` + `text` + `ttl`); publica en `HudSnapshot`; dibuja bajo el visor junto a `OrbitHint`; beds de audio por source; triggers desde eventos que ya existen (takeoff, lock, land, adrift, comet enter, `settlement === "active"`). El probe `?dev` sigue siendo probe.
+Cuando implementes el canal de verdad (no reabras este lock): deja la cola en `src/game/voice.ts` (`source` + `text` + `ttl`); publica en `HudSnapshot`; dibuja bajo el visor junto a `OrbitHint`; beds de audio por source; triggers desde eventos que ya existen (takeoff, lock, land, adrift, comet enter, `settlement === "active"`). El probe `?dev` sigue siendo probe. El motor de habla se decide aparte.

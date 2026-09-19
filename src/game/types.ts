@@ -286,6 +286,8 @@ export type HudSnapshot = {
   reducedMotion: boolean;
   cometAvailable: boolean;
   voice: VoiceSnapshot | null;
+  voiceLoading: boolean;
+  voiceError: string | null;
 };
 
 export type InputState = {

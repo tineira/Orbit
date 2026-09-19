@@ -2,6 +2,7 @@ import { WARP_BOOM_TIMES } from "./world";
 import { airlockFadeAt, airlockFadeMs, airlockHatchAt } from "./adrift";
 import { hullWeldInterval, type HullRepairKind } from "./hull";
 import type { VoiceSource } from "./voice.ts";
+import { renderSpeak, type SpeakPcm } from "./speak.ts";
 
 function fillPink(data: Float32Array) {
   let b0 = 0;
@@ -116,16 +117,6 @@ function tidyNodes(nodes: AudioNode[]) {
   }
 }
 
-const VOICE_SPEECH: Record<
-  Exclude<VoiceSource, "static">,
-  { rate: number; pitch: number; volume: number }
-> = {
-  thought: { rate: 0.94, pitch: 0.84, volume: 0.55 },
-  ship: { rate: 0.76, pitch: 0.42, volume: 0.72 },
-  radio: { rate: 1.04, pitch: 1.12, volume: 0.82 },
-  alien: { rate: 0.58, pitch: 0.22, volume: 0.68 },
-};
-
 function fireVoiceBed(
   ctx: AudioContext,
   dest: AudioNode,
@@ -133,6 +124,7 @@ function fireVoiceBed(
   clickBuf: AudioBuffer | null,
   source: VoiceSource,
   nodes: AudioNode[],
+  speechSeconds = 0,
 ) {
   const t = ctx.currentTime;
   const push = (n: AudioNode) => {
@@ -231,7 +223,12 @@ function fireVoiceBed(
     bp.Q.value = 0.9;
     const g = ctx.createGain();
     const peak = source === "static" ? 0.055 : 0.038;
-    const hold = source === "static" ? 1.6 : 0.45;
+    const hold =
+      source === "static"
+        ? 1.6
+        : speechSeconds > 0
+          ? Math.max(0.35, speechSeconds)
+          : 0.45;
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(peak, t + 0.04);
     g.gain.setValueAtTime(peak, t + hold);
@@ -276,6 +273,114 @@ function fireVoiceBed(
   push(g);
   stoppable(a, t + 0.95);
   stoppable(b, t + 0.95);
+}
+
+function playSpeakPcm(
+  ctx: AudioContext,
+  dest: AudioNode,
+  source: Exclude<VoiceSource, "static">,
+  rendered: SpeakPcm,
+  nodes: AudioNode[],
+) {
+  const t = ctx.currentTime;
+  const dur = rendered.pcm.length / rendered.sampleRate;
+  const buf = ctx.createBuffer(1, rendered.pcm.length, rendered.sampleRate);
+  buf.getChannelData(0).set(new Float32Array(rendered.pcm));
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const keep = (n: AudioNode) => {
+    nodes.push(n);
+    return n;
+  };
+  keep(src);
+
+  const out = ctx.createGain();
+  keep(out);
+  let node: AudioNode = src;
+
+  if (source === "thought") {
+    const hp = ctx.createBiquadFilter();
+    keep(hp);
+    hp.type = "highpass";
+    hp.frequency.value = 70;
+    const shelf = ctx.createBiquadFilter();
+    keep(shelf);
+    shelf.type = "lowshelf";
+    shelf.frequency.value = 220;
+    shelf.gain.value = 5.5;
+    const lp = ctx.createBiquadFilter();
+    keep(lp);
+    lp.type = "lowpass";
+    lp.frequency.value = 1750;
+    lp.Q.value = 0.55;
+    src.connect(hp);
+    hp.connect(shelf);
+    shelf.connect(lp);
+    node = lp;
+    out.gain.value = 0.36;
+  } else if (source === "ship") {
+    const hp = ctx.createBiquadFilter();
+    keep(hp);
+    hp.type = "highpass";
+    hp.frequency.value = 320;
+    const lp = ctx.createBiquadFilter();
+    keep(lp);
+    lp.type = "lowpass";
+    lp.frequency.value = 1350;
+    lp.Q.value = 0.9;
+    src.connect(hp);
+    hp.connect(lp);
+    node = lp;
+    out.gain.value = 0.62;
+  } else if (source === "radio") {
+    const bp = ctx.createBiquadFilter();
+    keep(bp);
+    bp.type = "bandpass";
+    bp.frequency.value = 1650;
+    bp.Q.value = 1.15;
+    src.connect(bp);
+    node = bp;
+    out.gain.value = 0.7;
+  } else {
+    const hp = ctx.createBiquadFilter();
+    keep(hp);
+    hp.type = "highpass";
+    hp.frequency.value = 180;
+    const ring = ctx.createGain();
+    keep(ring);
+    ring.gain.value = 0;
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.value = 73;
+    osc.connect(ring.gain);
+    osc.start(t);
+    osc.stop(t + dur + 0.05);
+    osc.onended = () => {
+      try {
+        osc.disconnect();
+      } catch {
+        /* already gone */
+      }
+    };
+    keep(osc);
+    src.connect(hp);
+    hp.connect(ring);
+    const dry = ctx.createGain();
+    keep(dry);
+    dry.gain.value = 0.28;
+    hp.connect(dry);
+    const mix = ctx.createGain();
+    keep(mix);
+    ring.connect(mix);
+    dry.connect(mix);
+    node = mix;
+    out.gain.value = 0.58;
+  }
+
+  node.connect(out);
+  out.connect(dest);
+  src.start(t);
+  src.stop(t + dur + 0.04);
 }
 
 /** Large hail on a car roof: ice crack + short damped thunk. Not a ringing plate. */
@@ -922,7 +1027,7 @@ type AudioApi = {
   setAdriftAlarm: (on: boolean) => void;
   airlockSequence: (reduced?: boolean) => void;
   cancelAirlockSequence: () => void;
-  playVoice: (source: VoiceSource, text: string) => void;
+  playVoice: (source: VoiceSource, text: string) => Promise<number>;
   stopVoice: () => void;
   setMuted: (muted: boolean) => void;
   destroy: () => void;
@@ -1014,7 +1119,6 @@ export function createAudio(): AudioApi {
   // thunk at the head of the clip, off = the double pop at the tail.
   let tvLoad: Promise<AudioBuffer> | null = null;
   const voiceNodes: AudioNode[] = [];
-  let voiceUtter: SpeechSynthesisUtterance | null = null;
 
   const decodeUrl = async (url: string) => {
     const res = await fetch(url);
@@ -1399,12 +1503,6 @@ export function createAudio(): AudioApi {
   };
 
   const stopVoice = () => {
-    voiceUtter = null;
-    try {
-      window.speechSynthesis?.cancel();
-    } catch {
-      /* no speech */
-    }
     for (const n of voiceNodes) {
       try {
         if ("stop" in n && typeof (n as OscillatorNode).stop === "function") {
@@ -1416,29 +1514,6 @@ export function createAudio(): AudioApi {
       }
     }
     voiceNodes.length = 0;
-  };
-
-  const speakVoice = (source: VoiceSource, text: string) => {
-    if (muted || source === "static" || !text) return;
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
-    const spec = VOICE_SPEECH[source];
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.rate = spec.rate;
-    utter.pitch = spec.pitch;
-    utter.volume = spec.volume;
-    utter.onend = () => {
-      if (voiceUtter === utter) voiceUtter = null;
-    };
-    utter.onerror = () => {
-      if (voiceUtter === utter) voiceUtter = null;
-    };
-    voiceUtter = utter;
-    try {
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utter);
-    } catch {
-      voiceUtter = null;
-    }
   };
 
   const unlock = () => {
@@ -2286,13 +2361,19 @@ export function createAudio(): AudioApi {
       stopAirlockNodes();
       restoreWorldGain();
     },
-    playVoice(source, text) {
+    async playVoice(source, text) {
       unlock();
       stopVoice();
-      if (!ctx || !sfx || !whiteBuf) return;
+      if (!ctx || !sfx || !whiteBuf) return 0;
       void ctx.resume();
-      fireVoiceBed(ctx, sfx, whiteBuf, clickBuf, source, voiceNodes);
-      speakVoice(source, text);
+      const spoken = muted ? null : await renderSpeak(source, text);
+      if (!ctx || !sfx || !whiteBuf) return 0;
+      const seconds = spoken ? spoken.pcm.length / spoken.sampleRate : 0;
+      fireVoiceBed(ctx, sfx, whiteBuf, clickBuf, source, voiceNodes, seconds);
+      if (spoken && source !== "static") {
+        playSpeakPcm(ctx, sfx, source, spoken, voiceNodes);
+      }
+      return Math.round(seconds * 1000);
     },
     stopVoice,
     crash() {

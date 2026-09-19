@@ -61,6 +61,8 @@ const INITIAL: HudSnapshot = {
   reducedMotion: false,
   cometAvailable: false,
   voice: null,
+  voiceLoading: false,
+  voiceError: null,
 };
 
 export function SpaceGame() {

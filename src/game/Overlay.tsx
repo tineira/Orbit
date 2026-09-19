@@ -268,6 +268,8 @@ export function Overlay({
       {dev && hud.phase !== "creating" && hud.phase !== "transit" ? (
         <VoiceProbe
           line={hud.voice}
+          loading={hud.voiceLoading}
+          error={hud.voiceError}
           reduced={hud.reducedMotion}
           onPlay={onPlayVoice}
           className={cn(
@@ -1460,11 +1462,15 @@ function VoiceStrip({
 
 function VoiceProbe({
   line,
+  loading,
+  error,
   reduced,
   onPlay,
   className,
 }: {
   line: VoiceSnapshot | null;
+  loading: boolean;
+  error: string | null;
   reduced: boolean;
   onPlay: (source: VoiceSource, text: string) => void;
   className?: string;
@@ -1531,7 +1537,11 @@ function VoiceProbe({
       >
         Play
       </button>
-      {line ? (
+      {loading ? (
+        <p className="mt-2 font-mono text-[10px] tracking-wide text-subtle">loading mouths…</p>
+      ) : error ? (
+        <p className="mt-2 font-mono text-[10px] tracking-wide text-warn">{error}</p>
+      ) : line ? (
         <VoiceStrip line={line} reduced={reduced} className="mt-2 border-t border-border pt-2" />
       ) : (
         <p className="mt-2 font-mono text-[10px] tracking-wide text-subtle">

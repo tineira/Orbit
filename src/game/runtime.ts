@@ -48,9 +48,12 @@ import {
   isVoiceSource,
   makeVoiceLine,
   voiceSnapshot,
+  voiceTtlMs,
   type VoiceLine,
   type VoiceSource,
 } from "./voice.ts";
+import { lastSpeakError } from "./speak.ts";
+
 import {
   createSystem,
   devToolsFromSearch,
@@ -234,6 +237,8 @@ const CREATING_HUD: HudSnapshot = {
   reducedMotion: false,
   cometAvailable: false,
   voice: null,
+  voiceLoading: false,
+  voiceError: null,
 };
 
 export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameHandle {
@@ -288,6 +293,9 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let pendingPrefs: SimViewPrefs | null = null;
   let voiceLine: VoiceLine | null = null;
   let voiceTimer = 0;
+  let voiceLoading = false;
+  let voiceError: string | null = null;
+  let voiceGen = 0;
 
   const resize = () => {
     const rect = canvas.getBoundingClientRect();
@@ -378,27 +386,45 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       reducedMotion: sim.reducedMotion,
       cometAvailable: devTools && !sim.cometSpent,
       voice: voiceSnapshot(voiceLine, performance.now()),
+      voiceLoading,
+      voiceError,
     };
     onUi(hud);
   };
 
   const playVoiceLine = (source: VoiceSource, text: string) => {
     if (!devTools) return;
+    const gen = ++voiceGen;
     audio.unlock();
     const now = performance.now();
     voiceLine = makeVoiceLine(source, text, now);
-    window.clearTimeout(voiceTimer);
-    voiceTimer = window.setTimeout(() => {
-      voiceLine = null;
-      audio.stopVoice();
-      publish();
-    }, Math.max(0, voiceLine.until - now));
+    voiceLoading = true;
+    voiceError = null;
     publish();
-    try {
-      audio.playVoice(source, voiceLine.text);
-    } catch {
-      /* speech / bed optional */
-    }
+    void (async () => {
+      let spokenMs = 0;
+      try {
+        spokenMs = await audio.playVoice(source, voiceLine!.text);
+      } catch (err) {
+        spokenMs = 0;
+        voiceError = err instanceof Error ? err.message : String(err);
+      }
+      if (gen !== voiceGen) return;
+      voiceLoading = false;
+      if (spokenMs === 0 && source !== "static") {
+        voiceError = voiceError ?? lastSpeakError();
+      }
+      const hold = Math.max(voiceTtlMs(voiceLine!.text, source), spokenMs + 280);
+      voiceLine!.until = performance.now() + hold;
+      window.clearTimeout(voiceTimer);
+      voiceTimer = window.setTimeout(() => {
+        if (gen !== voiceGen) return;
+        voiceLine = null;
+        audio.stopVoice();
+        publish();
+      }, hold);
+      publish();
+    })();
   };
 
   const aimYaw = (): number | null => {
