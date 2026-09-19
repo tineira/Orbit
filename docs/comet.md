@@ -7,6 +7,8 @@
 | **Status** | Locked |
 | **Scope** | Client-side 2D space-flight (`src/game/*`). Chart-local visitor. No comet persistence, no server sim, no multiplayer comet state. Chase minigame is **not** specified here. |
 
+Player-facing lock: Notion [Cometa](https://app.notion.com/p/3dfa554c3c408183b66cd95df28a84da). **This file is the implementation plan** (types, files, tests, PR split). Do not copy PR plans back to Notion.
+
 This document locks the comet as a current-chart visitor, the leftover warp heading, DEV probe `KeyC`, and the branch that must not call `createSystem`. Product decisions in **Key Decisions** are final — do not reopen them in implementation PRs. Spell it **comet**, not commet.
 
 The chase minigame (arrival, camera, landing, debris combat) is explicitly **not** locked. See [Minigame (TBD)](#minigame-tbd) and [Open Questions](#open-questions). The only minigame fact that **is** locked: warping at the comet heading enters a minigame instead of `createSystem`.

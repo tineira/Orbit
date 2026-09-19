@@ -4,8 +4,10 @@
 |---|---|
 | **Author** | Orbit |
 | **Date** | 2026-09-17 |
-| **Status** | Draft |
+| **Status** | Locked (shipped) |
 | **Scope** | Client-side 2D space-flight (`src/game/*`). Local procedural charting. No occupancy persistence, no server sim, no multiplayer occupancy. |
+
+Player-facing catalog: Notion [Mundos](https://app.notion.com/p/3dfa554c3c40810b838edf3fe5cceecd). **This file is the implementation lock** (types, weights, flags, PR split). Do not copy PR plans back to Notion.
 
 This document locks the occupancy model, the first-pass gameplay, charting weights, flag precedence, and the PR split. Product decisions in **Key Decisions** are final — do not reopen them in implementation PRs.
 
