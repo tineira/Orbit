@@ -49,6 +49,7 @@ import {
   FLARE_LONG_CHANCE,
   getStart,
   getSystem,
+  getPlanets,
   createSystem,
   getMinimapWorldR,
   getNearbyHeadings,
@@ -98,6 +99,7 @@ import {
   fillGrade,
   installEngine,
   pumpPadRefill,
+  syncFuelMass,
   sipField,
   DEFAULT_ENGINE_KIND,
   DEFAULT_FUEL_KIND,
@@ -122,6 +124,7 @@ import {
   writeCheckpoint,
   type CampaignState,
 } from "./campaign.ts";
+import { applyBodyGrant, chartStoryPlace, storyPlaceById, type StoryPlace } from "./place.ts";
 
 export type Sim = {
   ship: Ship;
@@ -519,15 +522,49 @@ function applyCampaignShip(ship: Ship, saved: CampaignState["checkpoint"]["ship"
 }
 
 function rechartToCheckpoint(sim: Sim, seed: number) {
+  const placeId = sim.campaign?.place;
+  const place = placeId ? storyPlaceById(placeId) : null;
+  if (place && place.seed === seed) {
+    const already = getSystem().seed === seed && getPlanets().some((p) => p.placeRef != null);
+    if (!already) chartIntoSim(sim, () => chartStoryPlace(place, false));
+    return;
+  }
   if (getSystem().seed === seed) return;
+  chartIntoSim(sim, () => createSystem(seed));
+}
+
+function chartIntoSim(sim: Sim, chart: () => void) {
   const prefs = simViewPrefs(sim);
-  createSystem(seed);
+  chart();
   const sys = getSystem();
   sim.planets = copyPlanets(sys.planets);
   sim.nearby = sys.nearby.slice();
   resetCometChart(sim);
   clearSpectroChart(sim);
   applySimViewPrefs(sim, prefs);
+}
+
+/** First sit on a story place: the start ref, its fuel, and its grant. */
+export function applyStoryStart(sim: Sim, place: StoryPlace) {
+  if (!sim.campaign) return;
+  sim.campaignPlaceId = place.id;
+  const ref = place.start?.ref;
+  const body = ref ? sim.planets.find((p) => p.placeRef === ref) : undefined;
+  if (body) {
+    landOnBody(sim, body.id);
+    if (body.grant) applyBodyGrant(sim.ship, body.grant, sim.campaign);
+    if (place.start) {
+      sim.ship.fuel = Math.min(sim.ship.fuelCapacity, Math.max(0, place.start.fuel));
+      syncFuelMass(sim.ship);
+    }
+  }
+  writeCheckpoint(sim.campaign, {
+    seed: getSystem().seed,
+    landedId: sim.landedId,
+    ship: campaignShipFrom(sim.ship),
+    place: place.id,
+    leg: null,
+  });
 }
 
 function landOnBody(sim: Sim, id: string | null) {
@@ -957,7 +994,7 @@ function pointsForPair(body: Planet, parent: Planet, gravityScale: number): Lagr
   const R = bodyOrbitRadius(body);
   const a = body.orbitA;
   const w = bodyOrbitOmega(body, gravityScale);
-  if (w <= 0 || R <= parent.radius * 2.2) return [];
+  if (w === 0 || !Number.isFinite(w) || R <= parent.radius * 2.2) return [];
   const mu = body.mass / (parent.mass + body.mass);
   const hill = R * Math.cbrt(Math.max(1e-8, mu / 3));
   const fAlong = (r: number) => rayAccel(r, a, parent, body, w, gravityScale);
@@ -1034,7 +1071,7 @@ function pointsForBinary(
 ): LagrangePoint[] {
   if (a.orbitW == null) return [];
   const w = bodyOrbitOmega(a, gravityScale);
-  if (w <= 0) return [];
+  if (w === 0 || !Number.isFinite(w)) return [];
   const angA = Math.atan2(a.y - bary.y, a.x - bary.x);
   const angB = Math.atan2(b.y - bary.y, b.x - bary.x);
   const Ra = Math.hypot(a.x - bary.x, a.y - bary.y);
@@ -1629,8 +1666,9 @@ function stepOrbitingBodies(planets: Planet[], dt: number, gravityScale: number)
     p.orbitA += dTheta;
     const mu = n * n * a * a * a;
     const k = keplerRail(a, e, peri, p.orbitA, mu);
-    p.vx = parent.vx + k.vx;
-    p.vy = parent.vy + k.vy;
+    const dir = n < 0 ? -1 : 1;
+    p.vx = parent.vx + dir * k.vx;
+    p.vy = parent.vy + dir * k.vy;
     p.x = parent.x + k.x;
     p.y = parent.y + k.y;
   }
@@ -2809,6 +2847,7 @@ function collidePlanets(sim: Sim) {
         beginPadRefill(s);
         if (p.unlocksEngine) installEngine(s, p.unlocksEngine);
       }
+      if (p.grant) applyBodyGrant(s, p.grant, sim.campaign);
       stickToPlanet(sim, p);
       faceRadial(sim);
       sim.camera.trauma = Math.min(1, sim.camera.trauma + 0.18);
