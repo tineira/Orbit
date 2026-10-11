@@ -37,8 +37,12 @@ export function occupancyLegal(
   return { ok: true };
 }
 
-/** Pads load methane. Active settlements only. */
-export function padHasFuel(p: Pick<Planet, "settlement">): boolean {
+/** Pads load methane. Active settlements, unless a story place overrides the pad. */
+export function padHasFuel(
+  p: Pick<Planet, "settlement"> & { pad?: "on" | "off" | null },
+): boolean {
+  if (p.pad === "on") return true;
+  if (p.pad === "off") return false;
   return p.settlement === "active";
 }
 

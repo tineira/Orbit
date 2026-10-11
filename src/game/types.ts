@@ -97,6 +97,15 @@ export type Planet = {
   atmosphere: Mix;
   /** World unlock on this body. Null/absent = none. V2 is an active asteroid. */
   unlocksEngine?: EngineKind | null;
+  /** Story pad. Absent on a random chart, so fuel still follows settlement. */
+  pad?: "on" | "off";
+  /** Installed on landing. Absent on a random chart. */
+  grant?:
+    | { engine: EngineKind }
+    | { tank: TankKind }
+    | { module: "transceiver" | "atmoTrap" | "hushDetector" };
+  /** Story-place ref, such as "rock". Absent on a random chart. */
+  placeRef?: string;
 };
 
 export type Ship = {

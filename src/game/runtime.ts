@@ -1,5 +1,6 @@
 import { CLOCK_REVEAL_MS } from "./adrift";
 import { campaignFromSearch, campaignShipFrom, loadCampaign, newCampaign, saveCampaign } from "./campaign";
+import { chartStoryPlace, placeFromSearch, storyPlaceById } from "./place";
 import { createAudio } from "./audio";
 import { drawFrame } from "./draw";
 import {
@@ -23,6 +24,7 @@ import {
   launchSim,
   applyDebugWarp,
   applyCampaignBoot,
+  applyStoryStart,
   commitPadCheckpoint,
   rebootSim,
   setUserZoom,
@@ -1260,13 +1262,34 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   const begin = () => {
     if (!running || sim) return;
     const campaignOn = campaignFromSearch(window.location.search);
-    const loaded = campaignOn ? loadCampaign() : null;
-    if (loaded) createSystem(loaded.checkpoint.seed);
+    const placeId = campaignOn ? placeFromSearch(window.location.search) : null;
+    const forced = placeId ? storyPlaceById(placeId) : null;
+    if (campaignOn && placeId && !forced && import.meta.env.DEV) {
+      throw new Error(`unknown story place ${placeId}`);
+    }
+    const loaded = campaignOn && !forced ? loadCampaign() : null;
+    const savedPlace = loaded?.place ? storyPlaceById(loaded.place) : null;
+    if (campaignOn && loaded?.place && !savedPlace && import.meta.env.DEV) {
+      throw new Error(`unknown story place ${loaded.place}`);
+    }
+    if (forced) chartStoryPlace(forced, import.meta.env.DEV);
+    else if (savedPlace) chartStoryPlace(savedPlace, import.meta.env.DEV);
+    else if (loaded) createSystem(loaded.checkpoint.seed);
     else createSystem();
     sim = createSim();
     if (campaignOn) {
-      if (loaded) {
+      if (forced) {
+        sim.campaign = newCampaign({
+          seed: getSystem().seed,
+          landedId: sim.landedId,
+          ship: campaignShipFrom(sim.ship),
+          place: forced.id,
+        });
+        applyStoryStart(sim, forced);
+        saveCampaign(sim.campaign);
+      } else if (loaded) {
         sim.campaign = loaded;
+        sim.campaignPlaceId = savedPlace?.id ?? null;
         applyCampaignBoot(sim);
       } else {
         sim.campaign = newCampaign({
