@@ -104,6 +104,7 @@ import {
   DEFAULT_TANK_KIND,
 } from "./fuel.ts";
 import { HULL_MAX, hullRepairRate, type HullRepairKind } from "./hull.ts";
+import { SHIP_SPRITE_H } from "./ship-sprite.ts";
 import {
   adriftStarved,
   airlockSeqDone,
@@ -2853,8 +2854,8 @@ export const USER_ZOOM_MAX = 3.4;
 export const PAD_UNLOCK_USER_ZOOM = 2.2;
 const ZOOM_EASE_K = 0.7;
 const PAD_UNLOCK_ZOOM_K = 1.8;
-/** Craft kite is ~24 world units; fill ~26% of the short screen axis on the pad. */
-const PAD_ZOOM_SHIP_H = 24;
+/** The hauler sprite is 24 world units tall; fill ~26% of the short screen axis on the pad. */
+const PAD_ZOOM_SHIP_H = SHIP_SPRITE_H;
 const PAD_ZOOM_FILL = 0.26;
 const PAD_ZOOM_MIN = 6.4;
 const PAD_ZOOM_MAX = 9.2;

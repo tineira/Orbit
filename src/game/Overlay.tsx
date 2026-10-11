@@ -436,6 +436,10 @@ function Title({
           <p className="font-mono text-xs text-subtle max-w-xs">
             Press Enter to take off. Left / right rotate. Up burns. On a phone, tap the sky.
           </p>
+          <p className="font-mono text-[10px] leading-relaxed text-subtle/80 max-w-xs">
+            Halley is Claudia, an open character by anabology (claudia.gallery). Her face, her voice
+            and the pilot&apos;s voice are AI-generated.
+          </p>
           <p className="flex font-mono text-xs max-w-[16rem]">
             <KeyTips
               orbitShell={orbitShell}
@@ -1449,7 +1453,11 @@ function VoiceStrip({
       <p
         className={cn(
           "mt-0.5 text-sm leading-snug",
-          line.source === "thought" ? "italic text-fg/90" : "font-mono text-fg",
+          line.source === "thought"
+            ? "italic text-fg/90"
+            : line.source === "ship"
+              ? "font-mono text-[rgba(140,255,170,0.9)]"
+              : "font-mono text-fg",
           line.source === "static" ? "text-muted" : null,
           flicker ? "visor-voice-radio" : null,
         )}
@@ -1538,7 +1546,7 @@ function VoiceProbe({
         Play
       </button>
       {loading ? (
-        <p className="mt-2 font-mono text-[10px] tracking-wide text-subtle">loading mouths…</p>
+        <p className="mt-2 font-mono text-[10px] tracking-wide text-subtle">loading clip…</p>
       ) : error ? (
         <p className="mt-2 font-mono text-[10px] tracking-wide text-warn">{error}</p>
       ) : line ? (

@@ -127,34 +127,34 @@ Hasta entonces la escalera es: pensamientos → nave → radio humana.
 
 ---
 
-## Habla (WIP, 19 sep 2026)
+## Habla (WIP, 11 oct 2026)
 
 No es una decisión cerrada. No reabras el lock del canal para pelear el motor. VO grabada vs tick sigue abierta.
 
 Referencias de tono (no son assets, no se clonan):
 - Roles: NEW ORBIT (BLACKISH, 2012) — tú a ti, computador frío, otra persona en radio.
-- Pensamiento: *Memento*, escena “Okay, so what am I doing?” — bajo, cerca, inseguro, buscando. No un narrador seguro.
+- Pensamiento: *Memento*, escena "Okay, so what am I doing?" — bajo, cerca, inseguro, buscando. No un narrador seguro.
 
-Motor actual del probe `?dev`: Kitten TTS nano ONNX (`KittenML/kitten-tts-nano-0.8`) en `src/game/speak.ts`. Mismas bocas en cada browser/OS. No Web Speech. No SAM. No la lengua del sistema. El WASM de onnxruntime-web se sirve desde jsDelivr `1.30.0`; un hilo (sin COI).
+**Sin sintetizador.** El 11 oct 2026 Tomás sacó Kitten TTS (`src/game/speak.ts`, `kitten-tts-js`). El juego no sintetiza voz: las voces son clips pregrabados (Grok: Willow para Halley, Gus para el piloto), fuera del repo hasta cerrar el copy en Historia. Ver `docs/art/README.md`.
 
-| Tag | Boca Kitten | Speed | Filtro |
-|---|---|---|---|
-| `thought` | Hugo | 0.8 | chest + in-head (lowshelf, lowpass ~1750) |
-| `ship` | Bruno | 0.84 | speaker CRT |
-| `radio` | Leo | 1.02 | bandpass + estático |
-| `alien` | Kiki | 0.8 | ring |
-| `static` | — | — | hiss, sin habla |
+| Tag | Qué suena | Filtro |
+|---|---|---|
+| `thought` | clip de audio (Gus) por evento, sin tick (Tomás, 11 oct 2026: el pensamiento entra en silencio): primer despegue, primer aterrizaje, adrift, primer Camp en el scope; una vez por chart. El tick del visor queda solo para una línea de texto sin clip en el probe | pasa altos 58, low shelf 220 +4,2 dB, pasa bajos 2,9 kHz (tope de Tomás) |
+| `ship` | Halley en el CRT: clip de video + audio por la cadena de cabina; sin clip, imagen base + estática | crusher + banda + drive + estática |
+| `radio` | hiss + portadora, solo texto | bandpass + estático |
+| `alien` | bed grave, solo texto | — |
+| `static` | hiss, sin habla | — |
 
-Probe: escribes una línea, eliges tag, Play. Strip en el visor + bed. Primera Play baja ~25 MB de Hugging Face y puede tardar; el panel dice “loading mouths…”. Si el habla falla, el error queda en el panel (no solo SFX). Mute deja el texto.
+Probe `?dev`: escribes una línea, eliges tag, Play. Strip en el visor + bed. Con SHIP, el texto `halley-01`..`halley-04` reproduce ese clip si el build lo tiene (`public/halley/manifest.json`). Mute deja el texto.
 
 No es PTT. No dispara eventos del mundo. El copy de líneas sigue en Historia.
 
-Archivos: `src/game/speak.ts`, `src/game/voice.ts`, `Overlay.tsx` (`VoiceStrip` / `VoiceProbe`), `audio.ts` (`playVoice`).
+Archivos: `src/game/voice.ts`, `Overlay.tsx` (`VoiceStrip` / `VoiceProbe`), `audio.ts` (`playVoice`, `playHalleyMedia`, `playHalleyStatic`, `playThought`), `halley.ts` (señal por daño, memoria corrupta, envelope CRT), `pilot.ts` (triggers y tope del filtro), `draw.ts` (`drawHalley`), `runtime.ts` (`speakHalley`, `speakThought`).
 
 ## Qué hay en código y qué no
 
-Hecho: visor (`FlightVisor` en `Overlay.tsx`), `OrbitHint`, landing cards (`flavorBody`), occupancy `settlement` / `civ`, audio de cabina (spec CRT, life support), mute, reduced motion, cola + strip + probe `?dev` (WIP habla).
+Hecho: visor (`FlightVisor` en `Overlay.tsx`), `OrbitHint`, landing cards (`flavorBody`), occupancy `settlement` / `civ`, audio de cabina (spec CRT, life support), mute, reduced motion, cola + strip + probe `?dev`, Halley en el CRT con clips (fase 2 de arte).
 
-No ahora: PTT, gramática de la nave, radio por rango, pensamientos disparados por eventos, VO grabada, copy de Historia.
+No ahora: PTT, gramática de la nave, radio por rango, copy de Historia. Los pensamientos por evento existen (`src/game/pilot.ts`) y suenan solo cuando el build tiene los clips.
 
-Cuando implementes el canal de verdad (no reabras este lock): deja la cola en `src/game/voice.ts` (`source` + `text` + `ttl`); publica en `HudSnapshot`; dibuja bajo el visor junto a `OrbitHint`; beds de audio por source; triggers desde eventos que ya existen (takeoff, lock, land, adrift, comet enter, `settlement === "active"`). El probe `?dev` sigue siendo probe. El motor de habla se decide aparte.
+Cuando implementes el canal de verdad (no reabras este lock): deja la cola en `src/game/voice.ts` (`source` + `text` + `ttl`); publica en `HudSnapshot`; dibuja bajo el visor junto a `OrbitHint`; beds de audio por source; triggers desde eventos que ya existen (takeoff, lock, land, adrift, comet enter, `settlement === "active"`). El probe `?dev` sigue siendo probe. El habla son clips pregrabados; no hay sintetizador.

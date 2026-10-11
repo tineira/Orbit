@@ -62,6 +62,51 @@ import {
   rockySettlement,
 } from "./occupancy";
 import { beltPhase, moteAt } from "./belt";
+import {
+  SHIP_ENGINE_X,
+  SHIP_SPRITE_FILTER,
+  SHIP_SPRITE_H,
+  SHIP_SPRITE_NATIVE_H,
+  SHIP_SPRITE_NATIVE_W,
+  SHIP_SPRITE_URL,
+  SHIP_SPRITE_W,
+  damageSparkOn,
+  navBlink,
+  shipDamaged,
+  shipShadowDim,
+  spriteRenderScale,
+} from "./ship-sprite";
+import {
+  HALLEY_GLITCH_MS,
+  HALLEY_LABEL,
+  HALLEY_LOST_WINDOW_MS,
+  HALLEY_OFF_ANIM_MS,
+  HALLEY_VIEW,
+  crtPowerEnvelope,
+  halleyDamage,
+  halleyLost,
+  halleySignal,
+  halleyStripOffset,
+  halleyTears,
+  type HalleyView,
+} from "./halley";
+import {
+  GAS_SPIN_Q,
+  albedoDisk,
+  beaconAlpha,
+  cloudDisk,
+  gasDisk,
+  gasSpinQ,
+  gasStrip,
+  hasRings,
+  lightAngleQ,
+  lightFromQ,
+  lightsDisk,
+  rimFrom,
+  shadeLayers,
+  SHADE_R,
+  surfaceResolution,
+} from "./surface";
 
 type DrawOpts = {
   w: number;
@@ -71,6 +116,8 @@ type DrawOpts = {
   cssH: number;
   status: FlightStatus;
   phase: Sim["phase"];
+  /** Halley's cabin CRT, owned by the runtime. */
+  halley?: HalleyView;
 };
 
 function hash(n: number) {
@@ -80,6 +127,8 @@ function hash(n: number) {
 
 export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpts) {
   const { w, h, dpr, cssW, cssH } = opts;
+  drawDpr = dpr;
+  surfaceBuiltThisFrame = false;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = "#07080c";
   ctx.fillRect(0, 0, cssW, cssH);
@@ -103,6 +152,8 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   ctx.translate(cssW / 2 + shakeX, cssH / 2 + shakeY);
   ctx.scale(cam.zoom, cam.zoom);
   ctx.translate(-cam.x, -cam.y);
+  viewHalfW = cssW / 2 / Math.max(0.01, cam.zoom) + 40;
+  viewHalfH = cssH / 2 / Math.max(0.01, cam.zoom) + 40;
 
   const fade = chartFade(sim);
   if (sim.showGravityGrid && fade > 0.05) drawGravityGrid(ctx, sim, cam, cssW, cssH);
@@ -136,7 +187,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   const star = sim.planets.find((b) => b.kind === "star") ?? null;
   const shipUmbra = star ? pointUmbraMax(sim.ship.x, sim.ship.y, sim.planets, star, null) : 0;
   drawWarpRings(ctx, sim);
-  drawShip(ctx, sim, shipUmbra);
+  drawShip(ctx, sim, shipUmbra, dpr);
   if (particlesOver) drawParticles(ctx, sim.particles);
   drawShipLockBars(ctx, sim, cam);
 
@@ -149,6 +200,11 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
     // Keep drawing through the CRT power-off collapse after the panel is toggled off.
     const specOffAnim = !sim.reducedMotion && performance.now() - sim.spectroOffAt < 700;
     if (sim.showSpectro || specOffAnim) drawSpectrograph(ctx, sim, cssW, cssH);
+    const halley = opts.halley;
+    if (halley) {
+      const halleyActive = halley.on || now - halley.offAt < HALLEY_OFF_ANIM_MS;
+      if (sim.showSpectro || halleyActive) drawHalley(ctx, sim, halley, cssW, cssH, now);
+    }
   }
   void w;
   void h;
@@ -1688,6 +1744,244 @@ function drawMoonOutpost(
   ctx.restore();
 }
 
+/* ---- Planet surfaces, level 2 (docs/art/README.md, fase 4) ---- */
+
+type Layer = { canvas: HTMLCanvasElement; key: number };
+
+type BodyArt = {
+  /** Texture radius in pixels (albedo, clouds, lights, gas disk). */
+  R: number;
+  albedo: HTMLCanvasElement | null;
+  clouds: HTMLCanvasElement | null;
+  lights: HTMLCanvasElement | null;
+  gasStrip: { data: Uint8ClampedArray<ArrayBuffer>; w: number; h: number } | null;
+  gasDisk: Layer | null;
+  shade: Layer | null;
+  rim: Layer | null;
+  night: Layer | null;
+};
+
+const bodyArtCache = new WeakMap<Planet, BodyArt>();
+let surfaceScratch: HTMLCanvasElement | null = null;
+/** Set by drawFrame; tiny bodies on screen skip the texture path. */
+let drawDpr = 1;
+/** Only one body builds its texture per frame; the others draw flat until their turn. */
+let surfaceBuiltThisFrame = false;
+/** The view in world units, set by drawFrame, so off-screen bodies skip the surface path. */
+let viewHalfW = 1e9;
+let viewHalfH = 1e9;
+
+function layerCanvas(size: number, data: Uint8ClampedArray<ArrayBuffer>, reuse?: HTMLCanvasElement | null) {
+  const c = reuse && reuse.width === size && reuse.height === size ? reuse : document.createElement("canvas");
+  c.width = size;
+  c.height = size;
+  const g = c.getContext("2d");
+  if (g) g.putImageData(new ImageData(data, size, size), 0, 0);
+  return c;
+}
+
+function surfaceSeed(p: Planet) {
+  return (p.radius * 0.37 + p.mass * 0.0011 + (p.shapeSeed ?? 0)) % 97;
+}
+
+/** Built once per body, on its first textured draw; a new chart is new Planet objects. */
+function bodyArtFor(p: Planet): BodyArt {
+  let art = bodyArtCache.get(p);
+  if (!art) {
+    const R = surfaceResolution(p.kind, p.radius);
+    const seed = surfaceSeed(p);
+    art = {
+      R,
+      albedo: null,
+      clouds: null,
+      lights: null,
+      gasStrip: null,
+      gasDisk: null,
+      shade: null,
+      rim: null,
+      night: null,
+    };
+    if (p.kind === "gas") {
+      const w = 512;
+      const h = 128;
+      const bands = p.bands && p.bands.length ? p.bands : [p.colorA, p.colorB];
+      art.gasStrip = { data: gasStrip(w, h, bands, seed), w, h };
+    } else {
+      const kind = p.kind === "moon" ? "moon" : "rocky";
+      art.albedo = layerCanvas(
+        R * 2,
+        albedoDisk(R, { kind, colorA: p.colorA, colorB: p.colorB, seed, craters: true }),
+      );
+      if (kind === "rocky") art.clouds = layerCanvas(R * 2, cloudDisk(R, seed));
+      if (p.settlement === "active") art.lights = layerCanvas(R * 2, lightsDisk(R, seed));
+    }
+    bodyArtCache.set(p, art);
+  }
+  return art;
+}
+
+function surfaceShade(art: BodyArt, p: Planet, L: { x: number; y: number }) {
+  const q = lightAngleQ(L.x, L.y);
+  if (!art.shade || art.shade.key !== q) {
+    const R = SHADE_R;
+    const l = lightFromQ(q);
+    const layers = shadeLayers(R, l.x, l.y, rimFrom(p.kind === "gas" ? p.colorB : p.colorA));
+    art.shade = { canvas: layerCanvas(R * 2, layers.shade, art.shade?.canvas), key: q };
+    art.rim = { canvas: layerCanvas(R * 2, layers.rim, art.rim?.canvas), key: q };
+    art.night = { canvas: layerCanvas(R * 2, layers.night, art.night?.canvas), key: q };
+  }
+  return art;
+}
+
+function surfaceGasDisk(art: BodyArt, p: Planet, reducedMotion: boolean) {
+  const strip = art.gasStrip;
+  if (!strip) return null;
+  const q = gasSpinQ(p.rotate, reducedMotion);
+  if (!art.gasDisk || art.gasDisk.key !== q) {
+    const R = art.R;
+    const spin = reducedMotion ? 0 : q * GAS_SPIN_Q;
+    art.gasDisk = {
+      canvas: layerCanvas(R * 2, gasDisk(R, strip.data, strip.w, strip.h, spin), art.gasDisk?.canvas),
+      key: q,
+    };
+  }
+  return art.gasDisk.canvas;
+}
+
+/** Four thin ellipses, tilted; the back half goes under the disk, the front over it. */
+function drawGasRings(ctx: CanvasRenderingContext2D, p: Planet, front: boolean) {
+  const R = p.radius;
+  const [cr, cg, cb] = rimFrom(p.bands?.[0] ?? p.colorA);
+  ctx.save();
+  ctx.rotate(-0.32);
+  for (let i = 0; i < 4; i++) {
+    const k = 1.55 + i * 0.09;
+    const a = (front ? 0.35 : 0.18) - i * 0.05;
+    ctx.strokeStyle = `rgba(${cr}, ${cg}, ${cb}, ${Math.max(0.03, a)})`;
+    ctx.lineWidth = R * 0.045;
+    ctx.beginPath();
+    if (front) ctx.ellipse(0, 0, R * k, R * k * 0.24, 0, 0, Math.PI);
+    else ctx.ellipse(0, 0, R * k, R * k * 0.24, 0, Math.PI, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/**
+ * The textured disk, centered on the body (caller translated to p.x, p.y).
+ * Rock and moon albedo turn in the plane with `p.rotate`; clouds drift a
+ * little faster. Shade multiplies, rim adds, lights add on the night side.
+ */
+function drawSurface(
+  ctx: CanvasRenderingContext2D,
+  p: Planet,
+  cam: Camera,
+  star: Planet | null,
+  reducedMotion: boolean,
+) {
+  const r = p.radius;
+  const rpx = r * cam.zoom * drawDpr;
+  if (rpx < 2.5 || typeof document === "undefined") return false;
+  // Off screen: no texture work at all (the giant would otherwise resample its bands unseen).
+  if (Math.abs(p.x - cam.x) > viewHalfW + r || Math.abs(p.y - cam.y) > viewHalfH + r) return false;
+  if (!bodyArtCache.has(p)) {
+    if (surfaceBuiltThisFrame) return false;
+    surfaceBuiltThisFrame = true;
+  }
+  const art = bodyArtFor(p);
+  const L = lightDir(p, star);
+  surfaceShade(art, p, L);
+  const base = p.kind === "gas" ? surfaceGasDisk(art, p, reducedMotion) : art.albedo;
+  if (!base || !art.shade || !art.rim || !art.night) return false;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.imageSmoothingEnabled = true;
+
+  ctx.save();
+  if (p.kind !== "gas") ctx.rotate(p.rotate);
+  ctx.drawImage(base, -r, -r, r * 2, r * 2);
+  ctx.restore();
+  if (art.clouds) {
+    ctx.save();
+    ctx.rotate(p.rotate * 1.35 + 0.7);
+    ctx.globalAlpha = 0.85;
+    ctx.drawImage(art.clouds, -r, -r, r * 2, r * 2);
+    ctx.restore();
+  }
+
+  ctx.globalCompositeOperation = "multiply";
+  ctx.drawImage(art.shade.canvas, -r, -r, r * 2, r * 2);
+  ctx.globalCompositeOperation = "lighter";
+  ctx.drawImage(art.rim.canvas, -r, -r, r * 2, r * 2);
+
+  if (art.lights) {
+    const size = art.R * 2;
+    if (!surfaceScratch) surfaceScratch = document.createElement("canvas");
+    const s = surfaceScratch;
+    if (s.width !== size || s.height !== size) {
+      s.width = size;
+      s.height = size;
+    }
+    const g = s.getContext("2d");
+    if (g) {
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.globalCompositeOperation = "source-over";
+      g.clearRect(0, 0, size, size);
+      g.translate(art.R, art.R);
+      g.rotate(p.rotate);
+      g.drawImage(art.lights, -art.R, -art.R);
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.globalCompositeOperation = "destination-in";
+      g.drawImage(art.night.canvas, 0, 0, size, size);
+      g.globalCompositeOperation = "source-over";
+      ctx.drawImage(s, -r, -r, r * 2, r * 2);
+    }
+  }
+  ctx.globalCompositeOperation = "source-over";
+  ctx.restore();
+  return true;
+}
+
+/** Abandoned rock: one dim beacon that turns with the body and only shows on the night side. */
+function drawAbandonedBeacon(
+  ctx: CanvasRenderingContext2D,
+  p: Planet,
+  cam: Camera,
+  star: Planet | null,
+  now: number,
+  reducedMotion: boolean,
+) {
+  const r = p.radius;
+  const L = lightDir(p, star);
+  const a = p.rotate + (p.padAngle ?? 0) + 2.1;
+  const lx = Math.cos(a);
+  const ly = Math.sin(a);
+  const day = lx * L.x + ly * L.y;
+  const alpha = beaconAlpha(day, now, reducedMotion);
+  if (alpha <= 0.01) return;
+  const px = lx * r * 0.92;
+  const py = ly * r * 0.92;
+  const core = Math.max(0.9, 1.6 / Math.max(0.08, cam.zoom));
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const g = ctx.createRadialGradient(px, py, 0, px, py, core * 4.5);
+  g.addColorStop(0, `rgba(255, 214, 150, ${0.55 * alpha})`);
+  g.addColorStop(0.4, `rgba(255, 190, 110, ${0.18 * alpha})`);
+  g.addColorStop(1, "rgba(255, 170, 90, 0)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(px, py, core * 4.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = `rgba(255, 240, 210, ${alpha})`;
+  ctx.beginPath();
+  ctx.arc(px, py, core * 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawPlanet(
   ctx: CanvasRenderingContext2D,
   p: Planet,
@@ -1716,10 +2010,17 @@ function drawPlanet(
   ctx.save();
   ctx.translate(p.x, p.y);
 
-  ctx.fillStyle = p.colorA;
-  ctx.beginPath();
-  ctx.arc(0, 0, r, 0, Math.PI * 2);
-  ctx.fill();
+  const rings = hasRings(p);
+  if (rings) drawGasRings(ctx, p, false);
+
+  // Level 2 surface: cached texture layers. Falls back to the flat body when there is no DOM.
+  const textured = p.kind !== "star" && drawSurface(ctx, p, cam, star, reducedMotion);
+  if (!textured) {
+    ctx.fillStyle = p.colorA;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
   if (p.kind === "rocky" && p.settlement === "abandoned") {
     ctx.fillStyle = "rgba(12, 10, 9, 0.16)";
     ctx.beginPath();
@@ -1732,7 +2033,9 @@ function drawPlanet(
   ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.clip();
 
-  if (p.kind === "gas" && p.bands) {
+  if (textured) {
+    // Texture already drawn.
+  } else if (p.kind === "gas" && p.bands) {
     const steps = 28;
     p.bands.forEach((c, i) => {
       const mid = -r + ((i + 0.5) / p.bands!.length) * r * 2;
@@ -1785,21 +2088,28 @@ function drawPlanet(
     ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.fill();
   } else {
-    const L = lightDir(p, star);
-    const night = p.kind === "moon" ? 0.9 : p.kind === "gas" ? 0.78 : 0.84;
-    const shade = ctx.createLinearGradient(-L.x * r, -L.y * r, L.x * r, L.y * r);
-    shade.addColorStop(0, `rgba(7,8,12,${night})`);
-    shade.addColorStop(0.44, `rgba(7,8,12,${night * 0.55})`);
-    shade.addColorStop(0.5, "rgba(7,8,12,0.18)");
-    shade.addColorStop(0.58, "rgba(7,8,12,0)");
-    shade.addColorStop(1, "rgba(7,8,12,0)");
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.fillStyle = shade;
-    ctx.fill();
+    if (!textured) {
+      const L = lightDir(p, star);
+      const night = p.kind === "moon" ? 0.9 : p.kind === "gas" ? 0.78 : 0.84;
+      const shade = ctx.createLinearGradient(-L.x * r, -L.y * r, L.x * r, L.y * r);
+      shade.addColorStop(0, `rgba(7,8,12,${night})`);
+      shade.addColorStop(0.44, `rgba(7,8,12,${night * 0.55})`);
+      shade.addColorStop(0.5, "rgba(7,8,12,0.18)");
+      shade.addColorStop(0.58, "rgba(7,8,12,0)");
+      shade.addColorStop(1, "rgba(7,8,12,0)");
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fillStyle = shade;
+      ctx.fill();
+    }
+    // Eclipses go on top, unchanged.
     if (star) stampBodyShadows(ctx, p, star, bodies);
     if (p.kind === "rocky") drawRockySettlement(ctx, p, cam, star);
     if (p.kind === "moon") drawMoonOutpost(ctx, p, cam, star);
+    if ((p.kind === "rocky" || p.kind === "moon") && p.settlement === "abandoned") {
+      drawAbandonedBeacon(ctx, p, cam, star, now, reducedMotion);
+    }
+    if (rings) drawGasRings(ctx, p, true);
   }
 
   ctx.restore();
@@ -2227,35 +2537,272 @@ function drawArrivalFlash(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number,
   ctx.restore();
 }
 
-function drawShip(ctx: CanvasRenderingContext2D, sim: Sim, umbra = 0) {
-  if ((sim.phase === "transit" || sim.warpLost) && !sim.transitBoomed) {
-    drawShipLightRay(ctx, sim);
-    return;
+/* ---- Ship sprite: the Perihelion hauler (docs/art/README.md, fase 1) ---- */
+
+let shipImage: HTMLImageElement | null = null;
+/** The PNG with Tomás's hull lift baked in, at native resolution. */
+let shipLit: HTMLCanvasElement | null = null;
+/** Per-frame scratch: dim + damage are composited here with source-atop so the stars stay. */
+let shipScratch: HTMLCanvasElement | null = null;
+
+function shipSpriteReady() {
+  if (shipLit) return true;
+  if (typeof document === "undefined") return false;
+  if (!shipImage) {
+    shipImage = new Image();
+    shipImage.decoding = "async";
+    shipImage.onload = () => {
+      const img = shipImage;
+      if (!img || !img.naturalWidth) return;
+      const lit = document.createElement("canvas");
+      lit.width = img.naturalWidth;
+      lit.height = img.naturalHeight;
+      const c = lit.getContext("2d");
+      if (!c) return;
+      // A browser without ctx.filter ignores the assignment and keeps the raw PNG.
+      c.filter = SHIP_SPRITE_FILTER;
+      c.drawImage(img, 0, 0);
+      c.filter = "none";
+      shipLit = lit;
+    };
+    shipImage.src = SHIP_SPRITE_URL;
   }
-  const ship = sim.ship;
-  const crash = sim.phase === "crashed" ? sim.crashKind : null;
-  const alpha = sinkAlpha(sim);
-  if (alpha <= 0.02) return;
-  const burned = crash === "burn";
+  return false;
+}
+
+function shipGlow(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  r: number,
+  rgb: string,
+  a: number,
+) {
+  if (a <= 0.01) return;
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, `rgba(${rgb}, ${a})`);
+  g.addColorStop(0.45, `rgba(${rgb}, ${a * 0.35})`);
+  g.addColorStop(1, `rgba(${rgb}, 0)`);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/**
+ * The hauler, centered on the ship origin, nose up. The caller has already
+ * translated, rotated by yaw and applied the sink alpha / scale.
+ */
+function drawShipSprite(
+  ctx: CanvasRenderingContext2D,
+  sim: Sim,
+  umbra: number,
+  dpr: number,
+  burned: boolean,
+  thrusting: boolean,
+) {
+  const lit = shipLit;
+  if (!lit) return;
+  const now = performance.now();
   const reducedMotion = sim.reducedMotion;
-  const thrusting = sim.phase !== "title" && ship.thrusting && !crash;
+  const ww = SHIP_SPRITE_W;
+  const hh = SHIP_SPRITE_H;
+  const dim = shipShadowDim(umbra);
+  const damaged = !burned && shipDamaged(sim.ship.hull);
 
-  ctx.save();
-  ctx.translate(ship.x, ship.y);
-  ctx.rotate(-ship.yaw);
-  if (alpha < 1) {
-    ctx.globalAlpha *= alpha;
-    const t = 1 - alpha;
-    const s = 1 - 0.38 * t;
-    ctx.scale(s, s);
-  }
+  if (burned) drawHullFire(ctx, reducedMotion, "back");
 
-  if (crash === "wreck") {
-    drawWreck(ctx, sim.wreckSeed, umbra);
+  if (thrusting) {
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const tail = hh * 0.5;
+    for (const side of [-1, 1]) {
+      const ex = side * SHIP_ENGINE_X * ww;
+      const flicker = reducedMotion ? 0.9 : 0.75 + Math.random() * 0.35;
+      shipGlow(ctx, ex, tail - 0.5, hh * 0.16 * flicker, "255, 200, 130", 0.6 * dim);
+      ctx.fillStyle = `rgba(255, 210, 140, ${0.55 * flicker})`;
+      ctx.beginPath();
+      ctx.moveTo(ex - 2.1, tail - 1.5);
+      ctx.lineTo(ex, tail + 5.5 + flicker * 5);
+      ctx.lineTo(ex + 2.1, tail - 1.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = `rgba(255, 255, 240, ${0.7 * flicker})`;
+      ctx.beginPath();
+      ctx.moveTo(ex - 0.9, tail - 1.5);
+      ctx.lineTo(ex, tail + 3.5 + flicker * 2.5);
+      ctx.lineTo(ex + 0.9, tail - 1.5);
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.restore();
-    return;
   }
 
+  const render = shipScratchRender(lit, sim.camera.zoom, dpr, dim, burned, damaged);
+  if (!render) return;
+  const { scratch, k, pw, ph } = render;
+  const inv = 1 / k;
+  ctx.drawImage(scratch, -ww / 2 - inv, -hh / 2 - inv, pw * inv, ph * inv);
+
+  if (damaged && damageSparkOn(now, reducedMotion)) {
+    const sx = ww * 0.32;
+    const sy = hh * 0.02;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    shipGlow(ctx, sx, sy, 3.2, "255, 170, 90", 0.6);
+    ctx.fillStyle = "rgba(255, 200, 140, 0.95)";
+    ctx.fillRect(sx - 0.45, sy - 0.45, 0.9, 0.9);
+    ctx.restore();
+  }
+
+  // Nav lights: red to port, green to starboard. Starboard is dead on a damaged hull.
+  if (!burned) {
+    const blink = navBlink(now, reducedMotion);
+    const ny = -hh * 0.2;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    shipGlow(ctx, -ww * 0.5, ny, 2.4, "255, 70, 60", 0.5 * blink);
+    ctx.fillStyle = `rgba(255, 70, 60, ${blink})`;
+    ctx.fillRect(-ww * 0.5 - 0.4, ny - 0.4, 0.8, 0.8);
+    if (!damaged) {
+      shipGlow(ctx, ww * 0.5, ny, 2.4, "80, 255, 140", 0.5 * blink);
+      ctx.fillStyle = `rgba(80, 255, 140, ${blink})`;
+      ctx.fillRect(ww * 0.5 - 0.4, ny - 0.4, 0.8, 0.8);
+    }
+    ctx.restore();
+  }
+
+  if (burned) drawHullFire(ctx, reducedMotion, "front");
+}
+
+/**
+ * The hauler composited into the scratch canvas at the screen's pixel scale:
+ * the lift is baked; shadow dim, char and the damage notch go source-atop.
+ */
+function shipScratchRender(
+  lit: HTMLCanvasElement,
+  zoom: number,
+  dpr: number,
+  dim: number,
+  burned: boolean,
+  damaged: boolean,
+) {
+  const ww = SHIP_SPRITE_W;
+  const hh = SHIP_SPRITE_H;
+  const k = spriteRenderScale(zoom, dpr);
+  const pw = Math.ceil(ww * k) + 2;
+  const ph = Math.ceil(hh * k) + 2;
+  if (!shipScratch) shipScratch = document.createElement("canvas");
+  const scratch = shipScratch;
+  if (scratch.width !== pw || scratch.height !== ph) {
+    scratch.width = pw;
+    scratch.height = ph;
+  }
+  const c = scratch.getContext("2d");
+  if (!c) return null;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = "source-over";
+  c.clearRect(0, 0, pw, ph);
+  c.imageSmoothingEnabled = true;
+  c.imageSmoothingQuality = "high";
+  c.drawImage(lit, 0, 0, SHIP_SPRITE_NATIVE_W, SHIP_SPRITE_NATIVE_H, 1, 1, ww * k, hh * k);
+  c.globalCompositeOperation = "source-atop";
+  if (dim < 1) {
+    c.fillStyle = `rgba(7, 8, 12, ${1 - dim})`;
+    c.fillRect(0, 0, pw, ph);
+  }
+  if (burned) {
+    c.fillStyle = "rgba(46, 34, 30, 0.82)";
+    c.fillRect(0, 0, pw, ph);
+  }
+  if (damaged) {
+    // Dark notch torn into the starboard flank (mockup "as found").
+    c.fillStyle = "rgba(7, 8, 12, 0.95)";
+    c.beginPath();
+    c.moveTo(1 + ww * k * 0.82, 1 + hh * k * 0.42);
+    c.lineTo(1 + ww * k * 0.99, 1 + hh * k * 0.47);
+    c.lineTo(1 + ww * k * 0.99, 1 + hh * k * 0.62);
+    c.lineTo(1 + ww * k * 0.8, 1 + hh * k * 0.55);
+    c.closePath();
+    c.fill();
+  }
+  c.globalCompositeOperation = "source-over";
+  return { scratch, k, pw, ph };
+}
+
+/** Wreck pieces of the hauler: sprite rectangles, in sprite fractions, with the old kite's scatter. */
+const WRECK_PIECES: readonly {
+  sx: number;
+  sy: number;
+  sw: number;
+  sh: number;
+  ox: number;
+  oy: number;
+  rot: number;
+}[] = [
+  { sx: 0, sy: 0, sw: 1, sh: 0.32, ox: -2.4, oy: -3.6, rot: -0.4 },
+  { sx: 0, sy: 0.3, sw: 0.52, sh: 0.46, ox: -5.8, oy: 3.4, rot: -0.7 },
+  { sx: 0.48, sy: 0.3, sw: 0.52, sh: 0.46, ox: 6.4, oy: 2.6, rot: 0.58 },
+  { sx: 0, sy: 0.74, sw: 1, sh: 0.26, ox: 1.8, oy: 5.8, rot: 0.92 },
+];
+
+/** The hauler torn into four, charred, scattered by `wreckSeed` like the old kite's wreck. */
+function drawWreckSprite(
+  ctx: CanvasRenderingContext2D,
+  sim: Sim,
+  umbra: number,
+  dpr: number,
+) {
+  const lit = shipLit;
+  if (!lit) return false;
+  const render = shipScratchRender(lit, sim.camera.zoom, dpr, shipShadowDim(umbra), true, true);
+  if (!render) return false;
+  const { scratch, k } = render;
+  const ww = SHIP_SPRITE_W;
+  const hh = SHIP_SPRITE_H;
+  const seed = sim.wreckSeed;
+
+  ctx.fillStyle = "rgba(7,8,12,0.32)";
+  ctx.beginPath();
+  ctx.ellipse(0.5, 5, ww * 0.95, hh * 0.24, 0.15, 0, Math.PI * 2);
+  ctx.fill();
+
+  for (let i = 0; i < WRECK_PIECES.length; i++) {
+    const piece = WRECK_PIECES[i]!;
+    const jx = (hash(seed + i * 3.1) - 0.5) * 3.2;
+    const jy = (hash(seed + i * 7.7) - 0.5) * 3.2;
+    const jr = (hash(seed + i * 11.3) - 0.5) * 0.28;
+    const pw = piece.sw * ww;
+    const ph = piece.sh * hh;
+    const cx = (piece.sx + piece.sw / 2 - 0.5) * ww;
+    const cy = (piece.sy + piece.sh / 2 - 0.5) * hh;
+    ctx.save();
+    ctx.translate(cx + piece.ox + jx, cy + piece.oy + jy);
+    ctx.rotate(piece.rot + jr);
+    ctx.drawImage(
+      scratch,
+      1 + piece.sx * ww * k,
+      1 + piece.sy * hh * k,
+      piece.sw * ww * k,
+      piece.sh * hh * k,
+      -pw / 2,
+      -ph / 2,
+      pw,
+      ph,
+    );
+    ctx.restore();
+  }
+  return true;
+}
+
+/** The old kite. Drawn only until the sprite has loaded, or if it never does. */
+function drawShipVector(
+  ctx: CanvasRenderingContext2D,
+  umbra: number,
+  reducedMotion: boolean,
+  burned: boolean,
+  thrusting: boolean,
+) {
   if (burned) drawHullFire(ctx, reducedMotion, "back");
 
   if (thrusting) {
@@ -2284,7 +2831,7 @@ function drawShip(ctx: CanvasRenderingContext2D, sim: Sim, umbra = 0) {
   if (burned) {
     ctx.fillStyle = "rgb(46, 34, 30)";
   } else {
-    const dim = 1 - 0.72 * Math.max(0, Math.min(1, umbra));
+    const dim = shipShadowDim(umbra);
     ctx.fillStyle = `rgb(${Math.round(236 * dim)}, ${Math.round(234 * dim)}, ${Math.round(228 * dim)})`;
   }
   ctx.strokeStyle = "#07080c";
@@ -2316,6 +2863,41 @@ function drawShip(ctx: CanvasRenderingContext2D, sim: Sim, umbra = 0) {
   ctx.stroke();
 
   if (burned) drawHullFire(ctx, reducedMotion, "front");
+}
+
+function drawShip(ctx: CanvasRenderingContext2D, sim: Sim, umbra = 0, dpr = 1) {
+  if ((sim.phase === "transit" || sim.warpLost) && !sim.transitBoomed) {
+    drawShipLightRay(ctx, sim);
+    return;
+  }
+  const ship = sim.ship;
+  const crash = sim.phase === "crashed" ? sim.crashKind : null;
+  const alpha = sinkAlpha(sim);
+  if (alpha <= 0.02) return;
+  const burned = crash === "burn";
+  const reducedMotion = sim.reducedMotion;
+  const thrusting = sim.phase !== "title" && ship.thrusting && !crash;
+
+  ctx.save();
+  ctx.translate(ship.x, ship.y);
+  ctx.rotate(-ship.yaw);
+  if (alpha < 1) {
+    ctx.globalAlpha *= alpha;
+    const t = 1 - alpha;
+    const s = 1 - 0.38 * t;
+    ctx.scale(s, s);
+  }
+
+  if (crash === "wreck") {
+    if (!(shipSpriteReady() && drawWreckSprite(ctx, sim, umbra, dpr))) {
+      drawWreck(ctx, sim.wreckSeed, umbra);
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (shipSpriteReady()) drawShipSprite(ctx, sim, umbra, dpr, burned, thrusting);
+  else drawShipVector(ctx, umbra, reducedMotion, burned, thrusting);
 
   ctx.restore();
 }
@@ -2850,6 +3432,260 @@ function drawSpectrograph(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number,
   ctx.lineWidth = 1;
   ctx.stroke();
 
+  ctx.restore();
+}
+
+/* ---- Halley: the cabin CRT above the mass spec (docs/art/README.md, fase 2) ---- */
+
+/**
+ * Same width as the mass spec, ~1.25× its height, stacked above it with the
+ * same gap. Shortened when the column runs out of room (phones); hidden when
+ * even that is too small. Mobile placement is still pending with Tomás.
+ */
+function halleyLayout(cssW: number, cssH: number, spectroVisible: boolean) {
+  const spec = spectroLayout(cssW, cssH);
+  const map = minimapLayout(cssW, cssH);
+  const gap = 8;
+  // With the mass spec off, she takes its slot instead of floating above a hole.
+  const bottom = spectroVisible ? spec.y - gap : spec.y + spec.h;
+  const maxH = bottom - map.pad;
+  const h = Math.min(Math.round(spec.h * 1.25), maxH);
+  if (h < 48) return null;
+  return { x: spec.x, y: bottom - h, w: spec.w, h };
+}
+
+function imageSourceSize(src: CanvasImageSource): { w: number; h: number } | null {
+  if (src instanceof HTMLVideoElement) {
+    return src.videoWidth > 0 ? { w: src.videoWidth, h: src.videoHeight } : null;
+  }
+  if (src instanceof HTMLImageElement) {
+    return src.naturalWidth > 0 ? { w: src.naturalWidth, h: src.naturalHeight } : null;
+  }
+  if (src instanceof HTMLCanvasElement) {
+    return src.width > 0 ? { w: src.width, h: src.height } : null;
+  }
+  return null;
+}
+
+const HALLEY_FONT = '500 10px "IBM Plex Mono", ui-monospace, monospace';
+
+/**
+ * Green phosphor monitor. Only compositing, no pixel readback, so a `<video>`
+ * frame works as the source. Power envelope and casing match the mass spec.
+ */
+function drawHalley(
+  ctx: CanvasRenderingContext2D,
+  sim: Sim,
+  view: HalleyView,
+  cssW: number,
+  cssH: number,
+  now: number,
+) {
+  const specOffAnim = !sim.reducedMotion && now - sim.spectroOffAt < 700;
+  const layout = halleyLayout(cssW, cssH, sim.showSpectro || specOffAnim);
+  if (!layout) return;
+  const { x, y, w, h } = layout;
+  const reduced = sim.reducedMotion;
+  const env = crtPowerEnvelope(now, view.on, view.onAt, view.offAt, reduced);
+  const c01 = (v: number) => Math.max(0, Math.min(1, v));
+
+  // Without the mass spec on, the casing only exists while she talks: ramp it in and out.
+  let casingA = 1;
+  if (!sim.showSpectro && !specOffAnim) {
+    casingA = view.on
+      ? reduced
+        ? 1
+        : c01((now - view.onAt) / 200)
+      : reduced
+        ? 0
+        : c01(1 - (now - view.offAt - 400) / 300);
+    if (casingA <= 0.01) return;
+  }
+
+  ctx.save();
+  ctx.globalAlpha = 0.94 * casingA;
+
+  roundRect(ctx, x, y, w, h, 12);
+  ctx.fillStyle = "rgba(22, 23, 22, 0.88)";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(236, 234, 228, 0.12)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  const gx = x + 4;
+  const gy = y + 4;
+  const gw = w - 8;
+  const gh = h - 8;
+  const cgx = gx + gw / 2;
+  const cgy = gy + gh / 2;
+
+  ctx.save();
+  roundRect(ctx, gx, gy, gw, gh, 9);
+  ctx.clip();
+  ctx.fillStyle = "#030a05";
+  ctx.fillRect(gx, gy, gw, gh);
+
+  if (env.dark) {
+    // Dead glass: a whisper of reflection.
+    const v0 = ctx.createLinearGradient(gx, gy, gx + gw, gy + gh);
+    v0.addColorStop(0, "rgba(120, 160, 130, 0.06)");
+    v0.addColorStop(0.5, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = v0;
+    ctx.fillRect(gx, gy, gw, gh);
+    ctx.restore();
+    ctx.font = HALLEY_FONT;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.fillStyle = "rgba(140, 218, 168, 0.32)";
+    ctx.fillText(HALLEY_LABEL, x + 10, y + 8);
+    ctx.restore();
+    return;
+  }
+
+  const d = halleyDamage(sim.ship.hull);
+  const sig = halleySignal(d);
+  const tt = reduced ? 1234 : now;
+  const lost = halleyLost(d, hash(Math.floor(now / HALLEY_LOST_WINDOW_MS) * 1.37), reduced);
+  const src = view.freezeUntil > now && view.frozen ? view.frozen : view.frame;
+  const size = src ? imageSourceSize(src) : null;
+
+  // Everything the beam draws collapses with the deflection field.
+  ctx.save();
+  ctx.globalAlpha *= env.fade;
+  ctx.translate(cgx, cgy);
+  ctx.scale(Math.max(0.002, env.vx), Math.max(0.002, env.vy));
+  ctx.translate(-cgx, -cgy);
+
+  if (src && size && !lost) {
+    const jitter = !reduced && Math.sin(tt * 0.0017) > 0.985 ? gw * 0.012 * Math.sin(tt * 0.05) : 0;
+    const sc = Math.max(gw / size.w, gh / size.h) * HALLEY_VIEW.zoom;
+    const dw = size.w * sc;
+    const dh = size.h * sc;
+    const dx = gx + (gw - dw) * HALLEY_VIEW.fx + jitter;
+    const dy = gy + (gh - dh) * HALLEY_VIEW.fy;
+    const strip = gw < 140 ? 2 : 3;
+    const epoch = Math.floor(tt / 260);
+    const tears = halleyTears(sig.hdist, epoch, hash).map((t) => ({
+      y: t.y * gh,
+      h: t.h * gh,
+      off: t.off * gw,
+    }));
+    if (view.glitchAt && now - view.glitchAt < HALLEY_GLITCH_MS) {
+      tears.push({ y: gh * 0.15, h: gh * 0.7, off: gw * 0.08 * (hash(tt) < 0.5 ? -1 : 1) });
+    }
+    const sync = !reduced && hash(Math.floor(tt / 900) * 2.3) > 1 - sig.hdist * 0.5;
+    const syncY = gh * (0.3 + hash(Math.floor(tt / 900)) * 0.5);
+    for (let yy = 0; yy < gh; yy += strip) {
+      let off = halleyStripOffset(sig.hdist, yy, tt) * gw;
+      for (const tr of tears) if (yy >= tr.y && yy < tr.y + tr.h) off += tr.off;
+      if (sync && yy > syncY) off += (yy - syncY) * 0.35 * sig.hdist;
+      const syy = (gy + yy - dy) / sc;
+      if (syy < 0 || syy > size.h) continue;
+      ctx.drawImage(src, 0, syy, size.w, strip / sc, dx + off, gy + yy, dw, strip);
+    }
+    ctx.fillStyle = `rgba(220, 255, 230, ${0.25 * sig.hdist})`;
+    for (const tr of tears) ctx.fillRect(gx, gy + tr.y, gw, 1);
+    if (sync) {
+      ctx.fillStyle = `rgba(200, 255, 220, ${0.18 * sig.hdist})`;
+      ctx.fillRect(gx, gy + syncY, gw, 2);
+    }
+    // To gray, then the phosphor, then lifted blacks.
+    ctx.globalCompositeOperation = "saturation";
+    ctx.fillStyle = "#808080";
+    ctx.fillRect(gx, gy, gw, gh);
+    ctx.globalCompositeOperation = "multiply";
+    ctx.fillStyle = "#5cff8a";
+    ctx.fillRect(gx, gy, gw, gh);
+    ctx.globalCompositeOperation = "screen";
+    ctx.fillStyle = "rgba(10, 40, 18, 0.55)";
+    ctx.fillRect(gx, gy, gw, gh);
+    ctx.globalCompositeOperation = "source-over";
+  } else {
+    const frameSeed = reduced ? 0 : Math.floor(now / 70) * 7.7;
+    for (let i = 0; i < 300; i++) {
+      const k = hash(i * 1.31 + frameSeed);
+      ctx.fillStyle = `rgba(140, 255, 170, ${(k * 0.35).toFixed(3)})`;
+      ctx.fillRect(gx + hash(i * 3.7 + k) * gw, gy + hash(i * 5.3 + k) * gh, 2, 2);
+    }
+    ctx.font = HALLEY_FONT;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(140, 255, 170, 0.85)";
+    ctx.fillText("NO SIGNAL", cgx, cgy);
+  }
+
+  // Glow, scanlines, rolling bar, noise.
+  const glow = ctx.createRadialGradient(cgx, cgy, 0, cgx, cgy, Math.max(gw, gh) * 0.7);
+  glow.addColorStop(0, "rgba(70, 200, 110, 0.10)");
+  glow.addColorStop(1, "rgba(70, 200, 110, 0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(gx, gy, gw, gh);
+  const step = gw < 140 ? 2 : 3;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.38)";
+  for (let yy = gy; yy < gy + gh; yy += step) ctx.fillRect(gx, yy, gw, step * 0.45);
+  if (!reduced) {
+    const roll = ((now * 0.04) % (gh * 1.4)) - gh * 0.2;
+    const bar = ctx.createLinearGradient(0, gy + roll, 0, gy + roll + gh * 0.12);
+    bar.addColorStop(0, "rgba(140, 255, 170, 0)");
+    bar.addColorStop(0.5, "rgba(140, 255, 170, 0.07)");
+    bar.addColorStop(1, "rgba(140, 255, 170, 0)");
+    ctx.fillStyle = bar;
+    ctx.fillRect(gx, gy + roll, gw, gh * 0.12);
+  }
+  if (HALLEY_VIEW.noise > 0) {
+    const frameSeed = reduced ? 0 : Math.floor(now / 70) * 7.7;
+    const n = Math.round(((gw * gh) / 260) * HALLEY_VIEW.noise);
+    for (let i = 0; i < n; i++) {
+      const k = hash(i * 1.31 + frameSeed);
+      ctx.fillStyle = `rgba(160, 255, 180, ${(k * 0.22 * HALLEY_VIEW.noise).toFixed(3)})`;
+      ctx.fillRect(gx + hash(i * 1.7 + k) * gw, gy + hash(i * 2.9 + k) * gh, 1.5, 1.5);
+    }
+  }
+  ctx.restore();
+
+  // Power-on flash, collapsed raster line, the beam dot, vignette.
+  if (env.flash > 0.01) {
+    const fg = ctx.createRadialGradient(cgx, cgy, 2, cgx, cgy, Math.max(gw, gh) * 0.55);
+    fg.addColorStop(0, `rgba(214, 255, 228, ${0.5 * env.flash})`);
+    fg.addColorStop(0.5, `rgba(150, 240, 180, ${0.22 * env.flash})`);
+    fg.addColorStop(1, "rgba(120, 220, 150, 0)");
+    ctx.fillStyle = fg;
+    ctx.fillRect(gx, gy, gw, gh);
+  }
+  if (env.lineA > 0.02) {
+    const halfW = (gw / 2 - 4) * Math.max(0.02, env.vx);
+    ctx.save();
+    ctx.shadowColor = "rgba(160, 255, 195, 0.9)";
+    ctx.shadowBlur = 9;
+    ctx.strokeStyle = `rgba(222, 255, 234, ${Math.min(1, env.lineA) * env.fade})`;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(cgx - halfW, cgy);
+    ctx.lineTo(cgx + halfW, cgy);
+    ctx.stroke();
+    ctx.restore();
+  }
+  if (env.dotA > 0.02) {
+    const dg = ctx.createRadialGradient(cgx, cgy, 0, cgx, cgy, 9);
+    dg.addColorStop(0, `rgba(238, 255, 243, ${0.95 * env.dotA * env.fade})`);
+    dg.addColorStop(0.35, `rgba(170, 248, 200, ${0.6 * env.dotA * env.fade})`);
+    dg.addColorStop(1, "rgba(120, 220, 150, 0)");
+    ctx.fillStyle = dg;
+    ctx.fillRect(cgx - 10, cgy - 10, 20, 20);
+  }
+  const vig = ctx.createRadialGradient(cgx, cgy, Math.min(gw, gh) * 0.35, cgx, cgy, Math.max(gw, gh) * 0.72);
+  vig.addColorStop(0, "rgba(0, 0, 0, 0)");
+  vig.addColorStop(1, "rgba(0, 0, 0, 0.75)");
+  ctx.fillStyle = vig;
+  ctx.fillRect(gx, gy, gw, gh);
+  ctx.restore();
+
+  // Label on the casing, above the picture, same phosphor as MASS SPEC.
+  ctx.font = HALLEY_FONT;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(140, 218, 168, 0.7)";
+  ctx.fillText(HALLEY_LABEL, x + 10, y + 8);
   ctx.restore();
 }
 

@@ -52,7 +52,29 @@ import {
   type VoiceLine,
   type VoiceSource,
 } from "./voice.ts";
-import { lastSpeakError } from "./speak.ts";
+import {
+  HALLEY_BASE_URL,
+  HALLEY_CORRUPT_CHECK_MS,
+  HALLEY_MANIFEST_URL,
+  HALLEY_POWER_OFF_MS,
+  HALLEY_POWER_ON_MS,
+  createHalleyView,
+  halleyClipUrls,
+  halleyCorruptStep,
+  halleyDamage,
+  halleySignal,
+  isHalleyClipId,
+  type HalleyManifest,
+} from "./halley.ts";
+import {
+  PILOT_MANIFEST_URL,
+  PILOT_TRIGGER_CLIP,
+  isPilotClipId,
+  pilotTriggersFor,
+  type PilotManifest,
+  type PilotSnapshot,
+  type PilotTrigger,
+} from "./pilot.ts";
 
 import {
   createSystem,
@@ -296,6 +318,47 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let voiceLoading = false;
   let voiceError: string | null = null;
   let voiceGen = 0;
+  // Halley: the cabin CRT. Clips are named by id in a gitignored manifest (dev only
+  // until the lines are closed in Historia). No synthesized speech: a line with
+  // no clip is the panel on her base image, static, and the subtitle.
+  const halley = createHalleyView();
+  let halleyBase: HTMLImageElement | null = null;
+  let halleyManifest: HalleyManifest | null = null;
+  let halleyGen = 0;
+  let halleyVideo: HTMLVideoElement | null = null;
+  let halleyAudio: { stop: () => void } | null = null;
+  let halleyTimer = 0;
+  let halleyCorruptTimer = 0;
+  let halleyFastWarned = false;
+  /** Set once the ship has been clear of every well this chart; the warning is for arrivals, not the launch. */
+  let halleyLeftWell = false;
+  let prevStatus: string | null = null;
+  // Pilot thoughts: once per first, from a gitignored manifest (dev only until the copy is closed).
+  let pilotManifest: PilotManifest | null = null;
+  const pilotFired = new Set<PilotTrigger>();
+  let prevPilot: PilotSnapshot | null = null;
+  /** Lines waiting for the channel (Halley talking, or another thought); played in order. */
+  const thoughtQueue: { id: string; text: string; trigger: PilotTrigger | null }[] = [];
+  if (devTools) {
+    void fetch(PILOT_MANIFEST_URL)
+      .then((r) => (r.ok ? (r.json() as Promise<PilotManifest>) : null))
+      .then((m) => {
+        if (m && typeof m === "object") pilotManifest = m;
+      })
+      .catch(() => {
+        /* no clips on this build */
+      });
+  }
+  if (devTools) {
+    void fetch(HALLEY_MANIFEST_URL)
+      .then((r) => (r.ok ? (r.json() as Promise<HalleyManifest>) : null))
+      .then((m) => {
+        if (m && typeof m === "object") halleyManifest = m;
+      })
+      .catch(() => {
+        /* no clips on this build */
+      });
+  }
 
   const resize = () => {
     const rect = canvas.getBoundingClientRect();
@@ -314,6 +377,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         cssH,
         status: sim.status,
         phase: sim.phase,
+        halley,
       });
     }
   };
@@ -392,30 +456,227 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     onUi(hud);
   };
 
-  const playVoiceLine = (source: VoiceSource, text: string) => {
-    if (!devTools) return;
+  const halleyBaseImage = () => {
+    if (!halleyBase) {
+      halleyBase = new Image();
+      halleyBase.decoding = "async";
+      halleyBase.src = HALLEY_BASE_URL;
+    }
+    return halleyBase;
+  };
+
+  const halleySignalNow = () => halleySignal(halleyDamage(sim?.ship.hull ?? HULL_MAX));
+
+  const cancelHalley = () => {
+    halleyGen++;
+    window.clearTimeout(halleyTimer);
+    window.clearInterval(halleyCorruptTimer);
+    if (halleyVideo) {
+      try {
+        halleyVideo.pause();
+      } catch {
+        /* never started */
+      }
+      halleyVideo.removeAttribute("src");
+      halleyVideo.load();
+      halleyVideo.remove();
+      halleyVideo = null;
+    }
+    halleyAudio?.stop();
+    halleyAudio = null;
+    halley.frame = null;
+    halley.frozen = null;
+    halley.freezeUntil = 0;
+  };
+
+  const halleyPowerOff = (animate = true) => {
+    if (!halley.on) return;
+    halley.on = false;
+    halley.offAt = animate ? performance.now() : -1e9;
+    if (animate) audio.spectroPower(false);
+  };
+
+  /**
+   * One line through the cabin CRT: power on, 600 ms later the clip (or the
+   * TTS fallback over the base image), then power off 250 ms after it ends.
+   * The subtitle is the `ship` voice line; Mute keeps it.
+   */
+  const speakHalley = (clipId: string | null, text: string) => {
+    cancelHalley();
+    const gen = halleyGen;
+    const vgen = ++voiceGen;
+    window.clearTimeout(voiceTimer);
+    audio.unlock();
+    audio.stopVoice();
+    const now = performance.now();
+    const reduced = sim?.reducedMotion ?? reducedMotion;
+    if (!halley.on) {
+      halley.on = true;
+      halley.onAt = now;
+      audio.spectroPower(true);
+    }
+    voiceLine = makeVoiceLine("ship", text, now);
+    voiceLine.until = now + 120_000;
+    voiceLoading = true;
+    voiceError = null;
+    publish();
+
+    let finished = false;
+    const finish = () => {
+      if (gen !== halleyGen || finished) return;
+      finished = true;
+      window.clearInterval(halleyCorruptTimer);
+      window.clearTimeout(halleyTimer);
+      halleyAudio?.stop();
+      halleyAudio = null;
+      halleyTimer = window.setTimeout(() => {
+        if (gen !== halleyGen) return;
+        halleyPowerOff();
+        halley.frame = null;
+        halley.frozen = null;
+        halley.freezeUntil = 0;
+        if (halleyVideo) {
+          try {
+            halleyVideo.pause();
+          } catch {
+            /* never started */
+          }
+          halleyVideo.removeAttribute("src");
+          halleyVideo.load();
+          halleyVideo.remove();
+          halleyVideo = null;
+        }
+        if (vgen === voiceGen) {
+          voiceLine = null;
+          audio.stopVoice();
+        }
+        publish();
+      }, HALLEY_POWER_OFF_MS);
+    };
+
+    const startClip = (id: string) => {
+      const v = document.createElement("video");
+      const urls = halleyClipUrls(id);
+      v.src = v.canPlayType('video/mp4; codecs="avc1.640028, mp4a.40.2"') ? urls.mp4 : urls.webm;
+      v.playsInline = true;
+      v.preload = "auto";
+      v.muted = false;
+      v.setAttribute("aria-hidden", "true");
+      v.style.cssText = "position:fixed;left:-4px;top:-4px;width:2px;height:2px;opacity:0;pointer-events:none;";
+      document.body.appendChild(v);
+      halleyVideo = v;
+      v.addEventListener(
+        "loadeddata",
+        () => {
+          if (gen !== halleyGen) return;
+          halley.frame = v;
+          voiceLoading = false;
+          publish();
+        },
+        { once: true },
+      );
+      v.addEventListener("ended", finish, { once: true });
+      v.addEventListener(
+        "error",
+        () => {
+          if (gen !== halleyGen) return;
+          voiceError = "halley clip failed to load";
+          voiceLoading = false;
+          finish();
+        },
+        { once: true },
+      );
+      halleyAudio = audio.playHalleyMedia(v, halleySignalNow);
+      // Corrupt memory: freeze the picture or jump the clip back and repeat a piece.
+      let skips = 0;
+      halleyCorruptTimer = window.setInterval(() => {
+        if (gen !== halleyGen || v.paused || v.ended) return;
+        const nowMs = performance.now();
+        if (halley.freezeUntil && nowMs > halley.freezeUntil) {
+          halley.freezeUntil = 0;
+          halley.frozen = null;
+          halley.glitchAt = nowMs;
+        }
+        const step = halleyCorruptStep(
+          halleyDamage(sim?.ship.hull ?? HULL_MAX),
+          v.currentTime,
+          skips,
+          halley.freezeUntil > 0,
+          Math.random,
+        );
+        if (!step) return;
+        if (step.kind === "freeze") {
+          const fc = document.createElement("canvas");
+          fc.width = Math.max(1, v.videoWidth);
+          fc.height = Math.max(1, v.videoHeight);
+          fc.getContext("2d")?.drawImage(v, 0, 0);
+          halley.frozen = fc;
+          halley.freezeUntil = nowMs + step.ms;
+        } else {
+          skips++;
+          v.currentTime = Math.max(0.2, v.currentTime - step.seconds);
+        }
+        halley.glitchAt = nowMs;
+      }, HALLEY_CORRUPT_CHECK_MS);
+      void v.play().catch(() => {
+        if (gen !== halleyGen) return;
+        voiceError = "halley clip could not play";
+        voiceLoading = false;
+        finish();
+      });
+    };
+
+    const startStatic = () => {
+      halley.frame = halleyBaseImage();
+      halleyAudio = audio.playHalleyStatic(halleySignalNow);
+      voiceLoading = false;
+      const hold = voiceTtlMs(text, "ship");
+      if (voiceLine) voiceLine.until = performance.now() + hold + HALLEY_POWER_OFF_MS;
+      publish();
+      halleyTimer = window.setTimeout(finish, hold);
+    };
+
+    halleyTimer = window.setTimeout(
+      () => {
+        if (gen !== halleyGen) return;
+        if (clipId) startClip(clipId);
+        else startStatic();
+      },
+      reduced ? 0 : HALLEY_POWER_ON_MS,
+    );
+  };
+
+  /**
+   * A recorded pilot thought: tick, clip, white subtitle. One line at a time;
+   * while Halley talks it waits and plays when her panel goes dark.
+   */
+  const speakThought = (id: string, text: string, trigger: PilotTrigger | null = null) => {
+    if (halley.on || (voiceLine && voiceLine.source === "thought")) {
+      if (!thoughtQueue.some((q) => q.id === id)) thoughtQueue.push({ id, text, trigger });
+      return;
+    }
+    if (trigger) pilotFired.add(trigger);
+    cancelHalley();
     const gen = ++voiceGen;
     audio.unlock();
     const now = performance.now();
-    voiceLine = makeVoiceLine(source, text, now);
+    voiceLine = makeVoiceLine("thought", text, now);
+    voiceLine.until = now + 120_000;
     voiceLoading = true;
     voiceError = null;
     publish();
     void (async () => {
-      let spokenMs = 0;
+      let ms = 0;
       try {
-        spokenMs = await audio.playVoice(source, voiceLine!.text);
+        ms = await audio.playThought(id);
       } catch (err) {
-        spokenMs = 0;
         voiceError = err instanceof Error ? err.message : String(err);
       }
       if (gen !== voiceGen) return;
       voiceLoading = false;
-      if (spokenMs === 0 && source !== "static") {
-        voiceError = voiceError ?? lastSpeakError();
-      }
-      const hold = Math.max(voiceTtlMs(voiceLine!.text, source), spokenMs + 280);
-      voiceLine!.until = performance.now() + hold;
+      if (ms === 0) voiceError = voiceError ?? "pilot clip failed to load";
+      const hold = Math.max(voiceTtlMs(text, "thought"), ms + 280);
+      if (voiceLine) voiceLine.until = performance.now() + hold;
       window.clearTimeout(voiceTimer);
       voiceTimer = window.setTimeout(() => {
         if (gen !== voiceGen) return;
@@ -425,6 +686,45 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       }, hold);
       publish();
     })();
+  };
+
+  const playVoiceLine = (source: VoiceSource, text: string) => {
+    if (!devTools) return;
+    if (source === "thought") {
+      const id = text.trim().toLowerCase();
+      const clip = isPilotClipId(id) && pilotManifest?.[id] ? pilotManifest[id] : null;
+      if (clip) {
+        speakThought(id, clip.text);
+        return;
+      }
+    }
+    if (source === "ship") {
+      // The ship is Halley. A clip id (`halley-01`) plays the clip when this build has it.
+      const id = text.trim().toLowerCase();
+      const clip = isHalleyClipId(id) && halleyManifest?.[id] ? halleyManifest[id] : null;
+      if (clip) speakHalley(id, clip.text);
+      else speakHalley(null, text);
+      return;
+    }
+    cancelHalley();
+    halleyPowerOff();
+    const gen = ++voiceGen;
+    audio.unlock();
+    const now = performance.now();
+    voiceLine = makeVoiceLine(source, text, now);
+    voiceLoading = false;
+    voiceError = null;
+    // Text plus the visor bed. Recorded pilot clips come with fase 3.
+    audio.playVoice(source);
+    const hold = voiceTtlMs(voiceLine.text, source);
+    window.clearTimeout(voiceTimer);
+    voiceTimer = window.setTimeout(() => {
+      if (gen !== voiceGen) return;
+      voiceLine = null;
+      audio.stopVoice();
+      publish();
+    }, hold);
+    publish();
   };
 
   const aimYaw = (): number | null => {
@@ -865,6 +1165,50 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     prevBoomed = sim.transitBoomed;
     if (sim.phase === "transit") publish();
     prevPhase = sim.phase;
+    // Halley's first line: the fast-landing warning, once per chart, when this build has the clip.
+    // Only on an approach: after the ship has left its launch well, and while closing on the body.
+    const nearest = sim.nearest;
+    if (sim.phase === "flight" && sim.status === "deep") halleyLeftWell = true;
+    const closing =
+      !!nearest &&
+      (sim.ship.vx - nearest.vx) * (sim.ship.x - nearest.x) +
+        (sim.ship.vy - nearest.vy) * (sim.ship.y - nearest.y) <
+        0;
+    if (
+      sim.phase === "flight" &&
+      sim.status === "too-fast" &&
+      prevStatus !== "too-fast" &&
+      halleyLeftWell &&
+      closing &&
+      !halleyFastWarned &&
+      halleyManifest?.["halley-01"]
+    ) {
+      halleyFastWarned = true;
+      speakHalley("halley-01", halleyManifest["halley-01"].text);
+    }
+    prevStatus = sim.status;
+    // Pilot thoughts: one per first (takeoff, landing, adrift, Camp in scope), from events that already exist.
+    const pilotNow: PilotSnapshot = {
+      phase: sim.phase,
+      landedId: sim.landedId,
+      adrift: sim.adrift,
+      campInScope:
+        !!nearest &&
+        nearest.kicker === "Camp" &&
+        nearest.settlement === "active" &&
+        sim.status !== "deep" &&
+        sim.phase !== "title",
+    };
+    for (const trigger of pilotTriggersFor(prevPilot, pilotNow, pilotFired)) {
+      const clipId = PILOT_TRIGGER_CLIP[trigger];
+      const clip = pilotManifest?.[clipId];
+      if (clip) speakThought(clipId, clip.text, trigger);
+    }
+    prevPilot = pilotNow;
+    if (thoughtQueue.length && !halley.on && !voiceLine) {
+      const next = thoughtQueue.shift()!;
+      speakThought(next.id, next.text, next.trigger);
+    }
 
     if (sim.landedId && sim.landedId !== prevLanded && sim.phase !== "title") audio.land();
     prevLanded = sim.landedId;
@@ -897,6 +1241,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       cssH,
       status: sim.status,
       phase: sim.phase,
+      halley,
     });
 
     hudTick += dt;
@@ -929,6 +1274,12 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     prevAirlockSeq = 0;
     prevRefueling = false;
     prevRepairing = false;
+    halleyFastWarned = false;
+    halleyLeftWell = false;
+    prevStatus = null;
+    pilotFired.clear();
+    prevPilot = null;
+    thoughtQueue.length = 0;
     const keys = held(input.state);
     oWasDown = keys.has("KeyO");
     lWasDown = keys.has("KeyL");
@@ -958,8 +1309,11 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     input.state.presses.clear();
     window.clearTimeout(bootTimer);
     window.clearTimeout(voiceTimer);
+    voiceGen++;
     voiceLine = null;
     audio.stopVoice();
+    cancelHalley();
+    halleyPowerOff(false);
     cancelAnimationFrame(raf);
     sim = null;
     paintBoot();
@@ -1113,6 +1467,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       running = false;
       window.clearTimeout(bootTimer);
       window.clearTimeout(voiceTimer);
+      voiceGen++;
+      cancelHalley();
       cancelAnimationFrame(raf);
       ro.disconnect();
       input.destroy();

@@ -16,7 +16,7 @@
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
     "check:auth": "node scripts/check-auth-invariant.mjs",
-    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/preview-embedder-origin.test.ts src/game/warp.test.ts src/game/comet.test.ts src/game/fuel.test.ts src/game/matter.test.ts src/game/spectro.test.ts src/game/asteroid.test.ts src/game/occupancy.test.ts src/game/belt.test.ts src/game/hull.test.ts src/game/orbit-lock.test.ts src/game/input.test.ts src/game/camera.test.ts src/game/adrift.test.ts src/game/hud.test.ts src/game/voice.test.ts src/game/speak.test.ts",
+    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/preview-embedder-origin.test.ts src/game/warp.test.ts src/game/comet.test.ts src/game/fuel.test.ts src/game/matter.test.ts src/game/spectro.test.ts src/game/asteroid.test.ts src/game/occupancy.test.ts src/game/belt.test.ts src/game/hull.test.ts src/game/orbit-lock.test.ts src/game/input.test.ts src/game/camera.test.ts src/game/adrift.test.ts src/game/hud.test.ts src/game/voice.test.ts src/game/ship-sprite.test.ts src/game/halley.test.ts src/game/pilot.test.ts src/game/surface.test.ts",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
@@ -56,7 +56,6 @@
     "cmdk": "^1.1.1",
     "date-fns": "^4.0.0",
     "jose": "6.2.9",
-    "kitten-tts-js": "^0.1.2",
     "kysely": "^0.28.5",
     "lucide-react": "^0.510.0",
     "pg": "^8.16.3",

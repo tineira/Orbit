@@ -2,7 +2,8 @@ import { WARP_BOOM_TIMES } from "./world";
 import { airlockFadeAt, airlockFadeMs, airlockHatchAt } from "./adrift";
 import { hullWeldInterval, type HullRepairKind } from "./hull";
 import type { VoiceSource } from "./voice.ts";
-import { renderSpeak, type SpeakPcm } from "./speak.ts";
+import type { HalleySignal } from "./halley.ts";
+import { PILOT_FILTER, pilotClipUrls } from "./pilot.ts";
 
 function fillPink(data: Float32Array) {
   let b0 = 0;
@@ -273,114 +274,6 @@ function fireVoiceBed(
   push(g);
   stoppable(a, t + 0.95);
   stoppable(b, t + 0.95);
-}
-
-function playSpeakPcm(
-  ctx: AudioContext,
-  dest: AudioNode,
-  source: Exclude<VoiceSource, "static">,
-  rendered: SpeakPcm,
-  nodes: AudioNode[],
-) {
-  const t = ctx.currentTime;
-  const dur = rendered.pcm.length / rendered.sampleRate;
-  const buf = ctx.createBuffer(1, rendered.pcm.length, rendered.sampleRate);
-  buf.getChannelData(0).set(new Float32Array(rendered.pcm));
-  const src = ctx.createBufferSource();
-  src.buffer = buf;
-  const keep = (n: AudioNode) => {
-    nodes.push(n);
-    return n;
-  };
-  keep(src);
-
-  const out = ctx.createGain();
-  keep(out);
-  let node: AudioNode = src;
-
-  if (source === "thought") {
-    const hp = ctx.createBiquadFilter();
-    keep(hp);
-    hp.type = "highpass";
-    hp.frequency.value = 70;
-    const shelf = ctx.createBiquadFilter();
-    keep(shelf);
-    shelf.type = "lowshelf";
-    shelf.frequency.value = 220;
-    shelf.gain.value = 5.5;
-    const lp = ctx.createBiquadFilter();
-    keep(lp);
-    lp.type = "lowpass";
-    lp.frequency.value = 1750;
-    lp.Q.value = 0.55;
-    src.connect(hp);
-    hp.connect(shelf);
-    shelf.connect(lp);
-    node = lp;
-    out.gain.value = 0.36;
-  } else if (source === "ship") {
-    const hp = ctx.createBiquadFilter();
-    keep(hp);
-    hp.type = "highpass";
-    hp.frequency.value = 320;
-    const lp = ctx.createBiquadFilter();
-    keep(lp);
-    lp.type = "lowpass";
-    lp.frequency.value = 1350;
-    lp.Q.value = 0.9;
-    src.connect(hp);
-    hp.connect(lp);
-    node = lp;
-    out.gain.value = 0.62;
-  } else if (source === "radio") {
-    const bp = ctx.createBiquadFilter();
-    keep(bp);
-    bp.type = "bandpass";
-    bp.frequency.value = 1650;
-    bp.Q.value = 1.15;
-    src.connect(bp);
-    node = bp;
-    out.gain.value = 0.7;
-  } else {
-    const hp = ctx.createBiquadFilter();
-    keep(hp);
-    hp.type = "highpass";
-    hp.frequency.value = 180;
-    const ring = ctx.createGain();
-    keep(ring);
-    ring.gain.value = 0;
-    const osc = ctx.createOscillator();
-    osc.type = "sine";
-    osc.frequency.value = 73;
-    osc.connect(ring.gain);
-    osc.start(t);
-    osc.stop(t + dur + 0.05);
-    osc.onended = () => {
-      try {
-        osc.disconnect();
-      } catch {
-        /* already gone */
-      }
-    };
-    keep(osc);
-    src.connect(hp);
-    hp.connect(ring);
-    const dry = ctx.createGain();
-    keep(dry);
-    dry.gain.value = 0.28;
-    hp.connect(dry);
-    const mix = ctx.createGain();
-    keep(mix);
-    ring.connect(mix);
-    dry.connect(mix);
-    node = mix;
-    out.gain.value = 0.58;
-  }
-
-  node.connect(out);
-  out.connect(dest);
-  src.start(t);
-  src.stop(t + dur + 0.04);
 }
 
 /** Large hail on a car roof: ice crack + short damped thunk. Not a ringing plate. */
@@ -1027,11 +920,40 @@ type AudioApi = {
   setAdriftAlarm: (on: boolean) => void;
   airlockSequence: (reduced?: boolean) => void;
   cancelAirlockSequence: () => void;
-  playVoice: (source: VoiceSource, text: string) => Promise<number>;
+  /**
+   * The visor bed for a line (tick, blip, hiss). No synthesized speech: voices
+   * are recorded clips (`playHalleyMedia`), or text alone.
+   */
+  playVoice: (source: VoiceSource) => void;
+  /** Halley's recorded clip: a media element through the cabin speaker chain. */
+  playHalleyMedia: (media: HTMLMediaElement, signal: () => HalleySignal) => HalleyVoiceHandle | null;
+  /** The cabin speaker idling: static and crackle only, for a line with no clip. */
+  playHalleyStatic: (signal: () => HalleySignal) => HalleyVoiceHandle | null;
+  /** A recorded pilot thought by id: the clip alone, dry and close, no visor tick. Resolves to its length in ms (0 if missing). */
+  playThought: (id: string) => Promise<number>;
   stopVoice: () => void;
   setMuted: (muted: boolean) => void;
   destroy: () => void;
 };
+
+export type HalleyVoiceHandle = { stop: () => void };
+
+type CabinChain = { input: GainNode; stop: () => void };
+
+let cabinCurve: Float32Array<ArrayBuffer> | null = null;
+/** Soft drive, `tanh(2.2x)` normalised. */
+function cabinDriveCurve() {
+  if (!cabinCurve) {
+    const curve = new Float32Array(1024);
+    const k = Math.tanh(2.2);
+    for (let i = 0; i < 1024; i++) {
+      const x = i / 511.5 - 1;
+      curve[i] = Math.tanh(x * 2.2) / k;
+    }
+    cabinCurve = curve;
+  }
+  return cabinCurve;
+}
 
 export function createAudio(): AudioApi {
   let ctx: AudioContext | null = null;
@@ -1115,6 +1037,12 @@ export function createAudio(): AudioApi {
   let repairOn = false;
   let nextWeldAt = 0;
   const clipLoads = new Map<string, Promise<AudioBuffer>>();
+  // Halley's crusher lives in an AudioWorklet. Loaded on unlock; bypassed until then.
+  let crushLoad: Promise<boolean> | null = null;
+  let crushReady = false;
+  let cabinChain: CabinChain | null = null;
+  /** Bumped by every stopVoice; an async clip start checks it after its await. */
+  let voiceSeq = 0;
   // CRT TV power on/off clip for the mass spec panel. On = the degauss
   // thunk at the head of the clip, off = the double pop at the tail.
   let tvLoad: Promise<AudioBuffer> | null = null;
@@ -1150,8 +1078,41 @@ export function createAudio(): AudioApi {
     return tvLoad;
   };
 
+  const loadCrush = () => {
+    if (!ctx) return Promise.resolve(false);
+    if (!crushLoad) {
+      const worklet = ctx.audioWorklet;
+      crushLoad = worklet
+        ? worklet.addModule("/audio/crush-worklet.js").then(
+            () => {
+              crushReady = true;
+              return true;
+            },
+            () => false,
+          )
+        : Promise.resolve(false);
+    }
+    return crushLoad;
+  };
+
+  const loadPilotClip = (id: string) => {
+    if (!ctx) return null;
+    const key = `pilot:${id}`;
+    let p = clipLoads.get(key);
+    if (!p) {
+      const urls = pilotClipUrls(id);
+      p = decodeUrl(urls.webm).catch(() => decodeUrl(urls.m4a));
+      p.catch(() => {
+        clipLoads.delete(key);
+      });
+      clipLoads.set(key, p);
+    }
+    return p;
+  };
+
   const prefetchClips = () => {
     void loadTvClip();
+    void loadCrush();
     void loadClip("airlock-alarm");
     void loadClip("airlock-hatch");
     void loadClip("airlock-leak");
@@ -1502,7 +1463,120 @@ export function createAudio(): AudioApi {
     pumpLfo.start();
   };
 
+  /**
+   * Halley's cabin speaker (docs/art/README.md, fase 2): crusher → highpass
+   * 320 → peaking 1.9 kHz +5 dB → lowpass 3.4 kHz → tanh drive → 1.15, with a
+   * static bed under it that crackles while she talks. Everything into `sfx`,
+   * so Mute silences it and the subtitle stays.
+   */
+  const makeCabinChain = (signal: () => HalleySignal): CabinChain | null => {
+    if (!ctx || !sfx || !whiteBuf) return null;
+    const c = ctx;
+    const dest = sfx;
+    const nodes: AudioNode[] = [];
+    const keep = <T extends AudioNode>(n: T) => {
+      nodes.push(n);
+      return n;
+    };
+    const input = keep(c.createGain());
+    input.gain.value = 1;
+    let head: AudioNode = input;
+    let crush: AudioWorkletNode | null = null;
+    if (crushReady) {
+      try {
+        crush = new AudioWorkletNode(c, "orbit-crush", {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [1],
+        });
+        keep(crush);
+        input.connect(crush);
+        head = crush;
+      } catch {
+        crush = null;
+      }
+    }
+    const hp = keep(c.createBiquadFilter());
+    hp.type = "highpass";
+    hp.frequency.value = 320;
+    const pk = keep(c.createBiquadFilter());
+    pk.type = "peaking";
+    pk.frequency.value = 1900;
+    pk.Q.value = 1.1;
+    pk.gain.value = 5;
+    const lp = keep(c.createBiquadFilter());
+    lp.type = "lowpass";
+    lp.frequency.value = 3400;
+    lp.Q.value = 0.8;
+    const drive = keep(c.createWaveShaper());
+    drive.curve = cabinDriveCurve();
+    const wet = keep(c.createGain());
+    wet.gain.value = 1.15;
+    head.connect(hp);
+    hp.connect(pk);
+    pk.connect(lp);
+    lp.connect(drive);
+    drive.connect(wet);
+    wet.connect(dest);
+
+    const noise = keep(c.createBufferSource());
+    noise.buffer = whiteBuf;
+    noise.loop = true;
+    const bp = keep(c.createBiquadFilter());
+    bp.type = "bandpass";
+    bp.frequency.value = 2600;
+    bp.Q.value = 0.6;
+    const ng = keep(c.createGain());
+    const baseOf = (s: HalleySignal) => 0.01 * s.static;
+    ng.gain.value = baseOf(signal());
+    noise.connect(bp);
+    bp.connect(ng);
+    ng.connect(dest);
+    noise.start();
+
+    // Every 120 ms: follow the damage, and 15 % of the time a crackle (3× the bed, back in 50 ms).
+    const tick = window.setInterval(() => {
+      const s = signal();
+      const amount = crush?.parameters.get("amount");
+      if (amount) amount.value = s.dig;
+      const base = Math.max(0.0001, baseOf(s));
+      const t = c.currentTime;
+      ng.gain.cancelScheduledValues(t);
+      if (Math.random() < 0.15) {
+        ng.gain.setValueAtTime(base * 3, t);
+        ng.gain.exponentialRampToValueAtTime(base, t + 0.05);
+      } else {
+        ng.gain.setTargetAtTime(base, t, 0.03);
+      }
+    }, 120);
+    const amount = crush?.parameters.get("amount");
+    if (amount) amount.value = signal().dig;
+
+    let stopped = false;
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      window.clearInterval(tick);
+      const t = c.currentTime;
+      ng.gain.cancelScheduledValues(t);
+      ng.gain.setTargetAtTime(0, t, 0.08);
+      window.setTimeout(() => {
+        try {
+          noise.stop();
+        } catch {
+          /* already gone */
+        }
+        crush?.port.postMessage("stop");
+        tidyNodes(nodes);
+      }, 400);
+    };
+    return { input, stop };
+  };
+
   const stopVoice = () => {
+    voiceSeq++;
+    cabinChain?.stop();
+    cabinChain = null;
     for (const n of voiceNodes) {
       try {
         if ("stop" in n && typeof (n as OscillatorNode).stop === "function") {
@@ -2361,19 +2435,107 @@ export function createAudio(): AudioApi {
       stopAirlockNodes();
       restoreWorldGain();
     },
-    async playVoice(source, text) {
+    playVoice(source) {
       unlock();
       stopVoice();
+      if (!ctx || !sfx || !whiteBuf) return;
+      void ctx.resume();
+      fireVoiceBed(ctx, sfx, whiteBuf, clickBuf, source, voiceNodes);
+    },
+    async playThought(id) {
+      unlock();
+      stopVoice();
+      const seq = voiceSeq;
       if (!ctx || !sfx || !whiteBuf) return 0;
       void ctx.resume();
-      const spoken = muted ? null : await renderSpeak(source, text);
-      if (!ctx || !sfx || !whiteBuf) return 0;
-      const seconds = spoken ? spoken.pcm.length / spoken.sampleRate : 0;
-      fireVoiceBed(ctx, sfx, whiteBuf, clickBuf, source, voiceNodes, seconds);
-      if (spoken && source !== "static") {
-        playSpeakPcm(ctx, sfx, source, spoken, voiceNodes);
+      const load = loadPilotClip(id);
+      if (!load) return 0;
+      let buf: AudioBuffer;
+      try {
+        buf = await load;
+      } catch {
+        return 0;
       }
-      return Math.round(seconds * 1000);
+      // Something else took the channel (a stop, Halley, a new chart) while the clip decoded.
+      if (seq !== voiceSeq) return 0;
+      if (!ctx || !sfx || !whiteBuf) return 0;
+      // No tick: a thought is your own head, not a device. It starts in silence.
+      // Tomás's cap: highpass 58, low shelf 220 +4.2 dB, lowpass 2.9 kHz. Never more than this.
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const hp = ctx.createBiquadFilter();
+      hp.type = "highpass";
+      hp.frequency.value = PILOT_FILTER.highpassHz;
+      const shelf = ctx.createBiquadFilter();
+      shelf.type = "lowshelf";
+      shelf.frequency.value = PILOT_FILTER.shelfHz;
+      shelf.gain.value = PILOT_FILTER.shelfDb;
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.value = PILOT_FILTER.lowpassHz;
+      lp.Q.value = PILOT_FILTER.lowpassQ;
+      const out = ctx.createGain();
+      out.gain.value = 1.4;
+      src.connect(hp);
+      hp.connect(shelf);
+      shelf.connect(lp);
+      lp.connect(out);
+      out.connect(sfx);
+      voiceNodes.push(src, hp, shelf, lp, out);
+      const t = ctx.currentTime + 0.02;
+      src.start(t);
+      src.onended = () => {
+        try {
+          src.disconnect();
+        } catch {
+          /* already gone */
+        }
+      };
+      return Math.round((buf.duration + 0.02) * 1000);
+    },
+    playHalleyStatic(signal) {
+      unlock();
+      stopVoice();
+      if (!ctx) return null;
+      void ctx.resume();
+      const chain = makeCabinChain(signal);
+      if (!chain) return null;
+      cabinChain = chain;
+      return {
+        stop() {
+          if (cabinChain === chain) cabinChain = null;
+          chain.stop();
+        },
+      };
+    },
+    playHalleyMedia(media, signal) {
+      unlock();
+      stopVoice();
+      if (!ctx) return null;
+      void ctx.resume();
+      const chain = makeCabinChain(signal);
+      if (!chain) return null;
+      let src: MediaElementAudioSourceNode | null = null;
+      try {
+        src = ctx.createMediaElementSource(media);
+        src.connect(chain.input);
+      } catch {
+        chain.stop();
+        return null;
+      }
+      const tap = src;
+      cabinChain = chain;
+      return {
+        stop() {
+          if (cabinChain === chain) cabinChain = null;
+          chain.stop();
+          try {
+            tap.disconnect();
+          } catch {
+            /* already gone */
+          }
+        },
+      };
     },
     stopVoice,
     crash() {
