@@ -201,9 +201,10 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
     const specOffAnim = !sim.reducedMotion && performance.now() - sim.spectroOffAt < 700;
     if (sim.showSpectro || specOffAnim) drawSpectrograph(ctx, sim, cssW, cssH);
     const halley = opts.halley;
-    if (halley) {
-      const halleyActive = halley.on || now - halley.offAt < HALLEY_OFF_ANIM_MS;
-      if (sim.showSpectro || halleyActive) drawHalley(ctx, sim, halley, cssW, cssH, now);
+    // Her tube exists only while she talks, including the power-off collapse.
+    // Opening the mass spec does not raise it.
+    if (halley && (halley.on || now - halley.offAt < HALLEY_OFF_ANIM_MS)) {
+      drawHalley(ctx, sim, halley, cssW, cssH, now);
     }
   }
   void w;
@@ -3489,18 +3490,15 @@ function drawHalley(
   const env = crtPowerEnvelope(now, view.on, view.onAt, view.offAt, reduced);
   const c01 = (v: number) => Math.max(0, Math.min(1, v));
 
-  // Without the mass spec on, the casing only exists while she talks: ramp it in and out.
-  let casingA = 1;
-  if (!sim.showSpectro && !specOffAnim) {
-    casingA = view.on
-      ? reduced
-        ? 1
-        : c01((now - view.onAt) / 200)
-      : reduced
-        ? 0
-        : c01(1 - (now - view.offAt - 400) / 300);
-    if (casingA <= 0.01) return;
-  }
+  // The bezel follows her own power cycle, whether or not the mass spec is open under her.
+  const casingA = view.on
+    ? reduced
+      ? 1
+      : c01((now - view.onAt) / 200)
+    : reduced
+      ? 0
+      : c01(1 - (now - view.offAt - 400) / 300);
+  if (casingA <= 0.01) return;
 
   ctx.save();
   ctx.globalAlpha = 0.94 * casingA;

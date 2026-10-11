@@ -100,7 +100,7 @@ Estos archivos son referencia. Al implementar, cópialos a `public/`.
   - Cada salto o congelada dispara un corte grande de 160 ms.
 
 **Encendido y apagado.** Igual que el mass spec: reutiliza su envelope (punto → línea → imagen con destello; al apagar, imagen → línea → punto que queda → oscuro) y el clip `tv-onoff` (encendido: cabeza 0,6 s; apagado: 0,75 s desde 2,88 s, como `spectroPower`).
-- El monitor está apagado mientras Halley no habla.
+- El panel no está en pantalla mientras Halley no habla. Abrir el mass spec no lo muestra. El mass spec conserva su clic de encendido, el barrido y el ping. Cuando ella habla, el panel aparece con su propio clic y su audio, y se apaga. Con el mass spec abierto se apila encima; apagado, ocupa su hueco.
 - Secuencia: encender, y 600 ms después arranca el clip. Al terminar, se apaga 250 ms después.
 - Con `reducedMotion`, sin animación de encendido.
 
@@ -130,7 +130,7 @@ Estos archivos son referencia. Al implementar, cópialos a `public/`.
 
 **Estado (11 oct 2026).** Implementada sin clips en el repo. Lo que hay:
 - `src/game/halley.ts`: señal por daño, pérdida de imagen, memoria corrupta, envelope CRT, tears. Con test.
-- `src/game/draw.ts` `drawHalley` + `halleyLayout`: apilado sobre el mass spec; si el mass spec está apagado, ocupa su hueco (no flota sobre un agujero). **Móvil (decidido 11 oct 2026, visto con el canvas a 400 px):** Halley va a la izquierda del minimapa, en el hueco del mass spec, con su ancho y 1,25× su alto; con el mass spec encendido se apila encima. Se acorta hasta lo que cabe y se oculta bajo 48 px.
+- `src/game/draw.ts` `drawHalley` + `halleyLayout`: el panel solo se dibuja mientras habla (y en el apagado). Apilado sobre el mass spec; si el mass spec está apagado, ocupa su hueco (no flota sobre un agujero). **Móvil (decidido 11 oct 2026, visto con el canvas a 400 px):** Halley va a la izquierda del minimapa, en el hueco del mass spec, con su ancho y 1,25× su alto; con el mass spec encendido se apila encima. Se acorta hasta lo que cabe y se oculta bajo 48 px.
 - `src/game/audio.ts`: `makeCabinChain` (crusher en `public/audio/crush-worklet.js`, banda, drive, estática con chasquidos), `playHalleyMedia` para clips y `playHalleyStatic` para una línea sin clip. Sin TTS: `kitten-tts-js` salió de `package.json`.
 - `src/game/runtime.ts` `speakHalley`: encender → 600 ms → clip (o imagen base + estática por el TTL del texto) → fin → 250 ms → apagar. Congelar / retroceder por `halleyCorruptStep`. Trigger `halley-01` en el primer `status === "too-fast"` del chart, solo si el build tiene el clip.
 - Clips: `public/halley/<id>.mp4|webm` + `public/halley/manifest.json` (`{ "halley-01": { "text": "…" } }`), todos **gitignored**. El manifest se lee solo en `?dev`. En el probe, tag SHIP con texto `halley-01` reproduce el clip; otro texto es imagen base + estática + subtítulo.
