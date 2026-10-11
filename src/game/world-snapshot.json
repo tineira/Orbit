@@ -1,0 +1,2475 @@
+{
+  "seeds": {
+    "1": {
+      "start": {
+        "x": 1538.198,
+        "y": 3995.1361,
+        "vx": -33.8587,
+        "vy": 14.2688,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Ardor",
+          "kind": "star",
+          "angle": 5.8983
+        },
+        {
+          "name": "Kindle",
+          "kind": "star",
+          "angle": 1.5621
+        },
+        {
+          "name": "Cinder",
+          "kind": "star",
+          "angle": 4.1249
+        }
+      ],
+      "planets": [
+        {
+          "name": "Apex",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 270.1659,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Vara",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 92.3554,
+          "orbitR": 4044.935,
+          "orbitA": 1.2115,
+          "orbitE": 0.0905,
+          "orbitW": 0.0099
+        },
+        {
+          "name": "Deneb",
+          "kind": "rocky",
+          "kicker": "Workshop",
+          "settlement": "unexplored",
+          "radius": 63.5437,
+          "orbitR": 6454.6791,
+          "orbitA": 6.2488,
+          "orbitE": 0.0845,
+          "orbitW": 0.0049
+        },
+        {
+          "name": "Tole",
+          "kind": "rocky",
+          "kicker": "Archive",
+          "settlement": "abandoned",
+          "radius": 75.3691,
+          "orbitR": 8697.374,
+          "orbitA": 2.0316,
+          "orbitE": 0.1042,
+          "orbitW": 0.0031
+        },
+        {
+          "name": "Kest",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 196.5255,
+          "orbitR": 11169.6983,
+          "orbitA": 4.5623,
+          "orbitE": 0.0712,
+          "orbitW": 0.0021
+        },
+        {
+          "name": "Halo",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 41.8621,
+          "orbitR": 952.8962,
+          "orbitA": 4.2525,
+          "orbitE": 0.0582,
+          "orbitW": 0.0497
+        },
+        {
+          "name": "Wick",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 32.9904,
+          "orbitR": 1320.8467,
+          "orbitA": 4.8985,
+          "orbitE": 0.043,
+          "orbitW": 0.0304
+        }
+      ]
+    },
+    "2": {
+      "start": {
+        "x": -4192.9241,
+        "y": -625.9811,
+        "vx": 4.7644,
+        "vy": -40.5878,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Solis",
+          "kind": "star",
+          "angle": 5.2216
+        },
+        {
+          "name": "Hearth",
+          "kind": "star",
+          "angle": 3.8225
+        }
+      ],
+      "planets": [
+        {
+          "name": "Kindle",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 278.7401,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Vellum",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 55.9601,
+          "orbitR": 3932.1121,
+          "orbitA": 3.2749,
+          "orbitE": 0.0776,
+          "orbitW": 0.0112
+        },
+        {
+          "name": "Phaedra",
+          "kind": "rocky",
+          "kicker": "Signal",
+          "settlement": "active",
+          "radius": 57.1092,
+          "orbitR": 6095.4475,
+          "orbitA": 5.0581,
+          "orbitE": 0.0588,
+          "orbitW": 0.0058
+        },
+        {
+          "name": "Rook",
+          "kind": "rocky",
+          "kicker": "Workshop",
+          "settlement": "unexplored",
+          "radius": 63.5967,
+          "orbitR": 8231.5409,
+          "orbitA": 6.1096,
+          "orbitE": 0.1188,
+          "orbitW": 0.0037
+        },
+        {
+          "name": "Xor",
+          "kind": "rocky",
+          "kicker": "Archive",
+          "settlement": "active",
+          "radius": 101.0051,
+          "orbitR": 10618.3065,
+          "orbitA": 0.3234,
+          "orbitE": 0.0677,
+          "orbitW": 0.0025
+        },
+        {
+          "name": "Vesper",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 247.154,
+          "orbitR": 13297.5935,
+          "orbitA": 2.8002,
+          "orbitE": 0.1143,
+          "orbitW": 0.0018
+        },
+        {
+          "name": "Pebble",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 37.2351,
+          "orbitR": 1198.8005,
+          "orbitA": 2.1696,
+          "orbitE": 0.0382,
+          "orbitW": 0.0444
+        },
+        {
+          "name": "Rime",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 29.0098,
+          "orbitR": 1659.7857,
+          "orbitA": 7.0015,
+          "orbitE": 0.0468,
+          "orbitW": 0.0273
+        }
+      ]
+    },
+    "3": {
+      "start": {
+        "x": -3017.5045,
+        "y": -2367.5915,
+        "vx": 28.5673,
+        "vy": -31.7191,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Vesta",
+          "kind": "star",
+          "angle": 2.6052
+        },
+        {
+          "name": "Pyre",
+          "kind": "star",
+          "angle": 4.9879
+        }
+      ],
+      "planets": [
+        {
+          "name": "Hearth",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 277.6181,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Oum",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 80.3214,
+          "orbitR": 3789.2273,
+          "orbitA": 3.7886,
+          "orbitE": 0.0861,
+          "orbitW": 0.0112
+        },
+        {
+          "name": "Xor·Lir",
+          "kind": "barycenter",
+          "kicker": "Pair",
+          "settlement": null,
+          "radius": 0,
+          "orbitR": 6524.1677,
+          "orbitA": 3.6554,
+          "orbitE": 0.1061,
+          "orbitW": 0.005
+        },
+        {
+          "name": "Xor",
+          "kind": "rocky",
+          "kicker": "Twin",
+          "settlement": "unexplored",
+          "radius": 78.518,
+          "orbitR": 197.4344,
+          "orbitA": 4.2545,
+          "orbitE": 0,
+          "orbitW": 0.0711
+        },
+        {
+          "name": "Lir",
+          "kind": "rocky",
+          "kicker": "Twin",
+          "settlement": "active",
+          "radius": 67.0137,
+          "orbitR": 276.279,
+          "orbitA": 7.3961,
+          "orbitE": 0,
+          "orbitW": 0.0711
+        },
+        {
+          "name": "Brane",
+          "kind": "rocky",
+          "kicker": "Archive",
+          "settlement": "abandoned",
+          "radius": 92.4685,
+          "orbitR": 8725.9493,
+          "orbitA": 5.2686,
+          "orbitE": 0.0792,
+          "orbitW": 0.0032
+        },
+        {
+          "name": "Ysol",
+          "kind": "rocky",
+          "kicker": "Workshop",
+          "settlement": "unexplored",
+          "radius": 89.7342,
+          "orbitR": 11054.0251,
+          "orbitA": 3.587,
+          "orbitE": 0.0852,
+          "orbitW": 0.0023
+        },
+        {
+          "name": "Vela",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 227.7571,
+          "orbitR": 13706.4079,
+          "orbitA": 2.3392,
+          "orbitE": 0.1106,
+          "orbitW": 0.0016
+        },
+        {
+          "name": "Dusk",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "active",
+          "radius": 37.1814,
+          "orbitR": 1114.2435,
+          "orbitA": 5.5702,
+          "orbitE": 0.0692,
+          "orbitW": 0.0442
+        },
+        {
+          "name": "Nib",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 42.9911,
+          "orbitR": 1566.7618,
+          "orbitA": 5.139,
+          "orbitE": 0.0356,
+          "orbitW": 0.0265
+        }
+      ]
+    },
+    "4": {
+      "start": {
+        "x": 3439.826,
+        "y": 2241.0621,
+        "vx": -21.9383,
+        "vy": 38.5644,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Vesta",
+          "kind": "star",
+          "angle": 1.726
+        },
+        {
+          "name": "Solis",
+          "kind": "star",
+          "angle": 4.2377
+        },
+        {
+          "name": "Hearth",
+          "kind": "star",
+          "angle": 0.0429
+        }
+      ],
+      "planets": [
+        {
+          "name": "Kindle",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 293.8909,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Aurel",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 100.5362,
+          "orbitR": 4014.0863,
+          "orbitA": 0.5992,
+          "orbitE": 0.0901,
+          "orbitW": 0.0115
+        },
+        {
+          "name": "Korr",
+          "kind": "rocky",
+          "kicker": "Workshop",
+          "settlement": "abandoned",
+          "radius": 77.5672,
+          "orbitR": 6475.5655,
+          "orbitA": 3.4381,
+          "orbitE": 0.0813,
+          "orbitW": 0.0056
+        },
+        {
+          "name": "Orrin",
+          "kind": "rocky",
+          "kicker": "Archive",
+          "settlement": "active",
+          "radius": 93.4045,
+          "orbitR": 8674.6697,
+          "orbitA": 3.4986,
+          "orbitE": 0.0955,
+          "orbitW": 0.0036
+        },
+        {
+          "name": "Elide",
+          "kind": "rocky",
+          "kicker": "Signal",
+          "settlement": "active",
+          "radius": 91.6104,
+          "orbitR": 10904.1358,
+          "orbitA": 5.7885,
+          "orbitE": 0.117,
+          "orbitW": 0.0026
+        },
+        {
+          "name": "Runa",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 208.2776,
+          "orbitR": 13368.3208,
+          "orbitA": 3.1332,
+          "orbitE": 0.0671,
+          "orbitW": 0.0019
+        },
+        {
+          "name": "Speck",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "active",
+          "radius": 39.8581,
+          "orbitR": 1013.0857,
+          "orbitA": 6.1885,
+          "orbitE": 0.0609,
+          "orbitW": 0.0467
+        }
+      ]
+    },
+    "5": {
+      "start": {
+        "x": 4370.7901,
+        "y": -490.5627,
+        "vx": 2.1918,
+        "vy": 42.5836,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Ardor",
+          "kind": "star",
+          "angle": 3.8423
+        },
+        {
+          "name": "Vesta",
+          "kind": "star",
+          "angle": 1.8544
+        },
+        {
+          "name": "Cinder",
+          "kind": "star",
+          "angle": 4.8783
+        }
+      ],
+      "planets": [
+        {
+          "name": "Kindle",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 275.182,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Vellum",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 90.1742,
+          "orbitR": 4119.3825,
+          "orbitA": 6.1936,
+          "orbitE": 0.0756,
+          "orbitW": 0.0111
+        },
+        {
+          "name": "Thal",
+          "kind": "rocky",
+          "kicker": "Signal",
+          "settlement": "unexplored",
+          "radius": 54.9509,
+          "orbitR": 6346.9171,
+          "orbitA": 5.4615,
+          "orbitE": 0.0801,
+          "orbitW": 0.0058
+        },
+        {
+          "name": "Orrin",
+          "kind": "rocky",
+          "kicker": "Workshop",
+          "settlement": "abandoned",
+          "radius": 64.4144,
+          "orbitR": 8758.3738,
+          "orbitA": 5.0584,
+          "orbitE": 0.1121,
+          "orbitW": 0.0036
+        },
+        {
+          "name": "Brane",
+          "kind": "rocky",
+          "kicker": "Archive",
+          "settlement": "unexplored",
+          "radius": 60.1631,
+          "orbitR": 11136.2731,
+          "orbitA": 3.6293,
+          "orbitE": 0.0641,
+          "orbitW": 0.0025
+        },
+        {
+          "name": "Lir",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 192.9195,
+          "orbitR": 13566.4841,
+          "orbitA": 0.0511,
+          "orbitE": 0.1056,
+          "orbitW": 0.0018
+        },
+        {
+          "name": "Coil",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 41.2427,
+          "orbitR": 938.5897,
+          "orbitA": 0.6905,
+          "orbitE": 0.0581,
+          "orbitW": 0.049
+        },
+        {
+          "name": "Moth",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "abandoned",
+          "radius": 39.8035,
+          "orbitR": 1247.0398,
+          "orbitA": 5.7411,
+          "orbitE": 0.0431,
+          "orbitW": 0.032
+        }
+      ]
+    },
+    "6": {
+      "start": {
+        "x": -4078.4028,
+        "y": -1470.6377,
+        "vx": 8.1227,
+        "vy": -35.6286,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Cinder",
+          "kind": "star",
+          "angle": 2.0123
+        },
+        {
+          "name": "Hearth",
+          "kind": "star",
+          "angle": 3.9848
+        }
+      ],
+      "planets": [
+        {
+          "name": "Solis",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 262.0597,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Ravel",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 63.9606,
+          "orbitR": 4113.8583,
+          "orbitA": 3.472,
+          "orbitE": 0.1164,
+          "orbitW": 0.0093
+        },
+        {
+          "name": "Nadir",
+          "kind": "rocky",
+          "kicker": "Signal",
+          "settlement": "unexplored",
+          "radius": 101.2565,
+          "orbitR": 6378.6035,
+          "orbitA": 5.2234,
+          "orbitE": 0.074,
+          "orbitW": 0.0048
+        },
+        {
+          "name": "Kael",
+          "kind": "rocky",
+          "kicker": "Workshop",
+          "settlement": "unexplored",
+          "radius": 101.2439,
+          "orbitR": 8719.1591,
+          "orbitA": 5.5636,
+          "orbitE": 0.0928,
+          "orbitW": 0.003
+        },
+        {
+          "name": "Thal",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 225.9896,
+          "orbitR": 11291.3244,
+          "orbitA": 3.6006,
+          "orbitE": 0.1119,
+          "orbitW": 0.002
+        },
+        {
+          "name": "Rill",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 26.9947,
+          "orbitR": 1047.1319,
+          "orbitA": 5.8218,
+          "orbitE": 0.0418,
+          "orbitW": 0.0546
+        }
+      ]
+    },
+    "7": {
+      "start": {
+        "x": -2444.6243,
+        "y": -2453.6246,
+        "vx": 25.015,
+        "vy": -28.4434,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Vesta",
+          "kind": "star",
+          "angle": 6.2468
+        },
+        {
+          "name": "Ember",
+          "kind": "star",
+          "angle": 3.8402
+        }
+      ],
+      "planets": [
+        {
+          "name": "Ardor",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 220.9364,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Lir",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 102.8973,
+          "orbitR": 3788.1646,
+          "orbitA": 3.9058,
+          "orbitE": 0.1143,
+          "orbitW": 0.009
+        },
+        {
+          "name": "Calyx",
+          "kind": "rocky",
+          "kicker": "Workshop",
+          "settlement": "abandoned",
+          "radius": 97.889,
+          "orbitR": 6228.7493,
+          "orbitA": 5.7881,
+          "orbitE": 0.1178,
+          "orbitW": 0.0043
+        },
+        {
+          "name": "Mire",
+          "kind": "rocky",
+          "kicker": "Archive",
+          "settlement": "unexplored",
+          "radius": 61.1829,
+          "orbitR": 8675.845,
+          "orbitA": 2.243,
+          "orbitE": 0.0576,
+          "orbitW": 0.0026
+        },
+        {
+          "name": "Chip",
+          "kind": "asteroid",
+          "kicker": "Rock",
+          "settlement": "unexplored",
+          "radius": 39.0385,
+          "orbitR": 11314.6498,
+          "orbitA": 3.4612,
+          "orbitE": 0.1072,
+          "orbitW": 0.0017
+        },
+        {
+          "name": "Flake",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 9.9683,
+          "orbitR": 11346.1998,
+          "orbitA": 4.326,
+          "orbitE": 0.079,
+          "orbitW": 0.0017
+        },
+        {
+          "name": "Pumice",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 8.1444,
+          "orbitR": 10992.5465,
+          "orbitA": 5.281,
+          "orbitE": 0.0833,
+          "orbitW": 0.0018
+        },
+        {
+          "name": "Tephra",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 12.9808,
+          "orbitR": 11195.5416,
+          "orbitA": 6.0773,
+          "orbitE": 0.0513,
+          "orbitW": 0.0018
+        },
+        {
+          "name": "Scree",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 12.4187,
+          "orbitR": 11201.831,
+          "orbitA": 6.9708,
+          "orbitE": 0.0957,
+          "orbitW": 0.0018
+        },
+        {
+          "name": "Clast",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 10.8651,
+          "orbitR": 10996.112,
+          "orbitA": 8.0269,
+          "orbitE": 0.0475,
+          "orbitW": 0.0018
+        },
+        {
+          "name": "Sliver",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 10.1601,
+          "orbitR": 11181.9838,
+          "orbitA": 8.8405,
+          "orbitE": 0.0959,
+          "orbitW": 0.0018
+        },
+        {
+          "name": "Rook",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 214.9968,
+          "orbitR": 13651.419,
+          "orbitA": 5.9453,
+          "orbitE": 0.0827,
+          "orbitW": 0.0013
+        },
+        {
+          "name": "Floe",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 43.5422,
+          "orbitR": 956.5319,
+          "orbitA": 1.8426,
+          "orbitE": 0.0435,
+          "orbitW": 0.0582
+        },
+        {
+          "name": "Rime",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "abandoned",
+          "radius": 34.9214,
+          "orbitR": 1495.9773,
+          "orbitA": 5.8304,
+          "orbitE": 0.0672,
+          "orbitW": 0.0298
+        }
+      ]
+    },
+    "8": {
+      "start": {
+        "x": 2457.6104,
+        "y": -3000.0494,
+        "vx": 27.6066,
+        "vy": 27.6224,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Ardor",
+          "kind": "star",
+          "angle": 0.7088
+        },
+        {
+          "name": "Apex",
+          "kind": "star",
+          "angle": 3.0659
+        }
+      ],
+      "planets": [
+        {
+          "name": "Pyre",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 232.5036,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Ilex",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 55.9692,
+          "orbitR": 3830.0489,
+          "orbitA": 5.4093,
+          "orbitE": 0.0887,
+          "orbitW": 0.0102
+        },
+        {
+          "name": "Ashen",
+          "kind": "rocky",
+          "kicker": "Archive",
+          "settlement": "abandoned",
+          "radius": 76.2048,
+          "orbitR": 6106.0436,
+          "orbitA": 3.2132,
+          "orbitE": 0.1027,
+          "orbitW": 0.0051
+        },
+        {
+          "name": "Aurel",
+          "kind": "rocky",
+          "kicker": "Workshop",
+          "settlement": "abandoned",
+          "radius": 92.7093,
+          "orbitR": 8541.4791,
+          "orbitA": 1.9339,
+          "orbitE": 0.104,
+          "orbitW": 0.0031
+        },
+        {
+          "name": "Sere",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 201.1789,
+          "orbitR": 10968.2067,
+          "orbitA": 6.2824,
+          "orbitE": 0.0618,
+          "orbitW": 0.0021
+        },
+        {
+          "name": "Dusk",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 33.2016,
+          "orbitR": 829.7838,
+          "orbitA": 4.4128,
+          "orbitE": 0.0467,
+          "orbitW": 0.0652
+        },
+        {
+          "name": "Moth",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 43.6966,
+          "orbitR": 1422.9041,
+          "orbitA": 7.6982,
+          "orbitE": 0.0535,
+          "orbitW": 0.029
+        }
+      ]
+    },
+    "9": {
+      "start": {
+        "x": -1085.9979,
+        "y": -3735.7682,
+        "vx": 40.7197,
+        "vy": -10.3425,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Vesta",
+          "kind": "star",
+          "angle": 0.6105
+        },
+        {
+          "name": "Hearth",
+          "kind": "star",
+          "angle": 3.5345
+        }
+      ],
+      "planets": [
+        {
+          "name": "Ember",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 235.8983,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Runa",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 98.8719,
+          "orbitR": 3957.1299,
+          "orbitA": 4.4216,
+          "orbitE": 0.0599,
+          "orbitW": 0.0102
+        },
+        {
+          "name": "Vellum",
+          "kind": "rocky",
+          "kicker": "Archive",
+          "settlement": "abandoned",
+          "radius": 76.7664,
+          "orbitR": 6185.5478,
+          "orbitA": 1.9459,
+          "orbitE": 0.0594,
+          "orbitW": 0.0052
+        },
+        {
+          "name": "Deneb",
+          "kind": "rocky",
+          "kicker": "Signal",
+          "settlement": "abandoned",
+          "radius": 63.4908,
+          "orbitR": 8571.5776,
+          "orbitA": 6.0134,
+          "orbitE": 0.074,
+          "orbitW": 0.0032
+        },
+        {
+          "name": "Tole",
+          "kind": "rocky",
+          "kicker": "Workshop",
+          "settlement": "abandoned",
+          "radius": 70.678,
+          "orbitR": 10932.7896,
+          "orbitA": 2.0441,
+          "orbitE": 0.0654,
+          "orbitW": 0.0022
+        },
+        {
+          "name": "Orrin",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 189.9312,
+          "orbitR": 13443.1657,
+          "orbitA": 3.856,
+          "orbitE": 0.107,
+          "orbitW": 0.0016
+        },
+        {
+          "name": "Ash",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 40.2771,
+          "orbitR": 895.5813,
+          "orbitA": 5.3871,
+          "orbitE": 0.0429,
+          "orbitW": 0.0551
+        }
+      ]
+    },
+    "10": {
+      "start": {
+        "x": 2244.9471,
+        "y": 2737.7315,
+        "vx": -37.1652,
+        "vy": 30.9364,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Ardor",
+          "kind": "star",
+          "angle": 0.7257
+        },
+        {
+          "name": "Ember",
+          "kind": "star",
+          "angle": 2.1523
+        }
+      ],
+      "planets": [
+        {
+          "name": "Solis",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 260.1594,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Vara",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 73.4352,
+          "orbitR": 3836.8348,
+          "orbitA": 0.8982,
+          "orbitE": 0.0645,
+          "orbitW": 0.0119
+        },
+        {
+          "name": "Tole·Lir",
+          "kind": "barycenter",
+          "kicker": "Pair",
+          "settlement": null,
+          "radius": 0,
+          "orbitR": 6573.3282,
+          "orbitA": 3.9561,
+          "orbitE": 0.0864,
+          "orbitW": 0.0053
+        },
+        {
+          "name": "Tole",
+          "kind": "rocky",
+          "kicker": "Twin",
+          "settlement": "unexplored",
+          "radius": 77.782,
+          "orbitR": 211.7962,
+          "orbitA": 3.8771,
+          "orbitE": 0,
+          "orbitW": 0.0791
+        },
+        {
+          "name": "Lir",
+          "kind": "rocky",
+          "kicker": "Twin",
+          "settlement": "abandoned",
+          "radius": 77.3574,
+          "orbitR": 217.5578,
+          "orbitA": 7.0187,
+          "orbitE": 0,
+          "orbitW": 0.0791
+        },
+        {
+          "name": "Ione",
+          "kind": "rocky",
+          "kicker": "Workshop",
+          "settlement": "active",
+          "radius": 79.8613,
+          "orbitR": 9033.2822,
+          "orbitA": 5.7674,
+          "orbitE": 0.0653,
+          "orbitW": 0.0033
+        },
+        {
+          "name": "Voss",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 177.8098,
+          "orbitR": 11413.6689,
+          "orbitA": 0.8443,
+          "orbitE": 0.1063,
+          "orbitW": 0.0023
+        },
+        {
+          "name": "Cinder",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 43.7213,
+          "orbitR": 807.9394,
+          "orbitA": 2.0347,
+          "orbitE": 0.03,
+          "orbitW": 0.0565
+        }
+      ]
+    },
+    "11": {
+      "start": {
+        "x": 3785.4469,
+        "y": -615.126,
+        "vx": 8.557,
+        "vy": 42.5607,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Pyre",
+          "kind": "star",
+          "angle": 5.5739
+        },
+        {
+          "name": "Ardor",
+          "kind": "star",
+          "angle": 1.3763
+        }
+      ],
+      "planets": [
+        {
+          "name": "Solis",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 260.927,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Ravel",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 72.8482,
+          "orbitR": 3854.9101,
+          "orbitA": 6.1429,
+          "orbitE": 0.0587,
+          "orbitW": 0.0112
+        },
+        {
+          "name": "Mira",
+          "kind": "rocky",
+          "kicker": "Archive",
+          "settlement": "abandoned",
+          "radius": 60.3741,
+          "orbitR": 6099.2131,
+          "orbitA": 2.1816,
+          "orbitE": 0.0645,
+          "orbitW": 0.0056
+        },
+        {
+          "name": "Orrin",
+          "kind": "rocky",
+          "kicker": "Workshop",
+          "settlement": "active",
+          "radius": 82.8269,
+          "orbitR": 8471.3389,
+          "orbitA": 0.8999,
+          "orbitE": 0.0925,
+          "orbitW": 0.0034
+        },
+        {
+          "name": "Kite",
+          "kind": "rocky",
+          "kicker": "Signal",
+          "settlement": "unexplored",
+          "radius": 96.2125,
+          "orbitR": 10974.1145,
+          "orbitA": 0.1597,
+          "orbitE": 0.1083,
+          "orbitW": 0.0023
+        },
+        {
+          "name": "Brane",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 198.1856,
+          "orbitR": 13320.8188,
+          "orbitA": 3.3056,
+          "orbitE": 0.1097,
+          "orbitW": 0.0017
+        },
+        {
+          "name": "Knot",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 32.7971,
+          "orbitR": 947.7891,
+          "orbitA": 5.7729,
+          "orbitE": 0.0552,
+          "orbitW": 0.0535
+        }
+      ]
+    },
+    "12": {
+      "start": {
+        "x": 1762.1395,
+        "y": 3134.3461,
+        "vx": -35.2844,
+        "vy": 16.7682,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Pyre",
+          "kind": "star",
+          "angle": 5.7251
+        },
+        {
+          "name": "Helios",
+          "kind": "star",
+          "angle": 1.3018
+        },
+        {
+          "name": "Kindle",
+          "kind": "star",
+          "angle": 2.7212
+        }
+      ],
+      "planets": [
+        {
+          "name": "Apex",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 243.0521,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Calyx",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 66.0484,
+          "orbitR": 3835.6374,
+          "orbitA": 1.0685,
+          "orbitE": 0.0743,
+          "orbitW": 0.0097
+        },
+        {
+          "name": "Aurel",
+          "kind": "rocky",
+          "kicker": "Workshop",
+          "settlement": "unexplored",
+          "radius": 98.5869,
+          "orbitR": 6249.3356,
+          "orbitA": 3.3372,
+          "orbitE": 0.0952,
+          "orbitW": 0.0047
+        },
+        {
+          "name": "Nadir",
+          "kind": "rocky",
+          "kicker": "Archive",
+          "settlement": "active",
+          "radius": 75.4409,
+          "orbitR": 8532.5742,
+          "orbitA": 4.7325,
+          "orbitE": 0.071,
+          "orbitW": 0.0029
+        },
+        {
+          "name": "Clast",
+          "kind": "asteroid",
+          "kicker": "Rock",
+          "settlement": "unexplored",
+          "radius": 33.0356,
+          "orbitR": 10950.8024,
+          "orbitA": 3.2156,
+          "orbitE": 0.1066,
+          "orbitW": 0.002
+        },
+        {
+          "name": "Grit",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 8.8605,
+          "orbitR": 11078.3334,
+          "orbitA": 4.4821,
+          "orbitE": 0.0567,
+          "orbitW": 0.002
+        },
+        {
+          "name": "Chondra",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 13.4046,
+          "orbitR": 10935.5351,
+          "orbitA": 5.7303,
+          "orbitE": 0.0547,
+          "orbitW": 0.002
+        },
+        {
+          "name": "Pumice",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 9.5035,
+          "orbitR": 10928.9928,
+          "orbitA": 7.0767,
+          "orbitE": 0.066,
+          "orbitW": 0.002
+        },
+        {
+          "name": "Rubble",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 8.8187,
+          "orbitR": 10979.3904,
+          "orbitA": 8.3842,
+          "orbitE": 0.046,
+          "orbitW": 0.002
+        },
+        {
+          "name": "Kite",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 204.1941,
+          "orbitR": 13313.5024,
+          "orbitA": 2.3489,
+          "orbitE": 0.0616,
+          "orbitW": 0.0015
+        },
+        {
+          "name": "Rill",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 27.2671,
+          "orbitR": 943.9785,
+          "orbitA": 4.7507,
+          "orbitE": 0.0453,
+          "orbitW": 0.0512
+        },
+        {
+          "name": "Knot",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 37.1561,
+          "orbitR": 1320.9989,
+          "orbitA": 5.845,
+          "orbitE": 0.0476,
+          "orbitW": 0.0309
+        }
+      ]
+    },
+    "13": {
+      "start": {
+        "x": 3394.1392,
+        "y": -2111.5158,
+        "vx": 19.5248,
+        "vy": 36.3622,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Hearth",
+          "kind": "star",
+          "angle": 5.7241
+        },
+        {
+          "name": "Cinder",
+          "kind": "star",
+          "angle": 4.362
+        }
+      ],
+      "planets": [
+        {
+          "name": "Helios",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 265.3058,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Vela",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 86.3238,
+          "orbitR": 3797.1552,
+          "orbitA": 5.7469,
+          "orbitE": 0.059,
+          "orbitW": 0.0113
+        },
+        {
+          "name": "Orin",
+          "kind": "rocky",
+          "kicker": "Workshop",
+          "settlement": "unexplored",
+          "radius": 86.7907,
+          "orbitR": 6103.1095,
+          "orbitA": 2.2954,
+          "orbitE": 0.1021,
+          "orbitW": 0.0056
+        },
+        {
+          "name": "Brane",
+          "kind": "rocky",
+          "kicker": "Archive",
+          "settlement": "abandoned",
+          "radius": 59.1643,
+          "orbitR": 8344.7502,
+          "orbitA": 3.329,
+          "orbitE": 0.1006,
+          "orbitW": 0.0035
+        },
+        {
+          "name": "Iskra",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 181.5364,
+          "orbitR": 10671.1915,
+          "orbitA": 0.743,
+          "orbitE": 0.0674,
+          "orbitW": 0.0024
+        },
+        {
+          "name": "Mote",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 32.6555,
+          "orbitR": 845.5789,
+          "orbitA": 4.409,
+          "orbitE": 0.0662,
+          "orbitW": 0.0558
+        }
+      ]
+    },
+    "14": {
+      "start": {
+        "x": 3530.9743,
+        "y": -1271.2787,
+        "vx": 12.212,
+        "vy": 41.7529,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Pyre",
+          "kind": "star",
+          "angle": 1.8616
+        },
+        {
+          "name": "Solis",
+          "kind": "star",
+          "angle": 3.3182
+        }
+      ],
+      "planets": [
+        {
+          "name": "Apex",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 255.8367,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Voss",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 66.7679,
+          "orbitR": 3969.3444,
+          "orbitA": 5.9564,
+          "orbitE": 0.0739,
+          "orbitW": 0.0103
+        },
+        {
+          "name": "Sere",
+          "kind": "rocky",
+          "kicker": "Signal",
+          "settlement": "abandoned",
+          "radius": 73.6121,
+          "orbitR": 6333.7815,
+          "orbitA": 4.167,
+          "orbitE": 0.1056,
+          "orbitW": 0.0051
+        },
+        {
+          "name": "Ysol·Brane",
+          "kind": "barycenter",
+          "kicker": "Pair",
+          "settlement": null,
+          "radius": 0,
+          "orbitR": 8885.1383,
+          "orbitA": 0.0013,
+          "orbitE": 0.086,
+          "orbitW": 0.0031
+        },
+        {
+          "name": "Ysol",
+          "kind": "rocky",
+          "kicker": "Twin",
+          "settlement": "active",
+          "radius": 82.7064,
+          "orbitR": 214.376,
+          "orbitA": 5.0359,
+          "orbitE": 0,
+          "orbitW": 0.103
+        },
+        {
+          "name": "Brane",
+          "kind": "rocky",
+          "kicker": "Twin",
+          "settlement": "abandoned",
+          "radius": 92.9448,
+          "orbitR": 174.6246,
+          "orbitA": 8.1775,
+          "orbitE": 0,
+          "orbitW": 0.103
+        },
+        {
+          "name": "Thal",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 192.0744,
+          "orbitR": 11346.5011,
+          "orbitA": 1.3752,
+          "orbitE": 0.103,
+          "orbitW": 0.0021
+        },
+        {
+          "name": "Nib",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 43.0618,
+          "orbitR": 788.2752,
+          "orbitA": 3.0428,
+          "orbitE": 0.0677,
+          "orbitW": 0.0641
+        },
+        {
+          "name": "Wisp",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 41.4654,
+          "orbitR": 1257.9696,
+          "orbitA": 7.1057,
+          "orbitE": 0.0418,
+          "orbitW": 0.0318
+        }
+      ]
+    },
+    "15": {
+      "start": {
+        "x": -1864.5709,
+        "y": -3959.153,
+        "vx": 32.8143,
+        "vy": -13.37,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Ember",
+          "kind": "star",
+          "angle": 4.6217
+        }
+      ],
+      "planets": [
+        {
+          "name": "Hearth",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 239.0272,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Vara",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 96.8972,
+          "orbitR": 4010.2825,
+          "orbitA": 4.2618,
+          "orbitE": 0.0928,
+          "orbitW": 0.0095
+        },
+        {
+          "name": "Eda",
+          "kind": "rocky",
+          "kicker": "Signal",
+          "settlement": "active",
+          "radius": 56.5413,
+          "orbitR": 6390.6549,
+          "orbitA": 0.6064,
+          "orbitE": 0.0649,
+          "orbitW": 0.0047
+        },
+        {
+          "name": "Orrin",
+          "kind": "rocky",
+          "kicker": "Archive",
+          "settlement": "active",
+          "radius": 55.0036,
+          "orbitR": 8853.8525,
+          "orbitA": 4.1395,
+          "orbitE": 0.1021,
+          "orbitW": 0.0029
+        },
+        {
+          "name": "Mira",
+          "kind": "rocky",
+          "kicker": "Workshop",
+          "settlement": "active",
+          "radius": 61.6561,
+          "orbitR": 11319.2328,
+          "orbitA": 1.3471,
+          "orbitE": 0.0559,
+          "orbitW": 0.002
+        },
+        {
+          "name": "Nodule",
+          "kind": "asteroid",
+          "kicker": "Rock",
+          "settlement": "unexplored",
+          "radius": 34.2091,
+          "orbitR": 13775.9835,
+          "orbitA": 2.2345,
+          "orbitE": 0.1063,
+          "orbitW": 0.0015
+        },
+        {
+          "name": "Chondra",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 11.1199,
+          "orbitR": 13599.5942,
+          "orbitA": 3.0975,
+          "orbitE": 0.0469,
+          "orbitW": 0.0015
+        },
+        {
+          "name": "Chip",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 8.4532,
+          "orbitR": 13610.8901,
+          "orbitA": 4.0363,
+          "orbitE": 0.0779,
+          "orbitW": 0.0015
+        },
+        {
+          "name": "Knurl",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 13.3485,
+          "orbitR": 13726.0637,
+          "orbitA": 4.9648,
+          "orbitE": 0.0766,
+          "orbitW": 0.0015
+        },
+        {
+          "name": "Reg",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 13.9202,
+          "orbitR": 13735.6253,
+          "orbitA": 5.8905,
+          "orbitE": 0.063,
+          "orbitW": 0.0015
+        },
+        {
+          "name": "Grit",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 9.3741,
+          "orbitR": 13683.7096,
+          "orbitA": 6.7742,
+          "orbitE": 0.1056,
+          "orbitW": 0.0015
+        },
+        {
+          "name": "Talus",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 10.6814,
+          "orbitR": 13620.997,
+          "orbitA": 7.7655,
+          "orbitE": 0.0777,
+          "orbitW": 0.0015
+        },
+        {
+          "name": "Brane",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 218.5678,
+          "orbitR": 16331.5668,
+          "orbitA": 1.632,
+          "orbitE": 0.1048,
+          "orbitW": 0.0012
+        },
+        {
+          "name": "Knot",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 35.0521,
+          "orbitR": 941.1994,
+          "orbitA": 5.0956,
+          "orbitE": 0.0532,
+          "orbitW": 0.0575
+        },
+        {
+          "name": "Coil",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 35.7075,
+          "orbitR": 1514.914,
+          "orbitA": 4.4653,
+          "orbitE": 0.0496,
+          "orbitW": 0.0282
+        }
+      ]
+    },
+    "16": {
+      "start": {
+        "x": 2377.4405,
+        "y": 2944.5874,
+        "vx": -31.3843,
+        "vy": 27.7547,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Solis",
+          "kind": "star",
+          "angle": 0.7742
+        },
+        {
+          "name": "Apex",
+          "kind": "star",
+          "angle": 3.5204
+        }
+      ],
+      "planets": [
+        {
+          "name": "Cinder",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 270.5116,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Orin",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 62.0815,
+          "orbitR": 3817.1974,
+          "orbitA": 0.903,
+          "orbitE": 0.0565,
+          "orbitW": 0.011
+        },
+        {
+          "name": "Nyx",
+          "kind": "rocky",
+          "kicker": "Archive",
+          "settlement": "abandoned",
+          "radius": 69.9245,
+          "orbitR": 6308.5085,
+          "orbitA": 3.0415,
+          "orbitE": 0.0952,
+          "orbitW": 0.0052
+        },
+        {
+          "name": "Lir",
+          "kind": "rocky",
+          "kicker": "Signal",
+          "settlement": "unexplored",
+          "radius": 91.9332,
+          "orbitR": 8691.2517,
+          "orbitA": 2.4468,
+          "orbitE": 0.0982,
+          "orbitW": 0.0032
+        },
+        {
+          "name": "Brane",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 234.2127,
+          "orbitR": 11403.7682,
+          "orbitA": 3.2375,
+          "orbitE": 0.1083,
+          "orbitW": 0.0021
+        },
+        {
+          "name": "Speck",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 33.2214,
+          "orbitR": 1133.7679,
+          "orbitA": 3.2243,
+          "orbitE": 0.0534,
+          "orbitW": 0.0494
+        },
+        {
+          "name": "Dusk",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 29.7351,
+          "orbitR": 1577.6359,
+          "orbitA": 7.7347,
+          "orbitE": 0.055,
+          "orbitW": 0.0301
+        }
+      ]
+    },
+    "17": {
+      "start": {
+        "x": 1383.0949,
+        "y": -4091.0149,
+        "vx": 37.2918,
+        "vy": 14.0526,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Ember",
+          "kind": "star",
+          "angle": 5.2026
+        },
+        {
+          "name": "Helios",
+          "kind": "star",
+          "angle": 0.8513
+        }
+      ],
+      "planets": [
+        {
+          "name": "Apex",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 274.172,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Korr",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 87.497,
+          "orbitR": 4022.2275,
+          "orbitA": 5.0456,
+          "orbitE": 0.058,
+          "orbitW": 0.0104
+        },
+        {
+          "name": "Nyx",
+          "kind": "rocky",
+          "kicker": "Archive",
+          "settlement": "unexplored",
+          "radius": 84.4311,
+          "orbitR": 6226.1487,
+          "orbitA": 0.6869,
+          "orbitE": 0.1172,
+          "orbitW": 0.0054
+        },
+        {
+          "name": "Aurel",
+          "kind": "rocky",
+          "kicker": "Signal",
+          "settlement": "abandoned",
+          "radius": 74.2934,
+          "orbitR": 8649.3685,
+          "orbitA": 4.5677,
+          "orbitE": 0.0678,
+          "orbitW": 0.0033
+        },
+        {
+          "name": "Ashen",
+          "kind": "rocky",
+          "kicker": "Workshop",
+          "settlement": "abandoned",
+          "radius": 57.1968,
+          "orbitR": 10809.7424,
+          "orbitA": 5.1006,
+          "orbitE": 0.1046,
+          "orbitW": 0.0024
+        },
+        {
+          "name": "Clast",
+          "kind": "asteroid",
+          "kicker": "Camp",
+          "settlement": "active",
+          "radius": 34.1617,
+          "orbitR": 13341.8424,
+          "orbitA": 2.701,
+          "orbitE": 0.0786,
+          "orbitW": 0.0017
+        },
+        {
+          "name": "Tephra",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 8.1431,
+          "orbitR": 13630.9505,
+          "orbitA": 3.6457,
+          "orbitE": 0.0617,
+          "orbitW": 0.0017
+        },
+        {
+          "name": "Rubble",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 11.4092,
+          "orbitR": 13468.8593,
+          "orbitA": 4.5428,
+          "orbitE": 0.105,
+          "orbitW": 0.0017
+        },
+        {
+          "name": "Talus",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 8.6584,
+          "orbitR": 13341.6062,
+          "orbitA": 5.3745,
+          "orbitE": 0.0817,
+          "orbitW": 0.0017
+        },
+        {
+          "name": "Grit",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 12.0129,
+          "orbitR": 13495.7752,
+          "orbitA": 6.411,
+          "orbitE": 0.0849,
+          "orbitW": 0.0017
+        },
+        {
+          "name": "Sliver",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 13.9883,
+          "orbitR": 13412.6749,
+          "orbitA": 7.1313,
+          "orbitE": 0.0678,
+          "orbitW": 0.0017
+        },
+        {
+          "name": "Pumice",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 10.9652,
+          "orbitR": 13613.3486,
+          "orbitA": 8.0818,
+          "orbitE": 0.0447,
+          "orbitW": 0.0017
+        },
+        {
+          "name": "Elide",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 205.9836,
+          "orbitR": 16127.2067,
+          "orbitA": 0.7878,
+          "orbitE": 0.0914,
+          "orbitW": 0.0013
+        },
+        {
+          "name": "Cinder",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 43.3721,
+          "orbitR": 871.6859,
+          "orbitA": 4.9075,
+          "orbitE": 0.0418,
+          "orbitW": 0.0631
+        }
+      ]
+    },
+    "18": {
+      "start": {
+        "x": 3195.49,
+        "y": -2640.997,
+        "vx": 28.6397,
+        "vy": 28.553,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Hearth",
+          "kind": "star",
+          "angle": 5.7949
+        },
+        {
+          "name": "Ardor",
+          "kind": "star",
+          "angle": 2.1879
+        }
+      ],
+      "planets": [
+        {
+          "name": "Apex",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 251.853,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Mire",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 59.5467,
+          "orbitR": 4046.1192,
+          "orbitA": 5.6051,
+          "orbitE": 0.1095,
+          "orbitW": 0.0101
+        },
+        {
+          "name": "Nyx·Lir",
+          "kind": "barycenter",
+          "kicker": "Pair",
+          "settlement": null,
+          "radius": 0,
+          "orbitR": 6578.5874,
+          "orbitA": 0.6499,
+          "orbitE": 0.111,
+          "orbitW": 0.0049
+        },
+        {
+          "name": "Nyx",
+          "kind": "rocky",
+          "kicker": "Twin",
+          "settlement": "active",
+          "radius": 67.3977,
+          "orbitR": 200.7928,
+          "orbitA": 2.3047,
+          "orbitE": 0,
+          "orbitW": 0.0939
+        },
+        {
+          "name": "Lir",
+          "kind": "rocky",
+          "kicker": "Twin",
+          "settlement": "active",
+          "radius": 75.3221,
+          "orbitR": 159.0894,
+          "orbitA": 5.4463,
+          "orbitE": 0,
+          "orbitW": 0.0939
+        },
+        {
+          "name": "Voss",
+          "kind": "rocky",
+          "kicker": "Archive",
+          "settlement": "unexplored",
+          "radius": 64.2339,
+          "orbitR": 8903.0788,
+          "orbitA": 2.5188,
+          "orbitE": 0.104,
+          "orbitW": 0.0031
+        },
+        {
+          "name": "Ilex",
+          "kind": "rocky",
+          "kicker": "Workshop",
+          "settlement": "abandoned",
+          "radius": 67.902,
+          "orbitR": 11158.7306,
+          "orbitA": 0.7134,
+          "orbitE": 0.1107,
+          "orbitW": 0.0022
+        },
+        {
+          "name": "Kite",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 244.3787,
+          "orbitR": 13896.8024,
+          "orbitA": 1.5098,
+          "orbitE": 0.0965,
+          "orbitW": 0.0016
+        },
+        {
+          "name": "Nib",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 31.8032,
+          "orbitR": 1012.3147,
+          "orbitA": 1.5008,
+          "orbitE": 0.0447,
+          "orbitW": 0.0567
+        },
+        {
+          "name": "Speck",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "abandoned",
+          "radius": 39.4156,
+          "orbitR": 1632.4078,
+          "orbitA": 2.716,
+          "orbitE": 0.0663,
+          "orbitW": 0.0277
+        }
+      ]
+    },
+    "19": {
+      "start": {
+        "x": -4244.9888,
+        "y": 569.812,
+        "vx": -4.159,
+        "vy": -31.7307,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Kindle",
+          "kind": "star",
+          "angle": 1.3753
+        },
+        {
+          "name": "Apex",
+          "kind": "star",
+          "angle": 2.7892
+        },
+        {
+          "name": "Solis",
+          "kind": "star",
+          "angle": 4.1069
+        }
+      ],
+      "planets": [
+        {
+          "name": "Hearth",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 224.6835,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Ysol",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 95.7362,
+          "orbitR": 3856.7064,
+          "orbitA": 2.9843,
+          "orbitE": 0.1175,
+          "orbitW": 0.0093
+        },
+        {
+          "name": "Iskra",
+          "kind": "rocky",
+          "kicker": "Workshop",
+          "settlement": "unexplored",
+          "radius": 63.7574,
+          "orbitR": 6051.4166,
+          "orbitA": 5.4374,
+          "orbitE": 0.0721,
+          "orbitW": 0.0047
+        },
+        {
+          "name": "Xor",
+          "kind": "rocky",
+          "kicker": "Archive",
+          "settlement": "active",
+          "radius": 60.9964,
+          "orbitR": 8184.3177,
+          "orbitA": 5.8956,
+          "orbitE": 0.0751,
+          "orbitW": 0.003
+        },
+        {
+          "name": "Clast",
+          "kind": "asteroid",
+          "kicker": "Camp",
+          "settlement": "active",
+          "radius": 34.8193,
+          "orbitR": 10745.7706,
+          "orbitA": 5.1132,
+          "orbitE": 0.0971,
+          "orbitW": 0.002
+        },
+        {
+          "name": "Tephra",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 8.0787,
+          "orbitR": 10821.0124,
+          "orbitA": 6.3587,
+          "orbitE": 0.0508,
+          "orbitW": 0.002
+        },
+        {
+          "name": "Rubble",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 11.1523,
+          "orbitR": 10574.2722,
+          "orbitA": 7.6281,
+          "orbitE": 0.0807,
+          "orbitW": 0.0021
+        },
+        {
+          "name": "Nodule",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 12.9031,
+          "orbitR": 10798.6952,
+          "orbitA": 8.8688,
+          "orbitE": 0.0683,
+          "orbitW": 0.002
+        },
+        {
+          "name": "Reg",
+          "kind": "asteroid",
+          "kicker": "Shard",
+          "settlement": "unexplored",
+          "radius": 9.2444,
+          "orbitR": 10698.4325,
+          "orbitA": 10.1217,
+          "orbitE": 0.089,
+          "orbitW": 0.002
+        },
+        {
+          "name": "Eda",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 187.0089,
+          "orbitR": 13330.0996,
+          "orbitA": 3.2019,
+          "orbitE": 0.0592,
+          "orbitW": 0.0014
+        },
+        {
+          "name": "Speck",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 40.7516,
+          "orbitR": 810.1326,
+          "orbitA": 3.5263,
+          "orbitE": 0.0699,
+          "orbitW": 0.0659
+        },
+        {
+          "name": "Rill",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 31.4278,
+          "orbitR": 1324.6971,
+          "orbitA": 7.8073,
+          "orbitE": 0.0591,
+          "orbitW": 0.0315
+        }
+      ]
+    },
+    "20": {
+      "start": {
+        "x": 425.5101,
+        "y": 3422.4905,
+        "vx": -48.8533,
+        "vy": 5.8244,
+        "yaw": 0
+      },
+      "nearby": [
+        {
+          "name": "Vesta",
+          "kind": "star",
+          "angle": 1.9772
+        },
+        {
+          "name": "Cinder",
+          "kind": "star",
+          "angle": 3.9047
+        }
+      ],
+      "planets": [
+        {
+          "name": "Apex",
+          "kind": "star",
+          "kicker": "Star",
+          "settlement": null,
+          "radius": 280.2089,
+          "orbitR": null,
+          "orbitA": null,
+          "orbitE": null,
+          "orbitW": null
+        },
+        {
+          "name": "Mire",
+          "kind": "rocky",
+          "kicker": "Home",
+          "settlement": "active",
+          "radius": 70.2528,
+          "orbitR": 3847.823,
+          "orbitA": 1.4498,
+          "orbitE": 0.0836,
+          "orbitW": 0.0118
+        },
+        {
+          "name": "Ilex",
+          "kind": "rocky",
+          "kicker": "Workshop",
+          "settlement": "unexplored",
+          "radius": 69.5027,
+          "orbitR": 6188.1957,
+          "orbitA": 0.5845,
+          "orbitE": 0.0642,
+          "orbitW": 0.0058
+        },
+        {
+          "name": "Nadir",
+          "kind": "rocky",
+          "kicker": "Archive",
+          "settlement": "active",
+          "radius": 99.8719,
+          "orbitR": 8688.7358,
+          "orbitA": 4.9537,
+          "orbitE": 0.0832,
+          "orbitW": 0.0035
+        },
+        {
+          "name": "Korr",
+          "kind": "gas",
+          "kicker": "Giant",
+          "settlement": null,
+          "radius": 244.8051,
+          "orbitR": 11400.7129,
+          "orbitA": 5.1151,
+          "orbitE": 0.0902,
+          "orbitW": 0.0023
+        },
+        {
+          "name": "Speck",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "unexplored",
+          "radius": 35.3388,
+          "orbitR": 1145.629,
+          "orbitA": 4.345,
+          "orbitE": 0.0528,
+          "orbitW": 0.0476
+        },
+        {
+          "name": "Glyph",
+          "kind": "moon",
+          "kicker": "Moon",
+          "settlement": "abandoned",
+          "radius": 30.1365,
+          "orbitR": 1610.8833,
+          "orbitA": 7.8802,
+          "orbitE": 0.0424,
+          "orbitW": 0.0286
+        }
+      ]
+    }
+  }
+}

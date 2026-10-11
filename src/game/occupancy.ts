@@ -21,8 +21,8 @@ export function occupancyLegal(
     return { ok: false, reason: `${p.settlement} requires civ` };
   }
   if (p.kicker === "Home") {
-    if (p.settlement !== "active" || p.civ !== "human") {
-      return { ok: false, reason: "Home must be active human" };
+    if (p.civ !== "human" || (p.settlement !== "active" && p.settlement !== "abandoned")) {
+      return { ok: false, reason: "Home must be active or abandoned human" };
     }
   }
   if (p.kicker === "Camp") {
@@ -71,6 +71,7 @@ function twinBound(name: string, twin: string) {
 const COPY: Record<string, CopyFn> = {
   "Home:active:human": () =>
     "A small cradle world. This page is a system — fly it instead of scrolling it.",
+  "Home:abandoned:human": () => "The cradle is dark. The pad is dry. The tank stays empty.",
   "Workshop:active:human": ({ name }) =>
     `${name} is a workshop in a shallow well. Things get built, then pushed into the dark.`,
   "Workshop:abandoned:human": ({ name }) =>
@@ -78,8 +79,7 @@ const COPY: Record<string, CopyFn> = {
   "Workshop:unexplored:": ({ name }) =>
     `No one named this. ${name} is a workshop well. The tank stays empty.`,
   "Signal:active:human": () => "A cold radio world. Signals go out. Few come back.",
-  "Signal:abandoned:human": () =>
-    "The mast still points. Nobody answers. The tank stays empty.",
+  "Signal:abandoned:human": () => "The mast still points. Nobody answers. The tank stays empty.",
   "Signal:unexplored:": () => "No one named this. A cold radio world. The tank stays empty.",
   "Archive:active:human": ({ name }) =>
     `Dust libraries on ${name}, still staffed. Whatever was written here is still in orbit around the idea of it.`,
@@ -178,7 +178,7 @@ export function mineBeaconLit(
   if (kind === "beacon") {
     if (reducedMotion) return true;
     const t =
-      ((nowMs + phaseMs) % MINE_BEACON_PERIOD_MS + MINE_BEACON_PERIOD_MS) % MINE_BEACON_PERIOD_MS;
+      (((nowMs + phaseMs) % MINE_BEACON_PERIOD_MS) + MINE_BEACON_PERIOD_MS) % MINE_BEACON_PERIOD_MS;
     return t < MINE_BEACON_PERIOD_MS * MINE_BEACON_ON;
   }
   if (reducedMotion) return false;

@@ -73,8 +73,8 @@ Invariantes (`occupancyLegal`, tests por seed y fixtures ilegales):
 - `kind ∈ {rocky, moon, asteroid}` ⇒ `settlement != null`
 - `unexplored` ⇒ `civ == null`
 - `active` | `abandoned` ⇒ `civ != null`
-- Home ⇒ `{ active, human }`
-- Camp ⇒ `{ active, human }`
+- Home en un chart aleatorio o con `?settlement=` ⇒ `{ active, human }`. Una receta puede pedir `{ abandoned, human }` (`home: "abandoned"`) o no emitir el kicker (`home: "none"`). Home `unexplored` sigue siendo ilegal.
+- Camp ⇒ `{ active, human }`. Si `activePads` seca ese cuerpo, el kicker pasa a `Rock` antes de cambiar el settlement, así que nunca queda un Camp inactivo.
 - Shard (`!landable` o `kicker === "Shard"`) ⇒ `{ unexplored, null }`
 - `Rock` + `active` es **legal** (debug `?settlement=active`). No lo renombres a Camp.
 
@@ -99,7 +99,7 @@ Segundo paso, después del roll de Camp / `extraLand`. Home y Camp ignoran `?set
 
 | Cuerpo | Active | Abandoned | Unexplored |
 |---|---|---|---|
-| Home | siempre human | nunca | nunca |
+| Home | siempre human en chart aleatorio | solo si una receta lo pide | nunca |
 | Workshop / Signal / Archive / Twin | 25% | 40% | 35% |
 | Luna | 3% | 12% | 85% |
 | Camp | siempre human | nunca | nunca |

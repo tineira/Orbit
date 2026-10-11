@@ -18,11 +18,26 @@ import type { Planet } from "./types.ts";
 type Occ = Pick<Planet, "kind" | "kicker" | "landable" | "settlement" | "civ">;
 
 const illegal: [string, Occ][] = [
-  ["Home abandoned", { kind: "rocky", kicker: "Home", landable: true, settlement: "abandoned", civ: "human" }],
-  ["Camp abandoned", { kind: "asteroid", kicker: "Camp", landable: true, settlement: "abandoned", civ: "human" }],
-  ["Shard active", { kind: "asteroid", kicker: "Shard", landable: false, settlement: "active", civ: "human" }],
-  ["unexplored + civ", { kind: "rocky", kicker: "Workshop", landable: true, settlement: "unexplored", civ: "human" }],
-  ["star + active", { kind: "star", kicker: "Star", landable: false, settlement: "active", civ: "human" }],
+  [
+    "Home unexplored",
+    { kind: "rocky", kicker: "Home", landable: true, settlement: "unexplored", civ: null },
+  ],
+  [
+    "Camp abandoned",
+    { kind: "asteroid", kicker: "Camp", landable: true, settlement: "abandoned", civ: "human" },
+  ],
+  [
+    "Shard active",
+    { kind: "asteroid", kicker: "Shard", landable: false, settlement: "active", civ: "human" },
+  ],
+  [
+    "unexplored + civ",
+    { kind: "rocky", kicker: "Workshop", landable: true, settlement: "unexplored", civ: "human" },
+  ],
+  [
+    "star + active",
+    { kind: "star", kicker: "Star", landable: false, settlement: "active", civ: "human" },
+  ],
 ];
 
 test("occupancyLegal rejects illegal fixtures", () => {
@@ -31,6 +46,17 @@ test("occupancyLegal rejects illegal fixtures", () => {
     assert.equal(r.ok, false, label);
     assert.ok(r.reason, label);
   }
+});
+
+test("occupancyLegal allows an abandoned Home", () => {
+  const r = occupancyLegal({
+    kind: "rocky",
+    kicker: "Home",
+    landable: true,
+    settlement: "abandoned",
+    civ: "human",
+  });
+  assert.equal(r.ok, true);
 });
 
 test("occupancyLegal allows Rock + active", () => {
@@ -63,7 +89,11 @@ test("createSystem occupancy is legal on seeds 1–24", () => {
 });
 
 test("Home is always active human", () => {
-  const flagsList = [{}, { settlement: "abandoned" as const }, { settlement: "unexplored" as const }];
+  const flagsList = [
+    {},
+    { settlement: "abandoned" as const },
+    { settlement: "unexplored" as const },
+  ];
   for (let seed = 1; seed <= 12; seed++) {
     for (const flags of flagsList) {
       const home = createSystem(seed, flags).planets.find((p) => p.kicker === "Home");
@@ -132,7 +162,10 @@ test("{camp:true, belt:false} still belts with a Camp", () => {
 test("{camp:false, belt:true} never Camps", () => {
   for (let seed = 1; seed <= 24; seed++) {
     const sys = createSystem(seed, { camp: false, belt: true });
-    assert.ok(sys.planets.some((p) => p.kind === "asteroid"), String(seed));
+    assert.ok(
+      sys.planets.some((p) => p.kind === "asteroid"),
+      String(seed),
+    );
     assert.equal(
       sys.planets.some((p) => p.kicker === "Camp"),
       false,
@@ -177,6 +210,7 @@ test("{camp:true, settlement:abandoned} keeps Camp active and dries other landab
 
 const LEGAL: FlavorArgs[] = [
   { kind: "rocky", kicker: "Home", settlement: "active", civ: "human", name: "Vesper" },
+  { kind: "rocky", kicker: "Home", settlement: "abandoned", civ: "human", name: "Vesper" },
   { kind: "rocky", kicker: "Workshop", settlement: "active", civ: "human", name: "Kite" },
   { kind: "rocky", kicker: "Workshop", settlement: "abandoned", civ: "human", name: "Kite" },
   { kind: "rocky", kicker: "Workshop", settlement: "unexplored", civ: null, name: "Kite" },
@@ -255,8 +289,8 @@ test("flavorBody throws on a missing key", () => {
       flavorBody({
         kind: "rocky",
         kicker: "Home",
-        settlement: "abandoned",
-        civ: "human",
+        settlement: "unexplored",
+        civ: null,
         name: "Vesper",
       }),
     /missing occupancy copy/,
@@ -414,7 +448,9 @@ test("{mine:both} is a Camp plus an abandoned extra rock", () => {
     const camp = sys.planets.find((p) => p.kicker === "Camp");
     assert.ok(camp, String(seed));
     assert.equal(camp!.settlement, "active");
-    const extra = sys.planets.filter((p) => p.kind === "asteroid" && p.landable && p.kicker !== "Camp");
+    const extra = sys.planets.filter(
+      (p) => p.kind === "asteroid" && p.landable && p.kicker !== "Camp",
+    );
     assert.equal(extra.length, 1, String(seed));
     assert.equal(extra[0]!.settlement, "abandoned");
     assert.equal(asteroidMine(extra[0]!)!.towers.length, 1);
@@ -495,14 +531,8 @@ test("rockySettlement is night sites on active/abandoned rockies only", () => {
 });
 
 test("moonOutpost is a single pad on active/abandoned moons only", () => {
-  assert.equal(
-    moonOutpost({ kind: "moon", settlement: "unexplored", radius: 32, mass: 4 }),
-    null,
-  );
-  assert.equal(
-    moonOutpost({ kind: "rocky", settlement: "active", radius: 80, mass: 10 }),
-    null,
-  );
+  assert.equal(moonOutpost({ kind: "moon", settlement: "unexplored", radius: 32, mass: 4 }), null);
+  assert.equal(moonOutpost({ kind: "rocky", settlement: "active", radius: 80, mass: 10 }), null);
   const live = moonOutpost({ kind: "moon", settlement: "active", radius: 32, mass: 4 });
   const dead = moonOutpost({ kind: "moon", settlement: "abandoned", radius: 32, mass: 4 });
   assert.ok(live);

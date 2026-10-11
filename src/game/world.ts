@@ -1,13 +1,21 @@
 import {
   asteroidProfileId,
   gasProfileId,
+  MOON_PROFILE_IDS,
   moonProfileId,
   rockyProfileId,
   starProfileId,
   withMatter,
 } from "./matter.ts";
 import { flavorBody, isOccupiableKind, rollSettlement } from "./occupancy.ts";
-import type { LostCopy, NearbyHeading, Planet, Settlement, TransitBeat } from "./types.ts";
+import type {
+  LostCopy,
+  MatterProfileId,
+  NearbyHeading,
+  Planet,
+  Settlement,
+  TransitBeat,
+} from "./types.ts";
 
 /** One active landable asteroid per chart may carry V2. Not occupancy. */
 export function assignEngineUnlocks(planets: Planet[]) {
@@ -320,12 +328,7 @@ function tryScatterArrival(
   return { x, y, dirX, dirY, hostId: null };
 }
 
-function farFallback(
-  bodies: Planet[],
-  rng: () => number,
-  dirX: number,
-  dirY: number,
-): WarpArrival {
+function farFallback(bodies: Planet[], rng: () => number, dirX: number, dirY: number): WarpArrival {
   const star = bodies.find((p) => p.kind === "star");
   const r = chartRadius(bodies) + 2200;
   const ang = rng() * Math.PI * 2;
@@ -419,7 +422,11 @@ export function orbitShellAlts(p: Planet, planets: Planet[] = []) {
     const hillAlt = influenceRadius(p, planets) - p.radius;
     const wellAlt = wellRadius(p, planets) - p.radius;
     const apoAlt = Math.min(p.radius * KEPLER_APO_FACTOR, KEPLER_APO_CAP);
-    maxAlt = Math.min(apoAlt, hillAlt * ORBIT_SHELL_HILL_FRACTION, wellAlt * ORBIT_SHELL_WELL_FRACTION);
+    maxAlt = Math.min(
+      apoAlt,
+      hillAlt * ORBIT_SHELL_HILL_FRACTION,
+      wellAlt * ORBIT_SHELL_WELL_FRACTION,
+    );
     if (p.kind === "moon") {
       const rail = parentPeriapsis(p, planets);
       if (rail) {
@@ -566,8 +573,8 @@ function scatterHeadings(rng: () => number, n: number): number[] {
   return angles;
 }
 
-function rollNearby(rng: () => number, used: Set<string>): NearbyHeading[] {
-  const n = rng() < 0.18 ? 1 : rng() < 0.72 ? 2 : 3;
+function rollNearby(rng: () => number, used: Set<string>, count?: 1 | 2 | 3): NearbyHeading[] {
+  const n = count ?? (rng() < 0.18 ? 1 : rng() < 0.72 ? 2 : 3);
   const angles = scatterHeadings(rng, n);
   const pals = STAR_PALETTES.slice();
   for (let i = pals.length - 1; i > 0; i--) {
@@ -724,16 +731,81 @@ function atmo(hex: string, a: number) {
   return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
-const STAR_NAMES = ["Helios", "Ember", "Kindle", "Pyre", "Hearth", "Apex", "Solis", "Cinder", "Vesta", "Ardor"];
+const STAR_NAMES = [
+  "Helios",
+  "Ember",
+  "Kindle",
+  "Pyre",
+  "Hearth",
+  "Apex",
+  "Solis",
+  "Cinder",
+  "Vesta",
+  "Ardor",
+];
 const WORLD_NAMES = [
-  "Vesper", "Kite", "Aurel", "Nyx", "Iskra", "Calyx", "Vela", "Orin", "Mire", "Thal",
-  "Ravel", "Sable", "Brane", "Kael", "Ione", "Sere", "Voss", "Nadir", "Elide", "Korr",
-  "Ysol", "Runa", "Ilex", "Vara", "Quill", "Deneb", "Mira", "Oum", "Lir", "Tole",
-  "Nox", "Ashen", "Phaedra", "Rook", "Sil", "Xor", "Eda", "Vellum", "Kest", "Orrin",
+  "Vesper",
+  "Kite",
+  "Aurel",
+  "Nyx",
+  "Iskra",
+  "Calyx",
+  "Vela",
+  "Orin",
+  "Mire",
+  "Thal",
+  "Ravel",
+  "Sable",
+  "Brane",
+  "Kael",
+  "Ione",
+  "Sere",
+  "Voss",
+  "Nadir",
+  "Elide",
+  "Korr",
+  "Ysol",
+  "Runa",
+  "Ilex",
+  "Vara",
+  "Quill",
+  "Deneb",
+  "Mira",
+  "Oum",
+  "Lir",
+  "Tole",
+  "Nox",
+  "Ashen",
+  "Phaedra",
+  "Rook",
+  "Sil",
+  "Xor",
+  "Eda",
+  "Vellum",
+  "Kest",
+  "Orrin",
 ];
 const MOON_NAMES = [
-  "Drift", "Vale", "Shard", "Wick", "Moth", "Halo", "Cinder", "Knot", "Floe", "Rill",
-  "Glyph", "Nib", "Pebble", "Ash", "Speck", "Dusk", "Rime", "Coil", "Wisp", "Mote",
+  "Drift",
+  "Vale",
+  "Shard",
+  "Wick",
+  "Moth",
+  "Halo",
+  "Cinder",
+  "Knot",
+  "Floe",
+  "Rill",
+  "Glyph",
+  "Nib",
+  "Pebble",
+  "Ash",
+  "Speck",
+  "Dusk",
+  "Rime",
+  "Coil",
+  "Wisp",
+  "Mote",
 ];
 
 const ROCKY_PALETTES: [string, string][] = [
@@ -757,6 +829,15 @@ const GAS_PALETTES: { a: string; b: string; bands: string[] }[] = [
   { a: "#5a7a72", b: "#1c2c28", bands: ["#b0d0c4", "#6a9888", "#3a5850", "#d0e4d8"] },
 ];
 
+/** Index matches `gasProfileId` / `GAS_PALETTES`. */
+const GAS_BY_KIND: Record<Exclude<GasRecipe, "none">, number> = {
+  ammonia: 0,
+  methane: 1,
+  ice: 2,
+  sulfur: 3,
+  water: 4,
+};
+
 const MOON_PALETTES: [string, string][] = [
   ["#c9c3b6", "#6e685c"],
   ["#b8c0c4", "#4e565c"],
@@ -766,8 +847,21 @@ const MOON_PALETTES: [string, string][] = [
 ];
 
 const ROCK_NAMES = [
-  "Clast", "Grit", "Knurl", "Chondra", "Rubble", "Scree", "Talus", "Chip",
-  "Flake", "Nodule", "Sliver", "Scuff", "Pumice", "Reg", "Tephra",
+  "Clast",
+  "Grit",
+  "Knurl",
+  "Chondra",
+  "Rubble",
+  "Scree",
+  "Talus",
+  "Chip",
+  "Flake",
+  "Nodule",
+  "Sliver",
+  "Scuff",
+  "Pumice",
+  "Reg",
+  "Tephra",
 ];
 
 const ASTEROID_PALETTES: [string, string][] = [
@@ -795,7 +889,8 @@ const ROCKY_ROLES: Role[] = [
   },
   {
     kicker: "Workshop",
-    body: (name) => `${name} is a workshop in a shallow well. Things get built, then pushed into the dark.`,
+    body: (name) =>
+      `${name} is a workshop in a shallow well. Things get built, then pushed into the dark.`,
   },
   {
     kicker: "Signal",
@@ -803,9 +898,31 @@ const ROCKY_ROLES: Role[] = [
   },
   {
     kicker: "Archive",
-    body: (name) => `Dust libraries on ${name}. Whatever was written here is still in orbit around the idea of it.`,
+    body: (name) =>
+      `Dust libraries on ${name}. Whatever was written here is still in orbit around the idea of it.`,
   },
 ];
+
+const ROCKY_ROLE_BY_ID: Record<Exclude<RockyRoleId, "twin">, Role> = {
+  workshop: ROCKY_ROLES[1]!,
+  signal: ROCKY_ROLES[2]!,
+  archive: ROCKY_ROLES[3]!,
+};
+
+function rockyRoles(recipe: Recipe, shuffled: Role[], singles: number): Role[] {
+  const pinned = recipe.rocky?.roles
+    ?.filter((id) => id !== "twin")
+    .map((id) => ROCKY_ROLE_BY_ID[id]);
+  const pool = pinned && pinned.length > 0 ? pinned : shuffled;
+  if (recipe.home === "none") {
+    const out: Role[] = [];
+    while (out.length < singles) out.push(pool[out.length % pool.length]!);
+    return out;
+  }
+  const rest: Role[] = [];
+  while (rest.length < Math.max(0, singles - 1)) rest.push(pool[rest.length % pool.length]!);
+  return [ROCKY_ROLES[0]!, ...rest].slice(0, Math.max(0, singles));
+}
 
 function shuffle<T>(rng: () => number, list: T[]): T[] {
   const out = list.slice();
@@ -946,6 +1063,79 @@ export function withMineFlags(flags: ChartFlags): ChartFlags {
   return out;
 }
 
+export type StarRecipe = "warm" | "hot";
+export type HomeMode = "active" | "abandoned" | "none";
+export type GasRecipe = "none" | "ammonia" | "water" | "methane" | "ice" | "sulfur";
+export type RockyRoleId = "workshop" | "signal" | "archive" | "twin";
+/** `"soft"` is today's 5–7 belt. `"dense"` is debris: 11–14 rocks on a wider ring. */
+export type BeltRecipe = "none" | "soft" | "dense" | { camp?: boolean };
+export type MoonRecipe = { matter?: MatterProfileId; settlement?: Settlement };
+
+/**
+ * Rules for one chart. Every field is optional: absent means today's roll.
+ * `twins`, `camp`, `settlement`, and `mine` are the debug URL flags, translated.
+ */
+export type Recipe = {
+  star?: StarRecipe;
+  home?: HomeMode;
+  rocky?: { count?: number; roles?: RockyRoleId[] };
+  /** After occupancy, force this many landables to stay active. `"natural"` skips the pass. */
+  activePads?: number | "natural";
+  gas?: GasRecipe;
+  moons?: MoonRecipe[];
+  belt?: BeltRecipe;
+  nearby?: { count?: 1 | 2 | 3 };
+  twins?: "on" | "tight";
+  /** `?camp=0` while the belt is still rolled. `belt: { camp }` forces the belt. */
+  camp?: boolean;
+  settlement?: Settlement;
+  mine?: MineFlag;
+};
+
+/** URL flags become a recipe. `?camp` still forces a belt. `?camp=0` does not. */
+export function recipeFromChartFlags(flags: ChartFlags): Recipe {
+  const recipe: Recipe = {};
+  if (flags.twins) recipe.twins = flags.twins;
+  if (flags.settlement) recipe.settlement = flags.settlement;
+  if (flags.mine) recipe.mine = flags.mine;
+  if (flags.camp === true) recipe.belt = { camp: true };
+  else if (flags.belt === true) recipe.belt = flags.camp === false ? { camp: false } : "soft";
+  else if (flags.belt === false) recipe.belt = "none";
+  else if (flags.camp === false) recipe.camp = false;
+  return recipe;
+}
+
+function mergeRecipe(base: Recipe, extra: Recipe): Recipe {
+  return { ...base, ...extra };
+}
+
+function chartFlagsFromRecipe(recipe: Recipe): ChartFlags {
+  const flags: ChartFlags = {};
+  if (recipe.twins) flags.twins = recipe.twins;
+  if (recipe.settlement) flags.settlement = recipe.settlement;
+  if (recipe.mine) flags.mine = recipe.mine;
+  if (recipe.camp === true) flags.camp = true;
+  else if (recipe.camp === false) flags.camp = false;
+  if (recipe.belt === "none") flags.belt = false;
+  else if (recipe.belt === "soft" || recipe.belt === "dense") flags.belt = true;
+  else if (recipe.belt && typeof recipe.belt === "object") {
+    flags.belt = true;
+    if (recipe.belt.camp === true) flags.camp = true;
+    else if (recipe.belt.camp === false) flags.camp = false;
+  }
+  return withMineFlags(flags);
+}
+
+function clampInt(n: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, Math.trunc(n)));
+}
+
+function nearbyCount(recipe: Recipe): 1 | 2 | 3 | undefined {
+  const n = recipe.nearby?.count;
+  if (n === 1 || n === 2 || n === 3) return n;
+  return undefined;
+}
+
 export type PlayFlags = {
   warp?: number;
   target: boolean;
@@ -987,7 +1177,60 @@ export function debugWarpDir(nearby: NearbyHeading[], target: boolean) {
   return headingVec(Math.PI / 5);
 }
 
-function assignOccupancy(planets: Planet[], flags: ChartFlags, rng: () => number) {
+function writeFlavor(planets: Planet[], p: Planet) {
+  const sibling = twinOf(p, planets);
+  const parent = p.parentId ? planets.find((b) => b.id === p.parentId) : undefined;
+  p.body = flavorBody({
+    kind: p.kind,
+    kicker: p.kicker,
+    settlement: p.settlement,
+    civ: p.civ,
+    name: p.name,
+    ctx: {
+      twinName: sibling?.name,
+      gasName: parent?.kind === "gas" ? parent.name : undefined,
+    },
+  });
+}
+
+/**
+ * Exactly `n` landables stay active, in chart order.
+ * Rockies that fall off become abandoned. Moons and belt rocks become unexplored.
+ * A dried Camp is renamed to Rock so a Camp is never inactive.
+ */
+function applyActivePads(planets: Planet[], n: number) {
+  const pool = planets.filter((p) => p.landable && isOccupiableKind(p.kind));
+  const keep = Math.max(0, Math.min(pool.length, Math.trunc(n)));
+  pool.forEach((p, i) => {
+    if (i < keep) {
+      if (p.settlement === "active" && p.civ === "human") return;
+      p.settlement = "active";
+      p.civ = "human";
+      writeFlavor(planets, p);
+      return;
+    }
+    if (p.kicker === "Camp") p.kicker = "Rock";
+    const settlement = p.kind === "rocky" ? "abandoned" : "unexplored";
+    const civ = settlement === "unexplored" ? null : "human";
+    if (p.settlement === settlement && p.civ === civ) return;
+    p.settlement = settlement;
+    p.civ = civ;
+    writeFlavor(planets, p);
+  });
+}
+
+function pinMoonSettlements(planets: Planet[], moons: MoonRecipe[]) {
+  const bodies = planets.filter((p) => p.kind === "moon");
+  moons.forEach((slot, i) => {
+    const moon = bodies[i];
+    if (!moon || slot.settlement == null) return;
+    moon.settlement = slot.settlement;
+    moon.civ = slot.settlement === "unexplored" ? null : "human";
+    writeFlavor(planets, moon);
+  });
+}
+
+function assignOccupancy(planets: Planet[], flags: ChartFlags, rng: () => number, recipe: Recipe) {
   for (const p of planets) {
     if (!isOccupiableKind(p.kind)) {
       p.settlement = null;
@@ -995,7 +1238,7 @@ function assignOccupancy(planets: Planet[], flags: ChartFlags, rng: () => number
       continue;
     }
     if (p.kicker === "Home") {
-      p.settlement = "active";
+      p.settlement = recipe.home === "abandoned" ? "abandoned" : "active";
       p.civ = "human";
     } else if (p.kicker === "Shard" || (p.kind === "asteroid" && !p.landable)) {
       p.settlement = "unexplored";
@@ -1017,29 +1260,17 @@ function assignOccupancy(planets: Planet[], flags: ChartFlags, rng: () => number
       p.settlement = settlement;
       p.civ = settlement === "unexplored" ? null : "human";
     }
-    const sibling = twinOf(p, planets);
-    const parent = p.parentId ? planets.find((b) => b.id === p.parentId) : undefined;
-    p.body = flavorBody({
-      kind: p.kind,
-      kicker: p.kicker,
-      settlement: p.settlement,
-      civ: p.civ,
-      name: p.name,
-      ctx: {
-        twinName: sibling?.name,
-        gasName: parent?.kind === "gas" ? parent.name : undefined,
-      },
-    });
+    writeFlavor(planets, p);
   }
 }
 
 function makeSystem(
   seed: number,
-  flags: ChartFlags = {},
+  recipe: Recipe = {},
   starPal: [string, string, string] | null = null,
   starNameForced: string | null = null,
 ): Planet[] {
-  flags = withMineFlags(flags);
+  const flags = chartFlagsFromRecipe(recipe);
   const rng = mulberry32(seed);
   const used = new Set<string>(["lumen"]);
   const planets: Planet[] = [];
@@ -1049,7 +1280,9 @@ function makeSystem(
   const starName = starNameForced
     ? (used.add(starNameForced.toLowerCase()), starNameForced)
     : takeName(rng, STAR_NAMES, used);
-  const pal = starPal ?? pick(rng, STAR_PALETTES);
+  let pal = starPal ?? pick(rng, STAR_PALETTES);
+  if (recipe.star === "hot") pal = STAR_PALETTES[3]!;
+  else if (recipe.star === "warm") pal = STAR_PALETTES[0]!;
   const starPalIndex = STAR_PALETTES.findIndex((p) => p[0] === pal[0] && p[1] === pal[1]);
   const star = withMatter(
     {
@@ -1080,16 +1313,26 @@ function makeSystem(
   );
   planets.push(star);
 
-  const rockyCount = rng() < 0.45 ? 3 : 4;
-  const moonCount = rng() < 0.4 ? 1 : 2;
+  const rolledRocky = rng() < 0.45 ? 3 : 4;
+  const rolledMoons = rng() < 0.4 ? 1 : 2;
+  const rockyCount = recipe.rocky?.count == null ? rolledRocky : clampInt(recipe.rocky.count, 0, 4);
   /** About once per 4–5 systems; never replaces Home (seat 0). */
+  const pinnedTwin = recipe.rocky?.roles?.includes("twin") === true;
   const pairSeat = flags.twins
-    ? 1 + Math.floor(rng() * Math.max(1, rockyCount - 1))
-    : rng() < 0.22 && rockyCount >= 3
-      ? 1 + Math.floor(rng() * (rockyCount - 1))
-      : -1;
-  const rockySingles = pairSeat >= 0 ? rockyCount - 1 : rockyCount;
-  const roles = [ROCKY_ROLES[0]!, ...shuffle(rng, ROCKY_ROLES.slice(1))].slice(0, rockySingles);
+    ? rockyCount > 1
+      ? 1 + Math.floor(rng() * Math.max(1, rockyCount - 1))
+      : -1
+    : pinnedTwin
+      ? rockyCount > 1
+        ? 1 + Math.floor(rng() * Math.max(1, rockyCount - 1))
+        : -1
+      : recipe.rocky?.roles
+        ? -1
+        : rng() < 0.22 && rockyCount >= 3
+          ? 1 + Math.floor(rng() * (rockyCount - 1))
+          : -1;
+  const rockySingles = Math.max(0, pairSeat >= 0 ? rockyCount - 1 : rockyCount);
+  const roles = rockyRoles(recipe, shuffle(rng, ROCKY_ROLES.slice(1)), rockySingles);
   const rockyPal = shuffle(rng, ROCKY_PALETTES);
 
   type Draft =
@@ -1133,11 +1376,7 @@ function makeSystem(
     });
   }
   const wantBelt =
-    flags.camp === true || flags.belt === true
-      ? true
-      : flags.belt === false
-        ? false
-        : rng() < 0.34;
+    flags.camp === true || flags.belt === true ? true : flags.belt === false ? false : rng() < 0.34;
   if (wantBelt) drafts.push({ kind: "belt", radius: 210 });
   const gasR = lerp(175, 248, rng());
   const gasG = lerp(13, 17, rng());
@@ -1161,8 +1400,9 @@ function makeSystem(
       vy: seat.vy,
     };
     if (draft.kind === "belt") {
-      const n = 5 + Math.floor(rng() * 3);
-      const halfW = lerp(110, 190, rng());
+      const dense = recipe.belt === "dense";
+      const n = dense ? 11 + Math.floor(rng() * 4) : 5 + Math.floor(rng() * 3);
+      const halfW = lerp(dense ? 180 : 110, dense ? 280 : 190, rng());
       const baseA = rng() * Math.PI * 2;
       const mu = G * GRAVITY_BASE * star.mass;
       const campRoll = rng() < 0.2;
@@ -1241,7 +1481,8 @@ function makeSystem(
 
     if (draft.kind === "gas") {
       const name = takeName(rng, WORLD_NAMES, used);
-      const pal = pick(rng, GAS_PALETTES);
+      let pal = pick(rng, GAS_PALETTES);
+      if (recipe.gas && recipe.gas !== "none") pal = GAS_PALETTES[GAS_BY_KIND[recipe.gas]]!;
       const palIndex = GAS_PALETTES.indexOf(pal);
       planets.push(
         withMatter(
@@ -1417,56 +1658,145 @@ function makeSystem(
   });
 
   const gas = planets.find((p) => p.kind === "gas")!;
-  const moonPal = shuffle(rng, MOON_PALETTES);
-  for (let m = 0; m < moonCount; m++) {
-    const name = takeName(rng, MOON_NAMES, used);
-    const radius = lerp(26, 44, rng());
-    const surfaceG = lerp(4.2, 6.4, rng());
-    const orbitR = gas.radius * (4.1 + m * 2.3 + rng() * 0.8);
-    const orbitE = lerp(0.03, 0.07, rng());
-    const orbitPeri = rng() * Math.PI * 2;
-    const orbitA = rng() * Math.PI * 2 + m * 1.7;
-    const k = keplerRail(orbitR, orbitE, orbitPeri, orbitA, G * GRAVITY_BASE * gas.mass);
-    const pal = moonPal[m % moonPal.length]!;
-    planets.push(
-      withMatter(
-        {
-          id: slug(name, planets.length),
-          name,
-          kind: "moon" as const,
-          x: gas.x + k.x,
-          y: gas.y + k.y,
-          vx: gas.vx + k.vx,
-          vy: gas.vy + k.vy,
-          radius,
-          surfaceG,
-          mass: massFrom(radius, surfaceG),
-          landable: true,
-          rotate: rng() * Math.PI,
-          spin: lerp(0.05, 0.14, rng()),
-          colorA: pal[0],
-          colorB: pal[1],
-          atmo: atmo(pal[0], 0.18),
-          parentId: gas.id,
-          orbitR,
-          orbitA,
-          orbitW: k.n,
-          orbitE,
-          orbitPeri,
-          kicker: "Moon",
-          title: name,
-          body: `A quiet moon of ${gas.name}. Slow down. The well will hold you if you let it.`,
-          settlement: null,
-          civ: null,
-        },
-        moonProfileId(rng),
-      ),
-    );
+  if (rolledMoons > 0) {
+    const moonPal = shuffle(rng, MOON_PALETTES);
+    for (let m = 0; m < rolledMoons; m++) {
+      const name = takeName(rng, MOON_NAMES, used);
+      const radius = lerp(26, 44, rng());
+      const surfaceG = lerp(4.2, 6.4, rng());
+      const orbitR = gas.radius * (4.1 + m * 2.3 + rng() * 0.8);
+      const orbitE = lerp(0.03, 0.07, rng());
+      const orbitPeri = rng() * Math.PI * 2;
+      const orbitA = rng() * Math.PI * 2 + m * 1.7;
+      const k = keplerRail(orbitR, orbitE, orbitPeri, orbitA, G * GRAVITY_BASE * gas.mass);
+      const pal = moonPal[m % moonPal.length]!;
+      planets.push(
+        withMatter(
+          {
+            id: slug(name, planets.length),
+            name,
+            kind: "moon" as const,
+            x: gas.x + k.x,
+            y: gas.y + k.y,
+            vx: gas.vx + k.vx,
+            vy: gas.vy + k.vy,
+            radius,
+            surfaceG,
+            mass: massFrom(radius, surfaceG),
+            landable: true,
+            rotate: rng() * Math.PI,
+            spin: lerp(0.05, 0.14, rng()),
+            colorA: pal[0],
+            colorB: pal[1],
+            atmo: atmo(pal[0], 0.18),
+            parentId: gas.id,
+            orbitR,
+            orbitA,
+            orbitW: k.n,
+            orbitE,
+            orbitPeri,
+            kicker: "Moon",
+            title: name,
+            body: `A quiet moon of ${gas.name}. Slow down. The well will hold you if you let it.`,
+            settlement: null,
+            civ: null,
+          },
+          moonMatter(recipe.moons?.[m]?.matter, moonProfileId(rng)),
+        ),
+      );
+    }
   }
 
-  assignOccupancy(planets, flags, rng);
+  // Extra moons stay off the main stream so occupancy rolls do not move.
+  const requestedMoons =
+    recipe.gas !== "none" && recipe.moons != null
+      ? clampInt(recipe.moons.length, 0, 2)
+      : rolledMoons;
+  if (recipe.gas !== "none" && requestedMoons > rolledMoons) {
+    const side = mulberry32(seed ^ 0x6d6f6f6e);
+    const sidePal = shuffle(side, MOON_PALETTES);
+    for (let m = rolledMoons; m < requestedMoons; m++) {
+      pushMoon(side, gas, m, sidePal, planets, used, recipe.moons?.[m]?.matter);
+    }
+  }
+  if (recipe.gas !== "none" && requestedMoons < rolledMoons) {
+    const moons = planets.filter((p) => p.kind === "moon");
+    for (const moon of moons.slice(requestedMoons)) {
+      const at = planets.indexOf(moon);
+      if (at >= 0) planets.splice(at, 1);
+    }
+  }
+
+  assignOccupancy(planets, flags, rng, recipe);
+  if (recipe.moons && recipe.gas !== "none") pinMoonSettlements(planets, recipe.moons);
+  if (typeof recipe.activePads === "number") applyActivePads(planets, recipe.activePads);
   assignEngineUnlocks(planets);
+  if (recipe.gas === "none") {
+    for (let i = planets.length - 1; i >= 0; i--) {
+      const kind = planets[i]!.kind;
+      if (kind === "gas" || kind === "moon") planets.splice(i, 1);
+    }
+  }
   return planets;
+}
+
+function pushMoon(
+  rng: () => number,
+  gas: Planet,
+  m: number,
+  moonPal: [string, string][],
+  planets: Planet[],
+  used: Set<string>,
+  matter: MatterProfileId | undefined,
+) {
+  const name = takeName(rng, MOON_NAMES, used);
+  const radius = lerp(26, 44, rng());
+  const surfaceG = lerp(4.2, 6.4, rng());
+  const orbitR = gas.radius * (4.1 + m * 2.3 + rng() * 0.8);
+  const orbitE = lerp(0.03, 0.07, rng());
+  const orbitPeri = rng() * Math.PI * 2;
+  const orbitA = rng() * Math.PI * 2 + m * 1.7;
+  const k = keplerRail(orbitR, orbitE, orbitPeri, orbitA, G * GRAVITY_BASE * gas.mass);
+  const pal = moonPal[m % moonPal.length]!;
+  planets.push(
+    withMatter(
+      {
+        id: slug(name, planets.length),
+        name,
+        kind: "moon" as const,
+        x: gas.x + k.x,
+        y: gas.y + k.y,
+        vx: gas.vx + k.vx,
+        vy: gas.vy + k.vy,
+        radius,
+        surfaceG,
+        mass: massFrom(radius, surfaceG),
+        landable: true,
+        rotate: rng() * Math.PI,
+        spin: lerp(0.05, 0.14, rng()),
+        colorA: pal[0],
+        colorB: pal[1],
+        atmo: atmo(pal[0], 0.18),
+        parentId: gas.id,
+        orbitR,
+        orbitA,
+        orbitW: k.n,
+        orbitE,
+        orbitPeri,
+        kicker: "Moon",
+        title: name,
+        body: `A quiet moon of ${gas.name}. Slow down. The well will hold you if you let it.`,
+        settlement: null,
+        civ: null,
+      },
+      moonMatter(matter, moonProfileId(rng)),
+    ),
+  );
+}
+
+function moonMatter(pinned: MatterProfileId | undefined, rolled: MatterProfileId): MatterProfileId {
+  if (pinned && MOON_PROFILE_IDS.includes(pinned)) return pinned;
+  return rolled;
 }
 
 export type ChartedSystem = {
@@ -1490,22 +1820,33 @@ export function getSystem(): ChartedSystem {
   return system;
 }
 
+function startBody(planets: Planet[]): Planet {
+  return (
+    planets.find((p) => p.kicker === "Home") ??
+    planets.find((p) => p.kind === "rocky") ??
+    planets.find((p) => p.landable) ??
+    planets[0]!
+  );
+}
+
 export function createSystem(
   seed = (Math.random() * 0xffffffff) >>> 0,
   flags: ChartFlags = {},
   starPal: [string, string, string] | null = null,
   starName: string | null = null,
+  recipe: Recipe = {},
 ): ChartedSystem {
   const fromUrl = typeof window !== "undefined" ? chartFlagsFromSearch(window.location.search) : {};
   const rng = mulberry32(seed ^ 0x51ed);
-  const planets = makeSystem(seed, { ...fromUrl, ...flags }, starPal, starName);
-  const home = planets.find((p) => p.kicker === "Home") ?? planets.find((p) => p.kind === "rocky")!;
+  const merged = mergeRecipe(recipeFromChartFlags({ ...fromUrl, ...flags }), recipe);
+  const planets = makeSystem(seed, merged, starPal, starName);
+  const home = startBody(planets);
   const star = planets.find((p) => p.kind === "star");
   const pad = home.radius + SHIP_HULL * 0.85;
   system = {
     seed,
     name: star?.name ?? "Lumen",
-    nearby: rollNearby(rng, new Set(planets.map((p) => p.name.toLowerCase()))),
+    nearby: rollNearby(rng, new Set(planets.map((p) => p.name.toLowerCase())), nearbyCount(merged)),
     planets,
     home,
     start: {
@@ -1518,7 +1859,8 @@ export function createSystem(
     minimapWorldR: Math.max(
       10800,
       planets.reduce((m, p) => {
-        if (p.kind === "star" || p.orbitR == null) return Math.max(m, Math.hypot(p.x, p.y) + p.radius);
+        if (p.kind === "star" || p.orbitR == null)
+          return Math.max(m, Math.hypot(p.x, p.y) + p.radius);
         const apo = p.orbitR * (1 + (p.orbitE ?? 0));
         if (p.parentId) {
           const parent = planets.find((b) => b.id === p.parentId);
