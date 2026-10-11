@@ -35,7 +35,7 @@ import {
   keplerRail,
   isGhostBody,
   twinOf,
-  STAR_ATMO_FACTOR,
+  starAtmoFactor,
   STAR_DRAG_DENSITY,
   GAS_ATMO_FACTOR,
   GAS_CLOUD_FACTOR,
@@ -1145,7 +1145,7 @@ function stepLockedLagrange(
 function atmoRadius(p: Planet) {
   if (p.kind === "asteroid") return p.radius;
   if (p.kind === "gas") return p.radius * GAS_ATMO_FACTOR;
-  if (p.kind === "star") return p.radius * STAR_ATMO_FACTOR;
+  if (p.kind === "star") return p.radius * starAtmoFactor(p);
   return p.radius * 1.72;
 }
 
@@ -2481,6 +2481,13 @@ export function flareApexNow(f: SolarFlare, starR: number) {
   return starR + (f.reach - starR) * env;
 }
 
+/** Same 7–13 stroke as a normal star, grown with radius only on a massive star. */
+export function flareBaseWidth(star: Pick<Planet, "matter" | "radius">): number {
+  const base = 7 + Math.random() * 6;
+  if (star.matter !== "star-massive") return base;
+  return base * (star.radius / 260);
+}
+
 function spawnFlare(star: Planet, reduced: boolean): SolarFlare {
   const long = Math.random() < FLARE_LONG_CHANCE;
   const reach = star.radius * (long ? 3.05 + Math.random() * 0.95 : 1.52 + Math.random() * 0.72);
@@ -2490,7 +2497,7 @@ function spawnFlare(star: Planet, reduced: boolean): SolarFlare {
     span: (long ? 0.52 : 0.36) + Math.random() * 0.55,
     spin: reduced ? 0 : (Math.random() - 0.5) * 0.045,
     reach,
-    baseW: 7 + Math.random() * 6,
+    baseW: flareBaseWidth(star),
     life: max,
     max,
     seed: Math.random() * 1000,

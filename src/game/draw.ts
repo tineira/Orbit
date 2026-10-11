@@ -33,7 +33,7 @@ import {
   ORBIT_DRAG_BREAK,
   ORBIT_PERTURB_BREAK,
   orbitShellAlts,
-  STAR_ATMO_FACTOR,
+  starAtmoFactor,
   transitBeat,
   transitBoomAt,
   transitLaunchU,
@@ -714,7 +714,7 @@ function drawStarCorona(ctx: CanvasRenderingContext2D, sim: Sim) {
   const star = sim.planets.find((p) => p.kind === "star");
   if (!star) return;
   const R = star.radius;
-  const corona = R * STAR_ATMO_FACTOR;
+  const corona = R * starAtmoFactor(star);
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
   const g = ctx.createRadialGradient(star.x, star.y, R * 0.92, star.x, star.y, corona);
@@ -1177,7 +1177,7 @@ function haloOuter(p: Planet) {
   const a = atmoRadius(p);
   if (p.kind === "moon") return p.radius + (a - p.radius) * 0.42;
   if (p.kind === "gas") return a;
-  if (p.kind === "star") return p.radius * STAR_ATMO_FACTOR;
+  if (p.kind === "star") return p.radius * starAtmoFactor(p);
   return p.radius + (a - p.radius) * 0.72;
 }
 

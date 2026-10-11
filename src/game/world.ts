@@ -82,6 +82,16 @@ export const GAS_HAZE_DENSITY = 0.04;
 export const GAS_CLOUD_DENSITY = 0.48;
 /** Star corona outer radius / body radius. Keep in sync with parking: min shell sits just past this. */
 export const STAR_ATMO_FACTOR = 2.1;
+/** Massive stars only. Wider than `STAR_ATMO_FACTOR` so the corona is a place, not a graze. */
+export const MASSIVE_STAR_ATMO_FACTOR = 3.2;
+
+export function starAtmoFactor(p: Pick<Planet, "kind" | "matter">): number {
+  if (p.kind === "star" && p.matter === "star-massive") return MASSIVE_STAR_ATMO_FACTOR;
+  return STAR_ATMO_FACTOR;
+}
+
+/** Pad past the corona that a 260-radius star already has with `radius + 3400`. */
+const MASSIVE_RAIL_PAD = 3400 - 260 * (STAR_ATMO_FACTOR - 1);
 /** Corona drag vs gas 0.48 / rocky 0.5. Low so a fast dive still hits the disk. */
 export const STAR_DRAG_DENSITY = 0.04;
 /** Clearance past the corona before a star lock can hold. */
@@ -227,13 +237,13 @@ function chartRadius(bodies: Planet[]) {
 }
 
 function scatterKeepout(p: Planet) {
-  if (p.kind === "star") return p.radius * STAR_ATMO_FACTOR + 260;
+  if (p.kind === "star") return p.radius * starAtmoFactor(p) + 260;
   if (p.kind === "gas") return p.radius * 1.95 + 120;
   return p.radius + SHIP_HULL + 200;
 }
 
 function closeOtherKeepout(p: Planet) {
-  if (p.kind === "star") return p.radius * STAR_ATMO_FACTOR + 90;
+  if (p.kind === "star") return p.radius * starAtmoFactor(p) + 90;
   if (p.kind === "gas") return p.radius * GAS_ATMO_FACTOR + 36;
   return p.radius + SHIP_HULL + 36;
 }
@@ -439,7 +449,7 @@ export function orbitShellAlts(p: Planet, planets: Planet[] = []) {
     const atmoAlt = p.radius * (GAS_ATMO_FACTOR - 1);
     maxAlt = Math.max(maxAlt, atmoAlt + ORBIT_SHELL_GAS_CLEAR);
   } else if (p.kind === "star") {
-    const atmoAlt = p.radius * (STAR_ATMO_FACTOR - 1);
+    const atmoAlt = p.radius * (starAtmoFactor(p) - 1);
     minAlt = atmoAlt + ORBIT_SHELL_STAR_CLEAR;
     maxAlt = Math.max(p.radius * ORBIT_SHELL_STAR_MAX_FACTOR, atmoAlt + ORBIT_SHELL_STAR_MAX_PAD);
     let innerPeri = Infinity;
@@ -880,6 +890,13 @@ export const STAR_PALETTES: [string, string, string][] = [
   ["#e8f0ff", "#8ab0e0", "rgba(180, 210, 255, 0.18)"],
 ];
 
+/** Whiter and bluer than the hot palette. Not in `STAR_PALETTES`, so random charts never roll it. */
+export const MASSIVE_STAR_PALETTE: [string, string, string] = [
+  "#f7fbff",
+  "#6ea6ff",
+  "rgba(140, 190, 255, 0.42)",
+];
+
 type Role = { kicker: string; body: (name: string) => string };
 
 const ROCKY_ROLES: Role[] = [
@@ -974,6 +991,11 @@ function placeOnRails(
 }[] {
   const mu = G * GRAVITY_BASE * star.mass;
   let a = star.radius + 3400;
+  if (star.matter === "star-massive") {
+    const corona = star.radius * MASSIVE_STAR_ATMO_FACTOR;
+    const cleared = corona + MASSIVE_RAIL_PAD;
+    if (cleared > a) a = cleared;
+  }
   return drafts.map((d, i) => {
     a += (i === 0 ? 0 : 2050) + d.radius * 1.35 + rng() * 380;
     const orbitE = lerp(0.055, 0.12, rng());
@@ -1000,6 +1022,8 @@ export type ChartFlags = {
   twins?: "on" | "tight";
   belt?: boolean;
   camp?: boolean;
+  /** Debug `?star=warm|hot|massive`. Absent on a random chart. */
+  star?: "warm" | "hot" | "massive";
   settlement?: Settlement;
   /** Debug sugar. Applied in `makeSystem`, not the URL parser. */
   mine?: MineFlag;
@@ -1029,6 +1053,11 @@ export function chartFlagsFromSearch(search = ""): ChartFlags {
   if (belt != null) flags.belt = belt;
   const camp = flagOn(q.get("camp"));
   if (camp != null) flags.camp = camp;
+  const star = q.get("star");
+  if (star != null) {
+    const t = star.trim().toLowerCase();
+    if (t === "warm" || t === "hot" || t === "massive") flags.star = t;
+  }
   const settlement = q.get("settlement");
   if (settlement != null) {
     const t = settlement.trim().toLowerCase();
@@ -1063,7 +1092,7 @@ export function withMineFlags(flags: ChartFlags): ChartFlags {
   return out;
 }
 
-export type StarRecipe = "warm" | "hot";
+export type StarRecipe = "warm" | "hot" | "massive";
 export type HomeMode = "active" | "abandoned" | "none";
 export type GasRecipe = "none" | "ammonia" | "water" | "methane" | "ice" | "sulfur";
 export type RockyRoleId = "workshop" | "signal" | "archive" | "twin";
@@ -1095,6 +1124,7 @@ export type Recipe = {
 /** URL flags become a recipe. `?camp` still forces a belt. `?camp=0` does not. */
 export function recipeFromChartFlags(flags: ChartFlags): Recipe {
   const recipe: Recipe = {};
+  if (flags.star) recipe.star = flags.star;
   if (flags.twins) recipe.twins = flags.twins;
   if (flags.settlement) recipe.settlement = flags.settlement;
   if (flags.mine) recipe.mine = flags.mine;
@@ -1275,14 +1305,18 @@ function makeSystem(
   const used = new Set<string>(["lumen"]);
   const planets: Planet[] = [];
 
-  const starR = lerp(220, 300, rng());
-  const starG = lerp(22, 30, rng());
+  const starRoll = rng();
+  const starGRoll = rng();
+  const massive = recipe.star === "massive";
+  const starR = massive ? lerp(400, 500, starRoll) : lerp(220, 300, starRoll);
+  const starG = massive ? lerp(38, 52, starGRoll) : lerp(22, 30, starGRoll);
   const starName = starNameForced
     ? (used.add(starNameForced.toLowerCase()), starNameForced)
     : takeName(rng, STAR_NAMES, used);
   let pal = starPal ?? pick(rng, STAR_PALETTES);
   if (recipe.star === "hot") pal = STAR_PALETTES[3]!;
   else if (recipe.star === "warm") pal = STAR_PALETTES[0]!;
+  else if (massive) pal = MASSIVE_STAR_PALETTE;
   const starPalIndex = STAR_PALETTES.findIndex((p) => p[0] === pal[0] && p[1] === pal[1]);
   const star = withMatter(
     {
@@ -1309,7 +1343,7 @@ function makeSystem(
       civ: null,
       deny: "Too hot to land",
     },
-    starProfileId(starPalIndex < 0 ? 0 : starPalIndex),
+    massive ? "star-massive" : starProfileId(starPalIndex < 0 ? 0 : starPalIndex),
   );
   planets.push(star);
 
