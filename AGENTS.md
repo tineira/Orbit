@@ -25,6 +25,17 @@ A small 2D space flight: TanStack Start, React 19, Vite, Canvas 2D. Every load c
 - `npm run build` runs `db:migrate`, which skips without `DATABASE_URL`. That is fine locally.
 - Throwaway verification shots go in `.playwright-mcp/` (gitignored) or `tmp/`, never the repo root.
 
+## Video and speech (Grok only)
+
+Images, sound effects, and music are not part of this rule. Each agent chooses how to make those.
+
+Video and text-to-speech go through Grok. If you are Grok, make the file yourself. Any other harness hands it to Grok and waits. Do not call the xAI video API.
+
+- **Video** (a Halley clip, any short clip): Grok uses Imagine in that session, on the session quota. Do not spend `XAI_API_KEY` on it.
+- **Text to speech** (spoken words, no picture): Grok reads `XAI_API_KEY` from gitignored `.env.local` and saves an mp3 from `POST https://api.x.ai/v1/tts`. Never print the key. Never rename it to `VITE_XAI_API_KEY`.
+- **Handoff:** a visible window, `grok --model grok-4.7 --always-approve "<prompt>"`, a report file, and a DONE marker. The prompt names the asset and the output path, and says "never print the key". Do not generate the file yourself while you wait.
+- Leave new video and speech in `tmp/` unless Tomás asked to commit it in that turn.
+
 ## Do not
 
 - Commit `.env*` or any key.
