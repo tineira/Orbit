@@ -1,6 +1,15 @@
 import { CLOCK_REVEAL_MS } from "./adrift";
-import { campaignFromSearch, campaignShipFrom, loadCampaign, newCampaign, saveCampaign } from "./campaign";
-import { chartStoryPlace, placeFromSearch, storyPlaceById } from "./place";
+import {
+  campaignFromSearch,
+  campaignShipFrom,
+  keepCampaignMarks,
+  loadCampaign,
+  newCampaign,
+  resumePlaceSave,
+  saveCampaign,
+} from "./campaign";
+import { applyBodyGrant, chartStoryPlace, placeFromSearch, storyPlaceById } from "./place";
+import { runTriggers, spokenLine } from "./triggers";
 import { createAudio } from "./audio";
 import { drawFrame } from "./draw";
 import {
@@ -693,6 +702,36 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     })();
   };
 
+  const drainCampaignEvents = () => {
+    if (!sim) return;
+    const events = sim.campaignEvents.splice(0, sim.campaignEvents.length);
+    if (events.length === 0) return;
+    const campaign = sim.campaign;
+    if (!campaign?.place) return;
+    const place = storyPlaceById(campaign.place);
+    if (!place || place.seed !== getSystem().seed) return;
+    const marks = () =>
+      JSON.stringify({
+        flags: campaign.flags,
+        firedTriggers: campaign.firedTriggers,
+        revealed: campaign.revealed,
+        modules: campaign.modules,
+      });
+    const before = marks();
+    const effects = runTriggers(place.id, place.triggers, events, campaign);
+    for (const effect of effects) {
+      if ("grant" in effect) applyBodyGrant(sim.ship, effect.grant, campaign);
+      const line = spokenLine(effect, halleyManifest, pilotManifest);
+      if (!line) continue;
+      if (line.source === "ship" && isHalleyClipId(line.id)) speakHalley(line.id, line.text);
+      else if (line.source === "thought" && isPilotClipId(line.id)) speakThought(line.id, line.text);
+    }
+    if (marks() !== before) {
+      keepCampaignMarks(campaign);
+      saveCampaign(campaign);
+    }
+  };
+
   const playVoiceLine = (source: VoiceSource, text: string) => {
     if (!devTools) return;
     if (source === "thought") {
@@ -1107,6 +1146,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       acc = 0;
     }
     if (stepped) dropHeldPresses(input.state);
+    drainCampaignEvents();
 
     audio.setThrust(
       sim.ship.thrusting && playing(),
@@ -1267,18 +1307,20 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     if (campaignOn && placeId && !forced && import.meta.env.DEV) {
       throw new Error(`unknown story place ${placeId}`);
     }
-    const loaded = campaignOn && !forced ? loadCampaign() : null;
+    const stored = campaignOn ? loadCampaign() : null;
+    const resume = resumePlaceSave(stored, forced);
+    const loaded = forced && !resume ? null : stored;
     const savedPlace = loaded?.place ? storyPlaceById(loaded.place) : null;
     if (campaignOn && loaded?.place && !savedPlace && import.meta.env.DEV) {
       throw new Error(`unknown story place ${loaded.place}`);
     }
-    if (forced) chartStoryPlace(forced, import.meta.env.DEV);
+    if (forced && !resume) chartStoryPlace(forced, import.meta.env.DEV);
     else if (savedPlace) chartStoryPlace(savedPlace, import.meta.env.DEV);
     else if (loaded) createSystem(loaded.checkpoint.seed);
     else createSystem();
     sim = createSim();
     if (campaignOn) {
-      if (forced) {
+      if (forced && !resume) {
         sim.campaign = newCampaign({
           seed: getSystem().seed,
           landedId: sim.landedId,

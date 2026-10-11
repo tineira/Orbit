@@ -125,6 +125,12 @@ import {
   type CampaignState,
 } from "./campaign.ts";
 import { applyBodyGrant, chartStoryPlace, storyPlaceById, type StoryPlace } from "./place.ts";
+import {
+  approachCrossings,
+  jumpBlocked,
+  type ApproachLatch,
+  type GameEvent,
+} from "./triggers.ts";
 
 export type Sim = {
   ship: Ship;
@@ -217,6 +223,12 @@ export type Sim = {
   campaign: CampaignState | null;
   /** Story place id for this chart. Landing here freezes a checkpoint. Phase 4 sets it. */
   campaignPlaceId: string | null;
+  /** Story events queued this frame. Runtime drains them. Random mode stays empty. */
+  campaignEvents: GameEvent[];
+  /** Approach hysteresis. Keyed by ref and radius so two bubbles do not share a latch. */
+  approachLatch: ApproachLatch;
+  /** Heading name already reported as a blocked warp, so it does not queue every frame. */
+  warpBlockHeading: string | null;
 };
 
 export const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
@@ -337,6 +349,9 @@ export function createSim(): Sim {
     airlockSeqAt: 0,
     campaign: null,
     campaignPlaceId: null,
+    campaignEvents: [],
+    approachLatch: { seen: new Set(), inside: new Set() },
+    warpBlockHeading: null,
   };
   resetCometChart(sim);
   landOnHome(sim);
@@ -466,6 +481,7 @@ export function rebootSim(sim: Sim) {
   sim.beltTickWait = 0;
   sim.beltRainWait = 0;
   endAdrift(sim);
+  clearCampaignSensors(sim);
   if (campaign) landOnBody(sim, campaign.checkpoint.landedId);
   else landOnHome(sim);
   sim.camera.trauma = 0;
@@ -542,6 +558,9 @@ function chartIntoSim(sim: Sim, chart: () => void) {
   resetCometChart(sim);
   clearSpectroChart(sim);
   applySimViewPrefs(sim, prefs);
+  sim.approachLatch.seen.clear();
+  sim.approachLatch.inside.clear();
+  sim.warpBlockHeading = null;
 }
 
 /** First sit on a story place: the start ref, its fuel, and its grant. */
@@ -623,6 +642,7 @@ function beginCometWarp(sim: Sim) {
   sim.ship.vx = dir.x * speed;
   sim.ship.vy = dir.y * speed;
   sim.orbitHint = "Comet — not yet";
+  sim.warpBlockHeading = null;
 }
 
 /** Drop into the tunnel. The new chart is generated on the punch, not here. */
@@ -637,6 +657,7 @@ export function enterWarp(sim: Sim, lost = false) {
   sim.phase = "transit";
   sim.transitAge = 0;
   sim.transitPunched = false;
+  sim.warpBlockHeading = null;
   sim.warpLost = lost;
   sim.warpCharge = 1;
   sim.warpApproach = 1;
@@ -718,6 +739,9 @@ function punchWarp(sim: Sim, settle = false) {
   sim.camera.starDriftX += oldCamX - sim.camera.x;
   sim.camera.starDriftY += oldCamY - sim.camera.y;
   sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
+  sim.approachLatch.seen.clear();
+  sim.approachLatch.inside.clear();
+  sim.warpBlockHeading = null;
 }
 
 function stepTransit(sim: Sim, dt: number) {
@@ -803,6 +827,7 @@ function stepTransit(sim: Sim, dt: number) {
   sim.warpApproach = warpApproach(WARP_BRAKE_SPEED);
   sim.orbitHint = null;
   sim.status = "deep";
+  pushCampaignEvent(sim, { on: "enterSystem" });
 }
 
 export function bodyMu(p: Planet, gravityScale: number) {
@@ -1492,6 +1517,7 @@ export function takeoff(sim: Sim) {
   sim.lagrangeLockKey = null;
   sim.lagrangeDwellKey = null;
   sim.lagrangeDwell = 0;
+  if (p.placeRef) pushCampaignEvent(sim, { on: "takeoff", ref: p.placeRef });
 }
 
 function stickToPlanet(sim: Sim, p: Planet) {
@@ -1918,6 +1944,7 @@ function captureOrbit(sim: Sim, p: Planet) {
   sim.orbitDwell = 0;
   sim.status = "orbit";
   sim.orbitHint = lockHint(p.name, k.e);
+  if (p.placeRef) pushCampaignEvent(sim, { on: "orbitLock", ref: p.placeRef });
   return true;
 }
 
@@ -2265,6 +2292,68 @@ function applyBeltHull(sim: Sim, dt: number) {
   if (sim.ship.hull <= 0) breachHull(sim);
 }
 
+function pushCampaignEvent(sim: Sim, event: GameEvent) {
+  if (!sim.campaign) return;
+  sim.campaignEvents.push(event);
+}
+
+function clearCampaignSensors(sim: Sim) {
+  sim.campaignEvents.length = 0;
+  sim.approachLatch.seen.clear();
+  sim.approachLatch.inside.clear();
+  sim.warpBlockHeading = null;
+}
+
+function noteApproach(sim: Sim) {
+  const placeId = sim.campaign?.place;
+  if (!placeId) return;
+  const place = storyPlaceById(placeId);
+  if (!place || place.seed !== getSystem().seed) return;
+  const samples: { ref: string; radius: number; dist: number }[] = [];
+  for (const trigger of place.triggers) {
+    if (trigger.on !== "approach") continue;
+    const body = sim.planets.find((p) => p.placeRef === trigger.ref);
+    const dist = body
+      ? Math.hypot(sim.ship.x - body.x, sim.ship.y - body.y)
+      : Number.POSITIVE_INFINITY;
+    samples.push({ ref: trigger.ref, radius: trigger.radius, dist });
+  }
+  for (const hit of approachCrossings(sim.approachLatch, samples)) {
+    pushCampaignEvent(sim, { on: "approach", ref: hit.ref, radius: hit.radius });
+  }
+}
+
+function noteWarpAttempt(sim: Sim) {
+  const speed = Math.hypot(sim.ship.vx, sim.ship.vy);
+  if (speed >= WARP_JUMP_SPEED) {
+    sim.warpBlockHeading = null;
+    return;
+  }
+  const dir = shipTravelDir(sim.ship);
+  const aim = lockedNearby(dir.x, dir.y, warpHeadings(sim.nearby, sim.cometHeading), WARP_AIM_DEG);
+  if (!aim || !sim.campaign) {
+    sim.warpBlockHeading = null;
+    return;
+  }
+  if (!jumpBlocked(sim.campaign, aim.requires, sim.ship, speed)) {
+    sim.warpBlockHeading = null;
+    return;
+  }
+  if (sim.warpBlockHeading === aim.name) return;
+  sim.warpBlockHeading = aim.name;
+  pushCampaignEvent(sim, { on: "warpAttempt", heading: aim.name });
+}
+
+/** Flight sensors. Title and the pad lock do not emit. A committed warp does not either. */
+function noteCampaignSensors(sim: Sim) {
+  if (!sim.campaign || sim.phase !== "flight" || sim.padZoomLock) {
+    if (sim.phase !== "flight") sim.warpBlockHeading = null;
+    return;
+  }
+  noteApproach(sim);
+  noteWarpAttempt(sim);
+}
+
 export function stepSim(
   sim: Sim,
   dt: number,
@@ -2312,6 +2401,7 @@ export function stepSim(
       updateCamera(sim, dt);
       sim.status = "crashed";
       sim.orbitHint = null;
+      noteCampaignSensors(sim);
       return;
     }
     if (sim.burned) {
@@ -2340,6 +2430,7 @@ export function stepSim(
     sim.orbitHint = null;
     sim.orbitLockId = null;
     sim.lagrangeLockKey = null;
+    noteCampaignSensors(sim);
     return;
   }
 
@@ -2360,11 +2451,13 @@ export function stepSim(
     sim.transitBoomed = false;
     decayParticles(sim, dt);
     updateCamera(sim, dt);
+    noteCampaignSensors(sim);
     return;
   }
 
   if (sim.phase === "transit") {
     stepTransit(sim, dt);
+    noteCampaignSensors(sim);
     return;
   }
 
@@ -2404,6 +2497,7 @@ export function stepSim(
       if (sim.adrift && sim.phase === "flight") sim.orbitHint = "No propellant";
       decayParticles(sim, dt);
       updateCamera(sim, dt);
+      noteCampaignSensors(sim);
       return;
     }
   }
@@ -2417,6 +2511,7 @@ export function stepSim(
       if (sim.adrift && sim.phase === "flight") sim.orbitHint = "No propellant";
       decayParticles(sim, dt);
       updateCamera(sim, dt);
+      noteCampaignSensors(sim);
       return;
     }
   }
@@ -2470,6 +2565,7 @@ export function stepSim(
   if (sim.adrift && sim.phase === "flight") sim.orbitHint = "No propellant";
   decayParticles(sim, dt);
   updateCamera(sim, dt);
+  noteCampaignSensors(sim);
 }
 
 function emitExhaust(sim: Sim, f: { x: number; y: number }, power: number) {
@@ -2852,6 +2948,7 @@ function collidePlanets(sim: Sim) {
       faceRadial(sim);
       sim.camera.trauma = Math.min(1, sim.camera.trauma + 0.18);
       if (sim.campaign && sim.campaignPlaceId) commitStoryCheckpoint(sim, sim.campaignPlaceId);
+      if (p.placeRef) pushCampaignEvent(sim, { on: "land", ref: p.placeRef });
       return;
     }
 
