@@ -11,6 +11,7 @@ Espacio canónico: [Orbit](https://app.notion.com/p/3d9a554c3c4081739622ed800df2
 | `occupancy.md` | Tipos settlement / civ, pesos, flags | [Mundos](https://app.notion.com/p/3dfa554c3c40810b838edf3fe5cceecd) |
 | `comet.md` | Actor visitante, rumbo leftover, KeyC | [Cometa](https://app.notion.com/p/3dfa554c3c408183b66cd95df28a84da) |
 | `voice.md` | Espejo del lock del canal del visor. Habla (Kitten, bocas por tag) es **WIP** en `?dev`. El copy de líneas no va a GitHub. | [Voz](https://app.notion.com/p/3dfa554c3c40812bb79eee3fb015c23b) |
+| `art/README.md` | Plan en 4 fases para llevar la dirección de arte al juego (nave, Halley, pensamientos, planetas nivel 2), con sprite, imagen base y código de la maqueta en `art/`. Los clips de voz quedan fuera hasta cerrar el copy | [Estética](https://app.notion.com/p/3dca554c3c4081e688cfd840bc142f62) |
 
 No pongas planes de PRs, listas de archivos ni sketches de TypeScript en Notion. No pongas lore, copy de líneas ni tablas de producto cerradas aquí.
 
