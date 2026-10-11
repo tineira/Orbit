@@ -51,7 +51,11 @@ export const MATTER_PROFILES: Record<MatterProfileId, MatterProfile> = {
   "star-warm": {
     id: "star-warm",
     kind: "star",
-    bulk: mix({ id: "h2", fraction: 0.73 }, { id: "he", fraction: 0.25 }, { id: "d", fraction: 0.02 }),
+    bulk: mix(
+      { id: "h2", fraction: 0.73 },
+      { id: "he", fraction: 0.25 },
+      { id: "d", fraction: 0.02 },
+    ),
     atmosphere: mix(
       { id: "h2", fraction: 0.7 },
       { id: "he", fraction: 0.22 },
@@ -72,6 +76,22 @@ export const MATTER_PROFILES: Record<MatterProfileId, MatterProfile> = {
       { id: "he", fraction: 0.28 },
       { id: "lumen", fraction: 0.12 },
       { id: "he3", fraction: 0.02 },
+    ),
+  },
+  "star-massive": {
+    id: "star-massive",
+    kind: "star",
+    bulk: mix(
+      { id: "h2", fraction: 0.5 },
+      { id: "he", fraction: 0.4 },
+      { id: "d", fraction: 0.06 },
+      { id: "he3", fraction: 0.04 },
+    ),
+    atmosphere: mix(
+      { id: "h2", fraction: 0.46 },
+      { id: "he", fraction: 0.26 },
+      { id: "lumen", fraction: 0.24 },
+      { id: "he3", fraction: 0.04 },
     ),
   },
   "rocky-home": {
@@ -415,7 +435,8 @@ export function mixLegal(
   if (Math.abs(sum - 1) > 1e-9) return { ok: false, reason: `${layer} fractions sum to ${sum}` };
   for (const e of src) {
     if (e.fraction <= 0) return { ok: false, reason: `${e.id} fraction must be > 0` };
-    if (!allow.includes(e.id)) return { ok: false, reason: `${e.id} is not allowed in ${kind} ${layer}` };
+    if (!allow.includes(e.id))
+      return { ok: false, reason: `${e.id} is not allowed in ${kind} ${layer}` };
     if (layer === "atmosphere") {
       const cls = SUBSTANCES[e.id].class;
       if (cls !== "gas" && cls !== "exotic") {
@@ -486,9 +507,7 @@ export function mixPercents(src: Mix): { id: SubstanceId; hud: string; pct: numb
   const exact = src.map((e) => e.fraction * 100);
   const floors = exact.map((n) => Math.floor(n));
   let used = floors.reduce((n, v) => n + v, 0);
-  const order = exact
-    .map((n, i) => ({ i, frac: n - floors[i]! }))
-    .sort((a, b) => b.frac - a.frac);
+  const order = exact.map((n, i) => ({ i, frac: n - floors[i]! })).sort((a, b) => b.frac - a.frac);
   let k = 0;
   while (used < 100 && k < order.length * 2) {
     const slot = order[k % order.length]!;

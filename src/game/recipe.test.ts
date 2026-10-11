@@ -1,9 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { MATTER_PROFILES } from "./matter.ts";
 import { occupancyLegal, padHasFuel } from "./occupancy.ts";
-import type { GasRecipe, Recipe } from "./world.ts";
-import { createSystem, recipeFromChartFlags, SHIP_HULL, STAR_PALETTES } from "./world.ts";
+import { flareBaseWidth } from "./sim.ts";
 import type { MatterProfileId, Planet } from "./types.ts";
+import type { GasRecipe, Recipe } from "./world.ts";
+import {
+  chartFlagsFromSearch,
+  createSystem,
+  MASSIVE_STAR_ATMO_FACTOR,
+  MASSIVE_STAR_PALETTE,
+  recipeFromChartFlags,
+  SHIP_HULL,
+  STAR_ATMO_FACTOR,
+  STAR_PALETTES,
+  starAtmoFactor,
+} from "./world.ts";
 
 function chart(seed: number, recipe: Recipe = {}, flags: Parameters<typeof createSystem>[1] = {}) {
   return createSystem(seed, flags, null, null, recipe);
@@ -47,6 +59,40 @@ test("star warm and hot pin the profile without moving the chart", () => {
     assert.equal(hot.planets[0]!.matter, "star-hot");
     assert.equal(hot.planets[0]!.colorA, STAR_PALETTES[3]![0]);
     assert.ok(hot.planets[0]!.radius >= 220 && hot.planets[0]!.radius <= 300);
+  }
+});
+
+test("star massive is bigger, heavier, and keeps planets outside the corona", () => {
+  const hotLumen = MATTER_PROFILES["star-hot"].atmosphere.find((e) => e.id === "lumen")!.fraction;
+  const massiveLumen = MATTER_PROFILES["star-massive"].atmosphere.find(
+    (e) => e.id === "lumen",
+  )!.fraction;
+  assert.ok(massiveLumen > hotLumen);
+  for (const seed of [1, 4, 9, 15]) {
+    const plain = createSystem(seed);
+    assert.notEqual(plain.planets[0]!.matter, "star-massive");
+    const sys = chart(seed, { star: "massive" });
+    const star = sys.planets[0]!;
+    assert.equal(star.matter, "star-massive");
+    assert.equal(star.colorA, MASSIVE_STAR_PALETTE[0]);
+    assert.ok(star.radius >= 400 && star.radius <= 500, String(star.radius));
+    assert.ok(star.surfaceG > 30, String(star.surfaceG));
+    assert.ok(starAtmoFactor(star) > STAR_ATMO_FACTOR);
+    const corona = star.radius * MASSIVE_STAR_ATMO_FACTOR;
+    const rails = sys.planets.filter((p) => p.parentId === star.id && p.orbitR != null);
+    assert.ok(rails.length > 0);
+    for (const body of rails) {
+      const peri = body.orbitR! * (1 - (body.orbitE ?? 0));
+      assert.ok(peri > corona, `${seed} ${body.name} peri ${peri} corona ${corona}`);
+    }
+  }
+  const big = { matter: "star-massive" as const, radius: 450 };
+  const small = { matter: "star-warm" as const, radius: 250 };
+  for (let i = 0; i < 12; i++) {
+    const wide = flareBaseWidth(big);
+    assert.ok(wide >= 7 * (450 / 260) && wide <= 13 * (450 / 260));
+    const normal = flareBaseWidth(small);
+    assert.ok(normal >= 7 && normal <= 13);
   }
 });
 
@@ -304,6 +350,9 @@ test("nearby count is exact", () => {
 });
 
 test("recipeFromChartFlags keeps debug flags", () => {
+  assert.deepEqual(chartFlagsFromSearch("?star=massive"), { star: "massive" });
+  assert.deepEqual(chartFlagsFromSearch("?star=nope"), {});
+  assert.deepEqual(recipeFromChartFlags({ star: "massive" }), { star: "massive" });
   assert.deepEqual(recipeFromChartFlags({}), {});
   assert.deepEqual(recipeFromChartFlags({ belt: true }), { belt: "soft" });
   assert.deepEqual(recipeFromChartFlags({ belt: false }), { belt: "none" });

@@ -26,6 +26,7 @@ export type Mix = MixEntry[];
 export type MatterProfileId =
   | "star-warm"
   | "star-hot"
+  | "star-massive"
   | "rocky-home"
   | "rocky-workshop"
   | "rocky-signal"
