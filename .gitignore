@@ -21,3 +21,11 @@ startup.sh
 
 .vercel
 .env*
+
+# Halley / pilot clips stay out until their lines are closed in Historia (docs/art/README.md).
+public/halley/*
+!public/halley/halley-base.jpg
+public/pilot/
+
+# Scratch (handoff zip with unpublished copy, verification shots).
+tmp/
