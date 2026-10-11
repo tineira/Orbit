@@ -133,7 +133,7 @@ La imagen y el sprite de referencia se copian a `public/`. Los clips de ejemplo 
 - `src/game/draw.ts` `drawHalley` + `halleyLayout`: el panel solo se dibuja mientras habla (y en el apagado). Apilado sobre el mass spec; si el mass spec está apagado, ocupa su hueco (no flota sobre un agujero). **Móvil (decidido 11 oct 2026, visto con el canvas a 400 px):** Halley va a la izquierda del minimapa, en el hueco del mass spec, con su ancho y 1,25× su alto; con el mass spec encendido se apila encima. Se acorta hasta lo que cabe y se oculta bajo 48 px.
 - `src/game/audio.ts`: `makeCabinChain` (crusher en `public/audio/crush-worklet.js`, banda, drive, estática con chasquidos), `playHalleyMedia` para clips y `playHalleyStatic` para una línea sin clip. Sin TTS: `kitten-tts-js` salió de `package.json`.
 - `src/game/runtime.ts` `speakHalley`: encender → 600 ms → clip (o imagen base + estática por el TTL del texto) → fin → 250 ms → apagar. Congelar / retroceder por `halleyCorruptStep`. Trigger `halley-01` en el primer `status === "too-fast"` del chart, solo si el build tiene el clip.
-- Clips: `public/dev/halley/<id>.mp4|webm` + `public/dev/halley/manifest.json` (`{ "halley-01": { "text": "…" } }`). El manifest se lee solo en `?dev`. En el probe, tag SHIP con texto `halley-01` reproduce el clip; otro texto es imagen base + estática + subtítulo.
+- Clips: `public/dev/halley/<id>.mp4|webm` + `public/dev/halley/manifest.json` (`{ "halley-01": { "text": "…" } }`). El manifest se lee solo en `?dev`. En el probe, cada clip de Halley es un botón. Una línea de nave sin clip sigue siendo imagen base + estática + subtítulo, pero el probe ya no la escribe a mano.
 - Créditos en la pantalla de título (`Overlay.tsx`).
 
 ---
@@ -169,7 +169,7 @@ Una línea a la vez, sin loop. Si Halley está hablando, el pensamiento espera.
 - `src/game/pilot.ts`: ids, urls, el tope del filtro (`PILOT_FILTER`), la tabla trigger → clip y `pilotTriggerFor` (bordes, una por chart, adrift primero). Con test.
 - `src/game/audio.ts` `playThought(id)`: el clip solo, sin tick del visor (Tomás, 11 oct 2026), por pasa altos 58 → low shelf 220 +4,2 dB → pasa bajos 2,9 kHz Q 0,55 → `sfx`. Carga `/dev/pilot/<id>.webm` y cae a `.m4a`.
 - `src/game/runtime.ts` `speakThought`: si Halley está encendida, el pensamiento espera y sale cuando su panel se apaga. Triggers por frame desde `phase`, `landedId`, `adrift` y `nearest` (Camp activo con `status !== "deep"`), solo si el build tiene el clip.
-- Clips: `public/dev/pilot/thought-01..06.webm|m4a` + `public/dev/pilot/manifest.json` (`{ "thought-01": { "text": "…" } }`). En el probe, tag THOUGHT con texto `thought-01` reproduce el clip; `thought-05` y `thought-06` solo así.
+- Clips: `public/dev/pilot/thought-01..06.webm|m4a` + `public/dev/pilot/manifest.json` (`{ "thought-01": { "text": "…" } }`). En el probe, cada pensamiento es un botón. `thought-05` y `thought-06` no tienen trigger de juego: solo salen de ahí.
 
 ---
 

@@ -14,8 +14,9 @@ import { SCAN_SECONDS } from "./matter";
 import { ATMO_STEPS, GRAVITY_STEPS, ORBIT_DRAG_BREAK, getPlanets, isGhostBody, planetById } from "./world";
 import { AIRLOCK_DELAY_MS, CLOCK_REVEAL_MS, airlockScreenFade, splitFoodClock, usesLostCard } from "./adrift";
 import { isTypingTarget } from "./input";
+import { HALLEY_CLIP_IDS, HALLEY_MANIFEST_URL } from "./halley";
+import { PILOT_CLIP_IDS, PILOT_MANIFEST_URL } from "./pilot";
 import {
-  VOICE_SOURCES,
   VOICE_SOURCE_LABEL,
   voiceDisplayText,
   type VoiceSnapshot,
@@ -167,7 +168,7 @@ export function Overlay({
             className={cn(
               "px-4 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6 sm:pt-5",
               dev && hud.physicsMenu ? "pr-[13rem]" : "pr-4 sm:pr-6",
-              dev && !hud.physicsMenu ? "sm:pr-[18rem]" : null,
+              dev && !hud.physicsMenu ? "sm:pr-[22rem]" : null,
             )}
           />
           {dev && hud.physicsMenu ? (
@@ -273,7 +274,7 @@ export function Overlay({
           reduced={hud.reducedMotion}
           onPlay={onPlayVoice}
           className={cn(
-            "absolute z-20 w-[min(17.5rem,calc(100%-1.5rem))]",
+            "absolute z-20 w-[min(20rem,calc(100%-1.5rem))]",
             hud.phase === "title"
               ? hud.physicsMenu
                 ? "top-[max(11.5rem,calc(env(safe-area-inset-top)+10.5rem))] right-4 sm:right-8"
@@ -1468,6 +1469,86 @@ function VoiceStrip({
   );
 }
 
+type DevClip = { id: string; text: string };
+
+function clipPlaceholders(ids: readonly string[]): DevClip[] {
+  return ids.map((id) => ({ id, text: id }));
+}
+
+/** Labels from the same manifests the runtime plays. Ids stay if the fetch fails. */
+function useDevClips() {
+  const [halley, setHalley] = useState<DevClip[]>(() => clipPlaceholders(HALLEY_CLIP_IDS));
+  const [pilot, setPilot] = useState<DevClip[]>(() => clipPlaceholders(PILOT_CLIP_IDS));
+  useEffect(() => {
+    let live = true;
+    const load = async (url: string, ids: readonly string[], set: (rows: DevClip[]) => void) => {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = (await res.json()) as Record<string, { text?: string }>;
+        if (!live) return;
+        set(
+          ids.map((id) => {
+            const text = data[id]?.text?.trim();
+            return { id, text: text || id };
+          }),
+        );
+      } catch {
+        /* keep the id labels */
+      }
+    };
+    void load(HALLEY_MANIFEST_URL, HALLEY_CLIP_IDS, setHalley);
+    void load(PILOT_MANIFEST_URL, PILOT_CLIP_IDS, setPilot);
+    return () => {
+      live = false;
+    };
+  }, []);
+  return { halley, pilot };
+}
+
+function ClipButtons({
+  label,
+  source,
+  clips,
+  line,
+  onPlay,
+}: {
+  label: string;
+  source: VoiceSource;
+  clips: readonly DevClip[];
+  line: VoiceSnapshot | null;
+  onPlay: (source: VoiceSource, text: string) => void;
+}) {
+  return (
+    <div className="mt-2">
+      <p className="font-mono text-[10px] tracking-[0.16em] uppercase text-muted">{label}</p>
+      <div className="mt-1 flex flex-col gap-1">
+        {clips.map((clip) => {
+          const on = line?.source === source && line.text === clip.text;
+          return (
+            <button
+              key={clip.id}
+              type="button"
+              data-ui
+              aria-pressed={on}
+              onClick={() => onPlay(source, clip.id)}
+              className={cn(
+                "rounded-md border px-2 py-1.5 text-left",
+                on ? "border-fg/40 bg-fg/5" : "border-border hover:border-fg/25",
+              )}
+            >
+              <span className="font-mono text-[10px] tracking-wide uppercase text-muted">{clip.id}</span>
+              {clip.text !== clip.id ? (
+                <span className="mt-0.5 block text-xs leading-snug text-fg">{clip.text}</span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function VoiceProbe({
   line,
   loading,
@@ -1483,68 +1564,19 @@ function VoiceProbe({
   onPlay: (source: VoiceSource, text: string) => void;
   className?: string;
 }) {
-  const [source, setSource] = useState<VoiceSource>("thought");
-  const [text, setText] = useState("");
-  const play = () => {
-    onPlay(source, text);
-  };
+  const clips = useDevClips();
   return (
     <div
       data-ui
       className={cn(
-        "pointer-events-auto rounded-lg border border-border bg-surface/80 p-2 text-left backdrop-blur-sm",
+        "pointer-events-auto max-h-[min(70vh,32rem)] overflow-y-auto rounded-lg border border-border bg-surface/80 p-2 text-left backdrop-blur-sm",
         className,
       )}
       onClick={(e) => e.stopPropagation()}
     >
       <p className="font-mono text-[10px] tracking-[0.16em] uppercase text-muted">visor probe</p>
-      <div className="mt-2 flex flex-wrap gap-1">
-        {VOICE_SOURCES.map((tag) => {
-          const on = tag === source;
-          return (
-            <button
-              key={tag}
-              type="button"
-              data-ui
-              aria-pressed={on}
-              onClick={() => setSource(tag)}
-              className={cn(
-                "rounded-md border px-1.5 py-0.5 font-mono text-[10px] tracking-wide uppercase",
-                on
-                  ? "border-fg/40 text-fg"
-                  : "border-border text-muted hover:text-fg",
-              )}
-            >
-              {VOICE_SOURCE_LABEL[tag]}
-            </button>
-          );
-        })}
-      </div>
-      <label className="mt-2 block">
-        <span className="sr-only">Visor line</span>
-        <input
-          data-ui
-          type="text"
-          value={text}
-          placeholder="type a line"
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter" || e.shiftKey) return;
-            e.preventDefault();
-            e.stopPropagation();
-            play();
-          }}
-          className="mt-0.5 h-9 w-full rounded-md border border-border bg-bg px-2 font-mono text-xs text-fg placeholder:text-subtle focus:border-border-strong focus:outline-none"
-        />
-      </label>
-      <button
-        type="button"
-        data-ui
-        onClick={play}
-        className="mt-2 h-9 w-full rounded-md bg-fg text-accent-fg text-xs font-medium tracking-wide hover:opacity-90 active:scale-[0.98] transition-[opacity,transform] duration-[var(--motion-quick)] ease-[var(--ease-out)]"
-      >
-        Play
-      </button>
+      <ClipButtons label="Halley" source="ship" clips={clips.halley} line={line} onPlay={onPlay} />
+      <ClipButtons label="Pilot" source="thought" clips={clips.pilot} line={line} onPlay={onPlay} />
       {loading ? (
         <p className="mt-2 font-mono text-[10px] tracking-wide text-subtle">loading clip…</p>
       ) : error ? (

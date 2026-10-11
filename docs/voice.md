@@ -139,13 +139,13 @@ Referencias de tono (no son assets, no se clonan):
 
 | Tag | Qué suena | Filtro |
 |---|---|---|
-| `thought` | clip de audio (Gus) por evento, sin tick (Tomás, 11 oct 2026: el pensamiento entra en silencio): primer despegue, primer aterrizaje, adrift, primer Camp en el scope; una vez por chart. El tick del visor queda solo para una línea de texto sin clip en el probe | pasa altos 58, low shelf 220 +4,2 dB, pasa bajos 2,9 kHz (tope de Tomás) |
+| `thought` | clip de audio (Gus) por evento, sin tick (Tomás, 11 oct 2026: el pensamiento entra en silencio): primer despegue, primer aterrizaje, adrift, primer Camp en el scope; una vez por chart | pasa altos 58, low shelf 220 +4,2 dB, pasa bajos 2,9 kHz (tope de Tomás) |
 | `ship` | Halley en el CRT: clip de video + audio por la cadena de cabina; sin clip, imagen base + estática | crusher + banda + drive + estática |
 | `radio` | hiss + portadora, solo texto | bandpass + estático |
 | `alien` | bed grave, solo texto | — |
 | `static` | hiss, sin habla | — |
 
-Probe `?dev`: escribes una línea, eliges tag, Play. Strip en el visor + bed. Con SHIP, el texto `halley-01`..`halley-04` reproduce ese clip (`public/dev/halley/manifest.json`). Con THOUGHT, `thought-01`..`thought-06` reproduce el audio (`public/dev/pilot/manifest.json`). Sin `?dev` el juego no carga esos manifests. Mute deja el texto.
+Probe `?dev`: un botón por clip grabado. Halley (`halley-01`..`halley-04`, video) y el piloto (`thought-01`..`thought-06`, audio). El texto de cada botón sale de `public/dev/halley/manifest.json` y `public/dev/pilot/manifest.json`. Sin `?dev` el juego no carga esos manifests. Mute deja el texto.
 
 No es PTT. No dispara eventos del mundo. Los clips de ejemplo están en `public/dev/`. El copy que sigue abierto vive en Historia.
 
