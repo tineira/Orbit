@@ -1,4 +1,5 @@
 import { CLOCK_REVEAL_MS } from "./adrift";
+import { campaignFromSearch, campaignShipFrom, loadCampaign, newCampaign, saveCampaign } from "./campaign";
 import { createAudio } from "./audio";
 import { drawFrame } from "./draw";
 import {
@@ -21,6 +22,8 @@ import {
   predictPlanetPaths,
   launchSim,
   applyDebugWarp,
+  applyCampaignBoot,
+  commitPadCheckpoint,
   rebootSim,
   setUserZoom,
   simViewPrefs,
@@ -1134,6 +1137,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     audio.setRepair(repairing, hullSafeKind(sim) ?? "landed", sim.reducedMotion);
     if (prevRefueling && !refueling && sim.ship.fuel >= sim.ship.fuelCapacity - 1e-6) {
       audio.refuelDone();
+      if (sim.campaign) commitPadCheckpoint(sim);
     }
     if (prevRepairing && !repairing && sim.ship.hull >= HULL_MAX - 1e-6) {
       audio.repairDone();
@@ -1255,8 +1259,24 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
 
   const begin = () => {
     if (!running || sim) return;
-    createSystem();
+    const campaignOn = campaignFromSearch(window.location.search);
+    const loaded = campaignOn ? loadCampaign() : null;
+    if (loaded) createSystem(loaded.checkpoint.seed);
+    else createSystem();
     sim = createSim();
+    if (campaignOn) {
+      if (loaded) {
+        sim.campaign = loaded;
+        applyCampaignBoot(sim);
+      } else {
+        sim.campaign = newCampaign({
+          seed: getSystem().seed,
+          landedId: sim.landedId,
+          ship: campaignShipFrom(sim.ship),
+        });
+        saveCampaign(sim.campaign);
+      }
+    }
     sim.reducedMotion = reducedMotion;
     if (pendingPrefs) {
       applySimViewPrefs(sim, pendingPrefs);

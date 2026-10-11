@@ -115,6 +115,13 @@ import {
   pickAirlockCopy,
   pickStarveCopy,
 } from "./adrift.ts";
+import {
+  campaignShipFrom,
+  restoreCampaignFields,
+  saveCampaign,
+  writeCheckpoint,
+  type CampaignState,
+} from "./campaign.ts";
 
 export type Sim = {
   ship: Ship;
@@ -203,6 +210,10 @@ export type Sim = {
   adriftStartedAt: number;
   foodUntil: number;
   airlockSeqAt: number;
+  /** Null in random mode. Set only when `?campaign` is on. */
+  campaign: CampaignState | null;
+  /** Story place id for this chart. Landing here freezes a checkpoint. Phase 4 sets it. */
+  campaignPlaceId: string | null;
 };
 
 export const ORBIT_DRAG_HINT = "Atmosphere — orbit lost";
@@ -321,6 +332,8 @@ export function createSim(): Sim {
     adriftStartedAt: 0,
     foodUntil: 0,
     airlockSeqAt: 0,
+    campaign: null,
+    campaignPlaceId: null,
   };
   resetCometChart(sim);
   landOnHome(sim);
@@ -402,7 +415,13 @@ export function applySimViewPrefs(sim: Sim, prefs: SimViewPrefs) {
 }
 
 export function rebootSim(sim: Sim) {
-  sim.ship = freshShip();
+  const campaign = sim.campaign;
+  if (!campaign) sim.ship = freshShip();
+  else {
+    restoreCampaignFields(campaign);
+    rechartToCheckpoint(sim, campaign.checkpoint.seed);
+    applyCampaignShip(sim.ship, campaign.checkpoint.ship);
+  }
   sim.phase = "landed";
   sim.crashedId = null;
   sim.lostCopy = null;
@@ -444,13 +463,91 @@ export function rebootSim(sim: Sim) {
   sim.beltTickWait = 0;
   sim.beltRainWait = 0;
   endAdrift(sim);
-  landOnHome(sim);
+  if (campaign) landOnBody(sim, campaign.checkpoint.landedId);
+  else landOnHome(sim);
   sim.camera.trauma = 0;
   sim.camera.shake = 0;
   sim.camera.starDriftX = 0;
   sim.camera.starDriftY = 0;
   for (const p of sim.particles) p.alive = false;
   sim.ionTrail = [];
+}
+
+/** Page load: sit on the checkpoint with the saved ship. Leaves the title phase alone. */
+export function applyCampaignBoot(sim: Sim) {
+  const campaign = sim.campaign;
+  if (!campaign) return;
+  restoreCampaignFields(campaign);
+  rechartToCheckpoint(sim, campaign.checkpoint.seed);
+  applyCampaignShip(sim.ship, campaign.checkpoint.ship);
+  landOnBody(sim, campaign.checkpoint.landedId);
+}
+
+/** Fuel on a pad just finished. Random mode never reaches this. */
+export function commitPadCheckpoint(sim: Sim): boolean {
+  if (!sim.campaign || !sim.landedId) return false;
+  writeCheckpoint(sim.campaign, {
+    seed: getSystem().seed,
+    landedId: sim.landedId,
+    ship: campaignShipFrom(sim.ship),
+  });
+  saveCampaign(sim.campaign);
+  return true;
+}
+
+/** Landing on the chart's story place. `placeId` is an id, not line copy. */
+export function commitStoryCheckpoint(sim: Sim, placeId: string): boolean {
+  if (!sim.campaign || !sim.landedId || !placeId) return false;
+  writeCheckpoint(sim.campaign, {
+    seed: getSystem().seed,
+    landedId: sim.landedId,
+    ship: campaignShipFrom(sim.ship),
+    place: placeId,
+    leg: null,
+  });
+  saveCampaign(sim.campaign);
+  return true;
+}
+
+function applyCampaignShip(ship: Ship, saved: CampaignState["checkpoint"]["ship"]) {
+  ship.fuelKind = saved.fuelKind;
+  ship.engineKind = saved.engineKind;
+  ship.tankKind = saved.tankKind;
+  ship.fuel = saved.fuel;
+  ship.hull = saved.hull;
+  applyLoadout(ship);
+}
+
+function rechartToCheckpoint(sim: Sim, seed: number) {
+  if (getSystem().seed === seed) return;
+  const prefs = simViewPrefs(sim);
+  createSystem(seed);
+  const sys = getSystem();
+  sim.planets = copyPlanets(sys.planets);
+  sim.nearby = sys.nearby.slice();
+  resetCometChart(sim);
+  clearSpectroChart(sim);
+  applySimViewPrefs(sim, prefs);
+}
+
+function landOnBody(sim: Sim, id: string | null) {
+  const body =
+    (id ? sim.planets.find((p) => p.id === id) : undefined) ??
+    sim.planets.find((p) => p.kicker === "Home") ??
+    sim.planets.find((p) => p.kind === "rocky");
+  if (!body) return;
+  sim.landedId = body.id;
+  sim.landedAngle = 0;
+  sim.ship.thrusting = false;
+  sim.ship.reverse = false;
+  stickToPlanet(sim, body);
+  faceRadial(sim);
+  sim.nearest = body;
+  sim.altitude = SHIP_HULL * 0.85;
+  sim.status = "landed";
+  sim.camera.x = sim.ship.x;
+  sim.camera.y = sim.ship.y;
+  lockPadCamera(sim);
 }
 
 export function forwardOf(yaw: number) {
@@ -2715,6 +2812,7 @@ function collidePlanets(sim: Sim) {
       stickToPlanet(sim, p);
       faceRadial(sim);
       sim.camera.trauma = Math.min(1, sim.camera.trauma + 0.18);
+      if (sim.campaign && sim.campaignPlaceId) commitStoryCheckpoint(sim, sim.campaignPlaceId);
       return;
     }
 
