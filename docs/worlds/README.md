@@ -1,0 +1,286 @@
+# Mundos guiados: recetas, fichas, tramos y campaña
+
+Spec de desarrollo para que el juego soporte la **fase 1 guiada**: lugares de historia escritos a mano, separados por tramos de sistemas generados con reglas, y una escalera de capacidades que de verdad se necesita para avanzar.
+
+Prosa en tuteo. Identificadores, comentarios, commits y PRs en inglés. Todo texto dentro del juego, en inglés.
+
+- **Implementa:** Grok. Instrucciones en [`GROK.md`](GROK.md).
+- **Valida:** agy (Antigravity). Instrucciones en [`AGY.md`](AGY.md).
+
+## Fuentes
+
+El **qué** vive en Notion; aquí está el **cómo**. Si este doc y Notion discrepan sobre qué es el juego, gana Notion. Si discrepan sobre el código, gana `src/game/`.
+
+| Notion | Qué define |
+|---|---|
+| [Construcción de mundos (borrador)](https://app.notion.com/p/3f6a554c3c4081a89556d1ab58f82edf) | Receta, ficha, tramo, puente, saltos por tanque. Las 4 decisiones reabiertas |
+| [Mapa de la fase 1 (borrador)](https://app.notion.com/p/3f6a554c3c4081cf961ed0d9604d76fe) | Los lugares A–G y los tramos 1–4 con su contenido |
+| [Combustible](https://app.notion.com/p/3dba554c3c4081f8829df66b443c2ffe) | Grados, motores, estanques, `DRIVE_CELLS` |
+| [Reabastecimiento](https://app.notion.com/p/3dfa554c3c4081c6bd7dc072bbcc99fa) | Un refill canónico por grado |
+| [Descubrimiento](https://app.notion.com/p/3e0a554c3c40819f9fe7c20f610b01b2) | Cómo se gana cada grado y motor |
+| [Mundos](https://app.notion.com/p/3dfa554c3c40810b838edf3fe5cceecd), [Cometa](https://app.notion.com/p/3dfa554c3c408183b66cd95df28a84da) | Catálogo de cuerpos y lock del cometa |
+
+**Decisiones reabiertas por Tomás (11 oct 2026).** "Home siempre habitado", "el cometa no se aterriza", "mundo LUMEN con vida alien" y "no hay estrella masiva" están reabiertas en Notion (aviso naranjo arriba de Mundos, Descubrimiento y Cometa). Este spec las implementa **según la propuesta escrita en Construcción de mundos**. No reabras nada más. Si una fase depende de una propuesta que Tomás todavía no aprobó, está marcada con ⏳: hazla igual detrás del modo campaña, sin cambiar el modo aleatorio.
+
+**Copy:** las líneas de voz, los textos de muralla y las transmisiones no van al repo hasta que se cierren en Historia. En código, todo texto de historia se referencia por **id** (`text:a2-wall`, `halley-05`, `thought-07`) y se resuelve desde un manifest en `public/dev/` solo con `?dev`, igual que `halley.ts` y `pilot.ts`. Sin manifest, el efecto se salta en silencio.
+
+## Glosario
+
+| Notion | Código | Qué es |
+|---|---|---|
+| Receta | `Recipe` | Reglas para tirar **un** sistema. Campo ausente = se tira como hoy |
+| Ficha | `StoryPlace` | Lugar de historia: receta con semilla fija + cambios por cuerpo + disparadores |
+| Tramo | `Leg` | Cadena de sistemas generados entre dos fichas, con garantías y un rumbo |
+| Puente | `bridge: true` en un salto de un `Leg` | Sistema seco: nada que tu nave pueda cargar |
+| Marca | `CampaignFlag` (string) | Algo que la campaña recuerda para siempre |
+| Disparador | `Trigger` | Evento + condición → efectos |
+| Entrega | `Grant` | Motor, estanque o módulo que se instala |
+| Campaña | `Campaign` | Fichas + tramos + estado guardado |
+
+## Cómo funciona hoy (main, 11 oct 2026)
+
+- `createSystem(seed, flags, starPal, starName)` en `src/game/world.ts` llama a `makeSystem(seed, flags)` y después a `rollNearby`. Semilla aleatoria por salto (`punchWarp` en `src/game/sim.ts`).
+- `makeSystem` siempre tira: una estrella (`star-warm` o `star-hot`, radio 220–300), 3–4 rocosos con **Home en el asiento 0, siempre `active`**, cinturón en ~34%, un gigante con 1–2 lunas. Después `assignOccupancy` y `assignEngineUnlocks` (V2 en el Camp).
+- `ChartFlags` (`twins`, `belt`, `camp`, `settlement`, `mine`) fuerzan partes de la receta, pero solo desde la URL.
+- El jugador **siempre empieza en Home** (`getStart`).
+- `rollNearby` da 1–3 rumbos al azar. No hay distancia: cualquier vecino se alcanza igual.
+- **Warp:** 1500 u/s apuntando a ±0.5° de un rumbo (`WARP_JUMP_SPEED`, `WARP_AIM_DEG`). No cobra combustible aparte, pero acelerar hasta 1500 sí. Al llegar vas a 88 u/s (`WARP_BRAKE_SPEED`).
+- **Carga:** solo CH4 en pads `active` (`padHasFuel`, `beginPadRefill`, 3 L/s). `fuelInMix` existe y no está cableado.
+- **Capacidades:** V2 se gana en el Camp. Todo lo demás solo con `?dev` (`cycleDrive`, `cycleTank`).
+- **Choque:** `rebootSim` → `freshShip()` → CH4 × V1 × Fuel Tank en Home. Nada se guarda entre cargas de página.
+- **Cometa:** actor de paso (`comet.ts`), inatrapable. Saltar a su rumbo es un stub (`beginCometWarp`).
+- **Despegue** es un empujón gratis; **aterrizar** solo mira la velocidad (< 30). No se cambia en este spec.
+
+## El invariante más importante
+
+**El modo aleatorio no cambia.** `createSystem(seed)` sin receta y sin campaña tiene que producir exactamente los mismos planetas, rumbos y punto de partida que hoy para la misma semilla. La fase 1 agrega un test que lo asegura (snapshot de N semillas tomado **antes** de tocar `makeSystem`). Si un cambio rompe ese test, el cambio está mal.
+
+## Modelo de datos
+
+Sketch de tipos. Los nombres pueden ajustarse; la forma no.
+
+```ts
+type StarKind = "warm" | "hot" | "massive";
+type HomeMode = "active" | "abandoned" | "none";
+
+/** Reglas para tirar un sistema. Todo opcional: ausente = como hoy. */
+type Recipe = {
+  star?: StarKind;
+  home?: HomeMode;
+  rocky?: { count?: number; roles?: ("workshop" | "signal" | "archive" | "twin")[] };
+  /** Cuántos cuerpos landables quedan `active` (pad con CH4). "natural" = pesos de hoy. */
+  activePads?: number | "natural";
+  gas?: "none" | "ammonia" | "water" | "methane" | "ice" | "sulfur";
+  moons?: { matter?: MatterProfileId; settlement?: Settlement; grant?: Grant }[];
+  belt?: "none" | "soft" | "dense" | { camp?: boolean; grant?: Grant };
+  /** Rumbos de warp. El juego agrega los que pide la campaña. */
+  nearby?: { count?: 1 | 2 | 3 };
+};
+
+type BodyRef = string; // id estable dentro de una ficha: "a1", "a2", "a3", "station"…
+
+type BodyOverride = {
+  ref: BodyRef;
+  match: { kind: PlanetKind; kicker?: string; index?: number }; // cómo encontrarlo en el sistema tirado
+  retrograde?: boolean;      // invierte el sentido de la órbita
+  orbit?: { a?: number; e?: number };
+  settlement?: Settlement;
+  pad?: "on" | "off";        // el pad puede funcionar sin gente (a1) o no funcionar con gente (refugio)
+  grant?: Grant;             // se instala al aterrizar
+  workshop?: boolean;        // refina NTR (fase 8)
+};
+
+type Grant =
+  | { engine: EngineKind }
+  | { tank: TankKind }
+  | { module: "transceiver" | "atmoTrap" | "hushDetector" };
+
+type TriggerEvent =
+  | { on: "enterSystem" }
+  | { on: "approach"; ref: BodyRef; radius: number }
+  | { on: "orbitLock"; ref: BodyRef }
+  | { on: "land"; ref: BodyRef }
+  | { on: "takeoff"; ref: BodyRef }
+  | { on: "warpAttempt"; heading: string }   // apuntar a un rumbo sin poder llegar
+  | { on: "flag"; flag: CampaignFlag };       // al prenderse una marca
+
+type Effect =
+  | { halley: string }          // id de clip
+  | { thought: string }         // id de clip
+  | { text: string }            // id de texto en pantalla
+  | { logFragment: number }
+  | { grant: Grant }
+  | { setFlag: CampaignFlag }
+  | { revealHeading: string };  // id de ficha o de tramo
+
+type Trigger = TriggerEvent & {
+  when?: { has?: CampaignFlag[]; not?: CampaignFlag[] };
+  once?: boolean;               // default true
+  effects: Effect[];
+};
+
+type StoryPlace = {
+  id: string;                   // "A", "B"… o ids más largos
+  seed: number;                 // fija
+  recipe: Recipe;
+  bodies: BodyOverride[];
+  triggers: Trigger[];
+  start?: { ref: BodyRef; fuel: number }; // solo la ficha inicial
+  /** Si existe, el rumbo a esta ficha solo aparece con esta marca o módulo. */
+  headingRequires?: CampaignFlag | "transceiver";
+};
+
+type LegStep = {
+  recipe?: Recipe;              // se mezcla sobre la receta base del tramo
+  bridge?: boolean;             // sistema seco (ver Puentes)
+  guarantee?: Recipe;           // lo que sí o sí aparece en este salto
+};
+
+type Leg = {
+  id: string;
+  from: string;                 // id de ficha
+  to: string;                   // id de ficha
+  length: [min: number, max: number];
+  base: Recipe;
+  steps?: Record<number, LegStep>; // por índice de salto (0 = primero); "last" con -1
+  voices?: { thoughts?: string[]; halley?: string[] };
+};
+
+type CampaignState = {
+  version: 1;
+  place: string | null;         // ficha actual, o null en un tramo
+  leg: { id: string; step: number; seed: number } | null;
+  flags: CampaignFlag[];
+  firedTriggers: string[];      // "<placeId>:<index>"
+  ship: Pick<Ship, "fuelKind" | "engineKind" | "tankKind" | "fuel" | "hull">;
+  modules: Grant[];
+  checkpoint: CampaignCheckpoint;
+};
+```
+
+## Puentes y saltos por tanque
+
+Un salto pide ir de 88 a 1500 u/s: **Δv ≈ 1412**. Con la fórmula de `fuel.ts` (velocidad de escape ≈ 5657 × Isp del grado × Isp del motor; masa seca 0.75 + motor + estanque; masa de fuel = litros × densidad × 0.0035):
+
+| Nave | Δv tanque lleno | Saltos por tanque |
+|---|---|---|
+| CH4 × V1 × Fuel Tank | ~1700 | 1,2 |
+| CH4 × V2 × Fuel Tank | ~2020 | 1,4 |
+| CH4 o NH3 × V2 × Long Tank | ~2880 | 2,0 |
+| H2 × V2 × Cryo | ~1020 | 0,7 |
+| H2 × Thermal × Cryo | ~1610 | 1,1 |
+| NTR × Thermal × Cryo | ~3580 | 2,5 |
+| CH4 × V2 × Hold | ~4500 | 3,2 |
+| NTR × Thermal × Hold | ~5350 | 3,8 |
+
+- **Puente simple** (un sistema seco): pide 2 saltos por tanque. **Puente doble**: 3.
+- Un sistema es **seco para una nave** si no hay ningún refill canónico (Reabastecimiento) del grado que esa nave puede quemar: ni pad `active`, ni gigante del skim que corresponde, ni luna de mina, ni corona útil.
+- Un salto con `bridge: true` en un `Leg` genera un sistema seco **para la nave que el tramo exige** (no para cualquiera): `activePads: 0`, `home: "none"` o `"abandoned"`, y gigante, lunas y estrella elegidos para que no haya refill del grado esperado.
+- Esta tabla se vuelve un test (`jumpsPerTank`) en la fase 6, para que un cambio de números no rompa los puentes sin que nadie lo note.
+
+## Fases (un PR cada una, en este orden)
+
+Cada fase deja el juego jugable, con el modo aleatorio idéntico. Cada test nuevo va a la lista explícita de `npm test` en `package.json`, o no corre.
+
+### Fase 1: receta en `makeSystem`
+
+- Antes de tocar nada: test `src/game/world-snapshot.test.ts` que guarda un resumen estable (kind, kicker, settlement, radio redondeado, órbita redondeada, rumbos, start) de 20 semillas fijas. El snapshot se genera con el código de hoy y se commitea.
+- `makeSystem(seed, flags, …)` pasa a `makeSystem(seed, recipe, …)`. `ChartFlags` de la URL se traducen a una `Recipe` (los flags de debug siguen funcionando igual).
+- Implementa los campos de `Recipe`: `star` (warm/hot; massive en fase 2), `home`, `rocky`, `activePads`, `gas`, `moons`, `belt`, `nearby.count`.
+- `home: "none"`: el asiento 0 se vuelve un rocoso común. `getStart` necesita un punto de partida aunque no haya Home: en modo aleatorio siempre hay Home; en campaña el start lo da la ficha (fase 4).
+- `activePads: n`: después de `assignOccupancy`, fuerza exactamente `n` landables `active` (los demás pasan a `abandoned`/`unexplored` según su kind).
+- **Aceptación:** el snapshot no cambia. Tests por campo en `src/game/recipe.test.ts`.
+
+### Fase 2: estrella masiva ⏳
+
+- `star: "massive"`: radio ~400–500, `surfaceG` mayor que `star-hot`, corona (`STAR_ATMO_FACTOR`) más ancha, receta de materia nueva `star-massive` con más `lumen` en la atmósfera que `star-hot`. Paleta blanco-azul más intensa.
+- `placeOnRails` tiene que dejar espacio: el primer riel empieza más lejos.
+- Flares: misma lógica, escalada al radio.
+- Solo aparece si una receta lo pide. **Aceptación:** snapshot intacto; test de que `star: "massive"` produce la receta y el radio pedidos.
+
+### Fase 3: estado de campaña, guardado y checkpoint
+
+- Nuevo módulo `src/game/campaign.ts` (puro, sin DOM) con `CampaignState`, `newCampaign()`, `saveCampaign()`/`loadCampaign()` sobre `localStorage` (clave `orbit.campaign.v1`, envuelto en try/catch: si falla, la campaña sigue en memoria).
+- Modo: `?campaign` activa la campaña (más adelante será el modo por defecto; eso lo decide Tomás). Sin `?campaign`, nada cambia.
+- **Checkpoint:** se guarda al aterrizar en una ficha y al terminar de cargar combustible en cualquier pad. Guarda nave, módulos, marcas, ficha o tramo y semilla.
+- **Choque o muerte a la deriva en campaña:** en vez de `freshShip()` en Home, `restoreCheckpoint()`: mismo sistema (misma semilla), misma nave, posado donde se guardó. En modo aleatorio, `rebootSim` sigue igual.
+- **Aceptación:** tests de serialización, de restaurar, y de que el modo aleatorio no lee ni escribe `localStorage`.
+
+### Fase 4: fichas (lugares de historia)
+
+- `StoryPlace` con semilla fija y receta. `createSystem` en campaña recibe la ficha y aplica `bodies` después de tirar el sistema.
+- `match`: encuentra el cuerpo por kind/kicker/índice en el sistema tirado. Si no lo encuentra, **error en dev** (la ficha está mal escrita), no un fallo silencioso.
+- `retrograde`: invierte `orbitW` y la velocidad del cuerpo en su riel. Las lunas y Lagrange tienen que seguir funcionando.
+- `pad: "on"` hace que `padHasFuel` devuelva true aunque `settlement` no sea `active`; `pad: "off"` lo contrario. Hoy `padHasFuel` lee solo `settlement`: agrega el override sin cambiar el modo aleatorio.
+- `grant`: se instala al aterrizar (generaliza `installEngine`, fase 7).
+- `start`: la ficha inicial empieza posada en `ref` con `fuel` litros.
+- Volver a una ficha da el mismo sistema (misma semilla y cambios).
+- **Aceptación:** test con una ficha de prueba (no de historia) que tiene un asteroide retrógrado, un pad `on` sin gente y un start fuera de Home.
+
+### Fase 5: disparadores y efectos
+
+- `src/game/triggers.ts` (puro): recibe eventos del sim y el estado de campaña, devuelve efectos. `runtime.ts` ejecuta los efectos (voz por los canales que ya existen en `halley.ts` y `pilot.ts`, texto por el visor).
+- Eventos desde `sim.ts`: `enterSystem` (al terminar el warp), `approach` (distancia al cuerpo < radio, con histéresis), `orbitLock` (`captureOrbit`), `land` (en `collidePlanets` al aterrizar), `takeoff`, `warpAttempt` (apuntar a un rumbo con `headingRequires` que no se cumple, o sin Δv para llegar), `flag`.
+- `once` por defecto: el id del disparador va a `firedTriggers`.
+- Los textos, voces y fragmentos del log son ids. Sin manifest, el efecto de voz o texto no hace nada, pero `setFlag`, `grant` y `revealHeading` sí corren.
+- **Aceptación:** tests de cada evento y de `once`, `when.has`, `when.not`.
+
+### Fase 6: tramos y rumbos
+
+- En campaña, `punchWarp` decide qué sistema tirar:
+  - Rumbo a una ficha → la ficha.
+  - Rumbo del tramo → siguiente paso del tramo (`leg.step + 1`), con semilla nueva y receta = `base` + `steps[i].recipe` + `steps[i].guarantee`.
+  - Cualquier otro rumbo → sistema aleatorio (desvío). El rumbo de vuelta al tramo se mantiene.
+- `NearbyHeading` gana un campo opcional `target?: { place?: string; leg?: string }`. Cada sistema de un tramo tiene **al menos un** rumbo que acerca (`target.leg` o, en el último paso, `target.place`).
+- `headingRequires`: el rumbo no aparece hasta tener la marca o el módulo.
+- `bridge: true`: ver Puentes. Test `jumpsPerTank` con la tabla de arriba (tolerancia ±5%).
+- **Aceptación:** tests de que un tramo de largo N llega a la ficha en N saltos siguiendo los rumbos, de que un desvío no rompe el tramo, y de que un puente no tiene refill para la nave exigida.
+
+### Fase 7: entregas y módulos
+
+- `grant()` reemplaza a `installEngine`: motor y estanque pasan por `legalizeLoadout`/`snapTank`; un estanque nuevo conserva el combustible que quepa.
+- Módulos: `transceiver` (habilita rumbos con `headingRequires: "transceiver"`), `atmoTrap` (habilita skim, fase 8), `hushDetector` (el mass spec puede mostrar HUSH en cometas, fase 9).
+- En campaña, `beginPadRefill` **no** te baja el motor ni el estanque ganados: solo cambia el grado a CH4 si la celda es legal; si no es legal, el pad no carga (te avisa). En modo aleatorio, sigue como hoy.
+- **Aceptación:** tests de cada grant y del pad en campaña.
+
+### Fase 8: escalera de recarga (Reabastecimiento)
+
+Lo que el lock ya definió y nunca se implementó. Un PR por punto, en este orden:
+
+1. **Skim de atmósfera (NH3):** con `atmoTrap`, volar dentro de la bruma de un gigante `gas-ammonia` o `gas-water` carga NH3. Se usa el drag que ya existe; la tasa crece con la densidad. Cambiar de grado tira el anterior (un tanque, un grado).
+2. **Skim profundo (H2):** cualquier gigante, más adentro. En un estanque que no es Cryo, Hold ni Cistern, el H2 **gotea** con el tiempo.
+3. **Outpost de luna (Thermal + Cryo):** aterrizar en una luna `abandoned` de un gigante con H2 en el tanque entrega Thermal + Cryo.
+4. **Refinar NTR:** aterrizado en un Workshop (cualquier settlement), con H2 en el tanque, convierte H2 en NTR a una tasa fija.
+5. **LUMEN:** el mundo LUMEN ⏳ (rocoso chico interior junto a una estrella caliente o masiva; en campaña lo pone una ficha o un tramo) entrega LUMEN × Lumen drive al aterrizar. Recarga: **paso rasante por la corona** de cualquier estrella: dentro de la corona carga, más adentro carga más y calienta el casco. Usa la corona y los flares que ya existen.
+6. **HUSH en Lagrange:** sostener un punto de Lagrange carga HUSH (el lock de Lagrange ya existe). `sipField` sigue drenando en pozos.
+
+**Aceptación de cada punto:** test de la tasa, de la condición (sin trap no hay skim, sin Cryo gotea, etc.) y del snapshot intacto.
+
+### Fase 9: el chart del cometa ⏳
+
+- Saltar al rumbo de un cometa (hoy `beginCometWarp`, stub) entra a un **chart del cometa**: el núcleo es el cuerpo central, aterrizable si la velocidad relativa es < 30 (`LAND_SPEED`).
+- El cometa sigue sin ser un `Planet` de occupancy: un tipo propio o un `Planet` con `kind` nuevo, a elección del implementador, siempre que occupancy y `assignOccupancy` no lo toquen.
+- Parámetro `phase` del cometa (0 = afelio, lento; 1 = perihelio, rápido). En perihelio va cerca de una estrella (masiva, si la ficha lo pide) y a una velocidad que solo LUMEN × Lumen drive alcanza a igualar con un tanque.
+- Flag `civ` en el cometa. Aterrizar en uno con `civ` y con `hushDetector` entrega HUSH × Coil + Hold (fila de Descubrimiento).
+- "Quedarse posado" en un cometa de ficha puede llevar a otra ficha (efecto `revealHeading` + salto automático): lo define la ficha con un disparador `land` + un temporizador. Agrega `{ on: "landedFor"; ref; seconds }` a `TriggerEvent`.
+- **Aceptación:** tests de aterrizaje por velocidad relativa, de la velocidad en perihelio vs Δv de cada nave, y del grant.
+
+### Fase 10: datos de la fase 1
+
+- `src/game/campaign/phase1.ts`: las fichas A–G y los tramos 1–4 del Mapa en Notion, traducidos a datos. Todo texto por id. Sin copy.
+- Ids de cuerpos y marcas en inglés corto (`a1`, `a2`, `a3`, `hasV2`, `sawWall`).
+- Las semillas de las fichas se eligen jugando: busca semillas cuyo sistema tirado se vea bien y deja el número fijo.
+- **Aceptación:** un test recorre la campaña "en papel" (marcas y grants en orden) y comprueba que cada tramo es cruzable con la nave que se gana antes de él, usando `jumpsPerTank`.
+
+## Qué no hacer
+
+- No cambiar el modo aleatorio. El snapshot manda.
+- No inventar física: aterrizar sigue siendo velocidad < 30 y despegar sigue siendo el empujón de hoy.
+- No subir copy de líneas, muralla ni transmisiones. Solo ids.
+- No mezclar dos fases en un PR.
+- No reabrir decisiones cerradas fuera de las cuatro de arriba.
+- No tocar los eclipses (`stampBodyShadows`, `pointUmbra`, `pointUmbraMax` en `src/game/draw.ts`).
+
+## Gate de cada PR
+
+`npm run typecheck`, `npm run lint` (cero errores), `npm test`, `npm audit --omit=dev --audit-level=high`, `npm run build`. Después, agy valida con [`AGY.md`](AGY.md). Commit y push solo cuando Tomás lo pida.
