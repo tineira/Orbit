@@ -16,7 +16,7 @@ screenshots/
 *.local
 .nitro/
 .cache/
-AGENTS.md
+!AGENTS.md
 startup.sh
 
 .vercel
