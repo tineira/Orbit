@@ -1,5 +1,6 @@
 import type { CampaignState } from "./campaign.ts";
 import { applyLoadout, installEngine } from "./fuel.ts";
+import type { Trigger } from "./triggers.ts";
 import type { Planet, PlanetKind, Settlement, Ship } from "./types.ts";
 import { createSystem, G, getPlanets, GRAVITY_BASE, keplerRail, type Recipe } from "./world.ts";
 
@@ -19,18 +20,12 @@ export type BodyOverride = {
   grant?: NonNullable<Planet["grant"]>;
 };
 
-/** Stored on the place. Phase 5 is what runs them. */
-export type PlaceTrigger = {
-  on: string;
-  once?: boolean;
-};
-
 export type StoryPlace = {
   id: string;
   seed: number;
   recipe: Recipe;
   bodies: BodyOverride[];
-  triggers: PlaceTrigger[];
+  triggers: Trigger[];
   start?: { ref: string; fuel: number };
   headingRequires?: string;
 };
@@ -50,7 +45,24 @@ export const PROBE_PLACE: StoryPlace = {
       grant: { engine: "v2" },
     },
   ],
-  triggers: [],
+  triggers: [
+    {
+      on: "takeoff",
+      ref: "rock",
+      effects: [{ setFlag: "leftRock" }, { text: "text:probe-leave" }],
+    },
+    {
+      on: "land",
+      ref: "rock",
+      effects: [{ setFlag: "backRock" }, { thought: "thought:probe-land" }],
+    },
+    {
+      on: "approach",
+      ref: "rock",
+      radius: 280,
+      effects: [{ setFlag: "nearRock" }],
+    },
+  ],
   start: { ref: "rock", fuel: 40 },
 };
 

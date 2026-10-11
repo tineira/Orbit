@@ -203,6 +203,8 @@ export type NearbyHeading = {
   pal: [string, string, string];
   name: string;
   kind: NearbyHeadingKind;
+  /** Story gate. Random charts leave this unset, so the snapshot stays the same. */
+  requires?: string;
 };
 
 export type Comet = {

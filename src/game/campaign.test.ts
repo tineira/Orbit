@@ -5,6 +5,7 @@ import {
   campaignFromSearch,
   loadCampaign,
   newCampaign,
+  resumePlaceSave,
   saveCampaign,
   type CampaignState,
   type CampaignStorage,
@@ -105,6 +106,41 @@ test("save and load round-trip the checkpoint", () => {
   loaded!.ship.fuel = 1;
   assert.equal(state.ship.fuel, 100);
   assert.equal(state.checkpoint.ship.fuel, 100);
+});
+
+test("the same place resumes and a different one does not", () => {
+  const state = starter();
+  state.place = "probe";
+  state.checkpoint.place = "probe";
+  state.checkpoint.seed = 1;
+  assert.equal(resumePlaceSave(state, { id: "probe", seed: 1 }), true);
+  assert.equal(resumePlaceSave(state, { id: "probe", seed: 2 }), false);
+  assert.equal(resumePlaceSave(state, { id: "other", seed: 1 }), false);
+  assert.equal(resumePlaceSave(null, { id: "probe", seed: 1 }), false);
+  assert.equal(resumePlaceSave(state, null), false);
+});
+
+test("a save without revealed headings still loads", () => {
+  const state = starter();
+  const raw = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+  delete raw.revealed;
+  const checkpoint = raw.checkpoint as Record<string, unknown>;
+  delete checkpoint.revealed;
+  const mem = new Map<string, string>();
+  mem.set(CAMPAIGN_STORAGE_KEY, JSON.stringify(raw));
+  const storage: CampaignStorage = {
+    getItem: (key) => mem.get(key) ?? null,
+    setItem: (key, value) => {
+      mem.set(key, value);
+    },
+  };
+  const loaded = loadCampaign(storage);
+  assert.ok(loaded);
+  assert.deepEqual(loaded.revealed, []);
+  assert.deepEqual(loaded.checkpoint.revealed, []);
+  raw.revealed = 4;
+  mem.set(CAMPAIGN_STORAGE_KEY, JSON.stringify(raw));
+  assert.equal(loadCampaign(storage), null);
 });
 
 test("corrupt or blocked storage does not throw", () => {
