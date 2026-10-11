@@ -20,8 +20,8 @@ test("clip ids are halley-01..04 and resolve to both containers", () => {
   assert.equal(isHalleyClipId("halley-03"), true);
   assert.equal(isHalleyClipId("thought-01"), false);
   assert.deepEqual(halleyClipUrls("halley-01"), {
-    mp4: "/halley/halley-01.mp4",
-    webm: "/halley/halley-01.webm",
+    mp4: "/dev/halley/halley-01.mp4",
+    webm: "/dev/halley/halley-01.webm",
   });
 });
 

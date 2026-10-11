@@ -1,0 +1,8 @@
+{
+  "thought-01": { "text": "Still flying. Okay.", "source": "pilot-still-flying" },
+  "thought-02": { "text": "I know this rock. I don't know why.", "source": "pilot-know-this-rock" },
+  "thought-03": { "text": "Not like this. Not out here.", "source": "pilot-not-like-this" },
+  "thought-04": { "text": "People. Don't look at me like that.", "source": "pilot-people-dont-look" },
+  "thought-05": { "text": "Where were we going?", "source": "pilot-where-were-we-going" },
+  "thought-06": { "text": "That was my name on the list.", "source": "pilot-my-name-on-the-list" }
+}

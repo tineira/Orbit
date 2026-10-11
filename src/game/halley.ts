@@ -3,17 +3,17 @@ import { HULL_MAX } from "./hull.ts";
 /**
  * Halley: the cabin CRT above the mass spec (docs/art/README.md, fase 2).
  * Pure helpers: damage → signal, corrupt-memory rolls, the CRT power envelope.
- * The clips themselves stay out of the repo until their lines are closed in
- * Historia; `public/halley/manifest.json` (gitignored) names them by id.
+ * Example clips live in `public/dev/halley/` and the runtime loads the manifest
+ * only with `?dev`. The still is `public/halley/halley-base.jpg`.
  */
 
 export const HALLEY_LABEL = "HAL-E 07";
 export const HALLEY_BASE_URL = "/halley/halley-base.jpg";
-export const HALLEY_MANIFEST_URL = "/halley/manifest.json";
+export const HALLEY_MANIFEST_URL = "/dev/halley/manifest.json";
 export const HALLEY_CLIP_IDS = ["halley-01", "halley-02", "halley-03", "halley-04"] as const;
 export type HalleyClipId = (typeof HALLEY_CLIP_IDS)[number];
 
-/** `{ "halley-01": { "text": "…" } }`. Files are `/halley/<id>.mp4` and `.webm`. */
+/** `{ "halley-01": { "text": "…" } }`. Files are `/dev/halley/<id>.mp4` and `.webm`. */
 export type HalleyManifest = Record<string, { text: string }>;
 
 export function isHalleyClipId(value: string): value is HalleyClipId {
@@ -21,7 +21,7 @@ export function isHalleyClipId(value: string): value is HalleyClipId {
 }
 
 export function halleyClipUrls(id: string) {
-  return { mp4: `/halley/${id}.mp4`, webm: `/halley/${id}.webm` };
+  return { mp4: `/dev/halley/${id}.mp4`, webm: `/dev/halley/${id}.webm` };
 }
 
 /** Fixed framing (Tomás): zoom 1, horizontal 0.5, vertical 0.35, noise 1. */

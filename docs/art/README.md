@@ -14,7 +14,7 @@ Prosa en tuteo. Identificadores en inglés. Todo texto dentro del juego, en ingl
   - Notion [Voz de Halley (borrador)](https://app.notion.com/p/3f6a554c3c4081779185cc70ea9a27fa): voces Willow y Gus, líneas grabadas, tope del filtro de pensamiento.
   - Maqueta funcionando: https://claude.ai/artifact/62CDjBekQd32xYaY1AGekc. Su código, sin los datos embebidos ni el copy, está en `docs/art/reference/`.
 - **Regla que no se rompe:** los eclipses entre cuerpos se quedan tal cual. `stampBodyShadows`, `pointUmbra` y `pointUmbraMax` en `src/game/draw.ts` no se tocan, y todo lo nuevo (nave, planetas) se oscurece con la sombra igual que hoy.
-- **Ojo con el copy:** `docs/README.md` y el lock de Voz dicen que el copy de líneas no va a GitHub hasta que esté cerrado en Historia. Por eso los clips de voz **no están en el repo** y aquí se nombran con ids (`halley-01`, `thought-01`…). El texto de cada id está en Notion ([Voz de Halley](https://app.notion.com/p/3f6a554c3c4081779185cc70ea9a27fa)). Los archivos están en el paquete `orbit-dev-handoff.zip` de los archivos del proyecto; pídeselo a Tomás. Antes de commitear clips (fases 2 y 3), confirma con Tomás que esas líneas están cerradas en Historia. Si no lo están, déjalos fuera del repo y usa el probe `?dev`.
+- **Ojo con el copy:** el lock de Voz deja el copy de líneas en Historia. Tomás pidió (11 oct 2026) subir los clips de ejemplo a `public/dev/` para probarlos en producción. El juego solo lee esos manifests con `?dev`. La imagen quieta de Halley sigue en `public/halley/halley-base.jpg`.
 
 ## Archivos
 
@@ -24,10 +24,10 @@ Prosa en tuteo. Identificadores en inglés. Todo texto dentro del juego, en ingl
 | `docs/art/ship/perihelion-hauler-source.png` | Imagen original de Tomás, por si hay que recortar a más resolución |
 | `docs/art/halley/halley-base.jpg` | Imagen base de Halley (Grok). Se ve cuando no hay clip |
 | `docs/art/reference/prototype-*.js` | Código de la maqueta: el filtro CRT, el envelope de encendido, la cadena de audio, el bitcrusher y el shader de planetas |
-| fuera del repo: `halley-01..04` | 4 clips de Halley, 480×480, ~6 s, voz Willow. Hay mp4 (H.264/AAC) y webm (VP9/Opus) porque Chromium sin códecs propietarios no lee mp4 |
-| fuera del repo: `thought-01..06` | 6 pensamientos del piloto, solo audio, recortados, voz Gus (m4a y webm) |
+| `public/dev/halley/halley-01..04` | 4 clips de ejemplo de Halley, 480×480, ~6 s, voz Willow. Hay mp4 (H.264/AAC) y webm (VP9/Opus) porque Chromium sin códecs propietarios no lee mp4 |
+| `public/dev/pilot/thought-01..06` | 6 pensamientos de ejemplo del piloto, solo audio, recortados, voz Gus (m4a y webm) |
 
-Estos archivos son referencia. Al implementar, cópialos a `public/`.
+La imagen y el sprite de referencia se copian a `public/`. Los clips de ejemplo ya están en `public/dev/`.
 
 `public/sounds/tv-onoff.*` ya existe en el repo.
 
@@ -59,7 +59,7 @@ Estos archivos son referencia. Al implementar, cópialos a `public/`.
 
 **Objetivo.** Un panel CRT verde con la cara de Halley, en la columna de abajo a la derecha, sobre el mass spec y con su misma carcasa. Se enciende para hablar, habla y se apaga. La imagen y la voz empeoran con el daño de la nave.
 
-**Dónde.** `src/game/draw.ts` (layout junto a `spectroLayout`, dibujo del CRT), `src/game/audio.ts` (cadena de voz `ship`, clip de TV) y `src/game/voice.ts` (cola). Los clips van a `public/halley/`.
+**Dónde.** `src/game/draw.ts` (layout junto a `spectroLayout`, dibujo del CRT), `src/game/audio.ts` (cadena de voz `ship`, clip de TV) y `src/game/voice.ts` (cola). Los clips van a `public/dev/halley/`.
 
 **Layout.** Mismo ancho que el mass spec y alto ≈ 1,25 × su alto, apilado encima con el mismo `gap`. En móvil (`!map.desktop`), decide con Tomás. Etiqueta arriba: `HAL-E 07`.
 
@@ -128,12 +128,12 @@ Estos archivos son referencia. Al implementar, cópialos a `public/`.
 
 **No toques.** El mass spec y su lógica. El lock de Voz: un canal, sin chat, sin LLM.
 
-**Estado (11 oct 2026).** Implementada sin clips en el repo. Lo que hay:
+**Estado (11 oct 2026).** Implementada. Los clips de ejemplo están en `public/dev/halley/` y solo se cargan con `?dev`. Lo que hay:
 - `src/game/halley.ts`: señal por daño, pérdida de imagen, memoria corrupta, envelope CRT, tears. Con test.
 - `src/game/draw.ts` `drawHalley` + `halleyLayout`: el panel solo se dibuja mientras habla (y en el apagado). Apilado sobre el mass spec; si el mass spec está apagado, ocupa su hueco (no flota sobre un agujero). **Móvil (decidido 11 oct 2026, visto con el canvas a 400 px):** Halley va a la izquierda del minimapa, en el hueco del mass spec, con su ancho y 1,25× su alto; con el mass spec encendido se apila encima. Se acorta hasta lo que cabe y se oculta bajo 48 px.
 - `src/game/audio.ts`: `makeCabinChain` (crusher en `public/audio/crush-worklet.js`, banda, drive, estática con chasquidos), `playHalleyMedia` para clips y `playHalleyStatic` para una línea sin clip. Sin TTS: `kitten-tts-js` salió de `package.json`.
 - `src/game/runtime.ts` `speakHalley`: encender → 600 ms → clip (o imagen base + estática por el TTL del texto) → fin → 250 ms → apagar. Congelar / retroceder por `halleyCorruptStep`. Trigger `halley-01` en el primer `status === "too-fast"` del chart, solo si el build tiene el clip.
-- Clips: `public/halley/<id>.mp4|webm` + `public/halley/manifest.json` (`{ "halley-01": { "text": "…" } }`), todos **gitignored**. El manifest se lee solo en `?dev`. En el probe, tag SHIP con texto `halley-01` reproduce el clip; otro texto es imagen base + estática + subtítulo.
+- Clips: `public/dev/halley/<id>.mp4|webm` + `public/dev/halley/manifest.json` (`{ "halley-01": { "text": "…" } }`). El manifest se lee solo en `?dev`. En el probe, tag SHIP con texto `halley-01` reproduce el clip; otro texto es imagen base + estática + subtítulo.
 - Créditos en la pantalla de título (`Overlay.tsx`).
 
 ---
@@ -142,7 +142,7 @@ Estos archivos son referencia. Al implementar, cópialos a `public/`.
 
 **Objetivo.** Las líneas del piloto, voz Gus, suenan secas y cerca, una vez por "primera vez", como define el lock de Voz.
 
-**Dónde.** `src/game/voice.ts` (cola `source + text + ttl`), `src/game/audio.ts` (cadena `thought`), triggers desde eventos que ya existen en `runtime.ts` / `sim.ts`, y clips en `public/pilot/`.
+**Dónde.** `src/game/voice.ts` (cola `source + text + ttl`), `src/game/audio.ts` (cadena `thought`), triggers desde eventos que ya existen en `runtime.ts` / `sim.ts`, y clips en `public/dev/pilot/`.
 
 **Filtro (tope de Tomás).** Es más suave que el filtro `thought` actual del juego, que usa 70 Hz, +5,5 dB y 1,75 kHz. Reemplázalo por:
 - pasa altos 58 Hz;
@@ -165,11 +165,11 @@ Una línea a la vez, sin loop. Si Halley está hablando, el pensamiento espera.
 
 **Listo cuando.** Cada trigger suena una vez con su subtítulo blanco, Mute deja el texto y el gate pasa.
 
-**Estado (11 oct 2026).** Implementada sin clips en el repo.
+**Estado (11 oct 2026).** Implementada. Los clips de ejemplo están en `public/dev/pilot/` y solo se cargan con `?dev`.
 - `src/game/pilot.ts`: ids, urls, el tope del filtro (`PILOT_FILTER`), la tabla trigger → clip y `pilotTriggerFor` (bordes, una por chart, adrift primero). Con test.
-- `src/game/audio.ts` `playThought(id)`: el clip solo, sin tick del visor (Tomás, 11 oct 2026), por pasa altos 58 → low shelf 220 +4,2 dB → pasa bajos 2,9 kHz Q 0,55 → `sfx`. Carga `/pilot/<id>.webm` y cae a `.m4a`.
+- `src/game/audio.ts` `playThought(id)`: el clip solo, sin tick del visor (Tomás, 11 oct 2026), por pasa altos 58 → low shelf 220 +4,2 dB → pasa bajos 2,9 kHz Q 0,55 → `sfx`. Carga `/dev/pilot/<id>.webm` y cae a `.m4a`.
 - `src/game/runtime.ts` `speakThought`: si Halley está encendida, el pensamiento espera y sale cuando su panel se apaga. Triggers por frame desde `phase`, `landedId`, `adrift` y `nearest` (Camp activo con `status !== "deep"`), solo si el build tiene el clip.
-- Clips: `public/pilot/thought-01..06.webm|m4a` + `public/pilot/manifest.json` (`{ "thought-01": { "text": "…" } }`), **gitignored**. En el probe, tag THOUGHT con texto `thought-01` reproduce el clip; `thought-05` y `thought-06` solo así.
+- Clips: `public/dev/pilot/thought-01..06.webm|m4a` + `public/dev/pilot/manifest.json` (`{ "thought-01": { "text": "…" } }`). En el probe, tag THOUGHT con texto `thought-01` reproduce el clip; `thought-05` y `thought-06` solo así.
 
 ---
 
@@ -212,7 +212,7 @@ Una línea a la vez, sin loop. Si Halley está hablando, el pensamiento espera.
 
 ## Revisión (11 oct 2026)
 
-Reviewer de otro harness (Grok 4.7) sobre el diff completo de las cuatro fases: ocho hallazgos, todos aplicados. Los tres bugs: un clip del piloto que terminaba de decodificar después de un cambio de chart arrancaba igual (ahora `audio.ts` lleva un `voiceSeq` que cada `stopVoice` incrementa y el clip no arranca si cambió); `stopVoice` no paraba a Halley porque `cabinChain` nunca se asignaba (ahora sí); un pensamiento se marcaba como disparado antes de sonar y una sola ranura de espera perdía líneas (ahora hay cola, se marca al arrancar, y un frame con dos bordes conserva los dos). Riesgos: el gigante re-muestreaba sus bandas aunque estuviera fuera de pantalla (ahora hay cull por vista, un solo cuerpo construye textura por frame, paso de giro 0,05 rad y radio 160); el `<video>` de Halley vivía fuera del DOM (Safari deja `videoWidth` en 0) y no se liberaba al terminar (ahora va oculto en el body y se quita al apagar). Detalles: `.gitignore` ignora todo `public/halley/*` salvo la imagen base, el subtítulo de `ship` usa el fósforo exacto y el crédito nombra la voz del piloto.
+Reviewer de otro harness (Grok 4.7) sobre el diff completo de las cuatro fases: ocho hallazgos, todos aplicados. Los tres bugs: un clip del piloto que terminaba de decodificar después de un cambio de chart arrancaba igual (ahora `audio.ts` lleva un `voiceSeq` que cada `stopVoice` incrementa y el clip no arranca si cambió); `stopVoice` no paraba a Halley porque `cabinChain` nunca se asignaba (ahora sí); un pensamiento se marcaba como disparado antes de sonar y una sola ranura de espera perdía líneas (ahora hay cola, se marca al arrancar, y un frame con dos bordes conserva los dos). Riesgos: el gigante re-muestreaba sus bandas aunque estuviera fuera de pantalla (ahora hay cull por vista, un solo cuerpo construye textura por frame, paso de giro 0,05 rad y radio 160); el `<video>` de Halley vivía fuera del DOM (Safari deja `videoWidth` en 0) y no se liberaba al terminar (ahora va oculto en el body y se quita al apagar). Detalles: la imagen base sigue en `public/halley/`; los clips de ejemplo van en `public/dev/` y solo se cargan con `?dev`. El subtítulo de `ship` usa el fósforo exacto y el crédito nombra la voz del piloto.
 
 ## Pendientes del lado creativo (no bloquean)
 

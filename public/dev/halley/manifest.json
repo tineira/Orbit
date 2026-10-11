@@ -1,0 +1,6 @@
+{
+  "halley-01": { "text": "Slow down. Too fast for landing.", "source": "halley-slow-down-too-fast-for-landing" },
+  "halley-02": { "text": "Fuel at twelve percent.", "source": "halley-fuel-at-twelve-percent" },
+  "halley-03": { "text": "No carrier on that mast.", "source": "halley-no-carrier-on-that-mast" },
+  "halley-04": { "text": "You could go home.", "source": "halley-you-could-go-home" }
+}

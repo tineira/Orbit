@@ -318,8 +318,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   let voiceLoading = false;
   let voiceError: string | null = null;
   let voiceGen = 0;
-  // Halley: the cabin CRT. Clips are named by id in a gitignored manifest (dev only
-  // until the lines are closed in Historia). No synthesized speech: a line with
+  // Halley: the cabin CRT. Example clips are named by id in public/dev/halley,
+  // and the manifest loads only with ?dev. No synthesized speech: a line with
   // no clip is the panel on her base image, static, and the subtitle.
   const halley = createHalleyView();
   let halleyBase: HTMLImageElement | null = null;
@@ -333,7 +333,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
   /** Set once the ship has been clear of every well this chart; the warning is for arrivals, not the launch. */
   let halleyLeftWell = false;
   let prevStatus: string | null = null;
-  // Pilot thoughts: once per first, from a gitignored manifest (dev only until the copy is closed).
+  // Pilot thoughts: once per first. The example manifest loads only with ?dev.
   let pilotManifest: PilotManifest | null = null;
   const pilotFired = new Set<PilotTrigger>();
   let prevPilot: PilotSnapshot | null = null;

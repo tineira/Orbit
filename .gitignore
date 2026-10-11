@@ -22,7 +22,9 @@ startup.sh
 .vercel
 .env*
 
-# Halley / pilot clips stay out until their lines are closed in Historia (docs/art/README.md).
+# Example speech is committed under public/dev/ so production ?dev can play it.
+# The old folders stay ignored so a leftover local copy is not committed twice.
+# The still portrait stays tracked at public/halley/halley-base.jpg.
 public/halley/*
 !public/halley/halley-base.jpg
 public/pilot/

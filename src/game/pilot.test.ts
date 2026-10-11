@@ -20,8 +20,8 @@ test("six clip ids, two containers each, four of them wired to triggers", () => 
   assert.equal(isPilotClipId("thought-06"), true);
   assert.equal(isPilotClipId("halley-01"), false);
   assert.deepEqual(pilotClipUrls("thought-02"), {
-    webm: "/pilot/thought-02.webm",
-    m4a: "/pilot/thought-02.m4a",
+    webm: "/dev/pilot/thought-02.webm",
+    m4a: "/dev/pilot/thought-02.m4a",
   });
   assert.deepEqual(Object.values(PILOT_TRIGGER_CLIP), ["thought-01", "thought-02", "thought-03", "thought-04"]);
 });

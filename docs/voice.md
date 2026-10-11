@@ -145,9 +145,9 @@ Referencias de tono (no son assets, no se clonan):
 | `alien` | bed grave, solo texto | — |
 | `static` | hiss, sin habla | — |
 
-Probe `?dev`: escribes una línea, eliges tag, Play. Strip en el visor + bed. Con SHIP, el texto `halley-01`..`halley-04` reproduce ese clip si el build lo tiene (`public/halley/manifest.json`). Mute deja el texto.
+Probe `?dev`: escribes una línea, eliges tag, Play. Strip en el visor + bed. Con SHIP, el texto `halley-01`..`halley-04` reproduce ese clip (`public/dev/halley/manifest.json`). Con THOUGHT, `thought-01`..`thought-06` reproduce el audio (`public/dev/pilot/manifest.json`). Sin `?dev` el juego no carga esos manifests. Mute deja el texto.
 
-No es PTT. No dispara eventos del mundo. El copy de líneas sigue en Historia.
+No es PTT. No dispara eventos del mundo. Los clips de ejemplo están en `public/dev/`. El copy que sigue abierto vive en Historia.
 
 Archivos: `src/game/voice.ts`, `Overlay.tsx` (`VoiceStrip` / `VoiceProbe`), `audio.ts` (`playVoice`, `playHalleyMedia`, `playHalleyStatic`, `playThought`), `halley.ts` (señal por daño, memoria corrupta, envelope CRT), `pilot.ts` (triggers y tope del filtro), `draw.ts` (`drawHalley`), `runtime.ts` (`speakHalley`, `speakThought`).
 

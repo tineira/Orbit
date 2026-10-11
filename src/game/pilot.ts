@@ -1,11 +1,10 @@
 /**
  * Pilot thoughts (docs/art/README.md, fase 3): recorded lines, voice Gus,
- * dry and close, once per "first time" as the Voz lock defines. Clips stay out
- * of the repo until their lines are closed in Historia; `public/pilot/manifest.json`
- * (gitignored) names them by id.
+ * dry and close, once per "first time" as the Voz lock defines. Example clips
+ * live in `public/dev/pilot/` and the runtime loads the manifest only with `?dev`.
  */
 
-export const PILOT_MANIFEST_URL = "/pilot/manifest.json";
+export const PILOT_MANIFEST_URL = "/dev/pilot/manifest.json";
 export const PILOT_CLIP_IDS = [
   "thought-01",
   "thought-02",
@@ -16,7 +15,7 @@ export const PILOT_CLIP_IDS = [
 ] as const;
 export type PilotClipId = (typeof PILOT_CLIP_IDS)[number];
 
-/** `{ "thought-01": { "text": "…" } }`. Files are `/pilot/<id>.webm` and `.m4a`. */
+/** `{ "thought-01": { "text": "…" } }`. Files are `/dev/pilot/<id>.webm` and `.m4a`. */
 export type PilotManifest = Record<string, { text: string }>;
 
 export function isPilotClipId(value: string): value is PilotClipId {
@@ -24,7 +23,7 @@ export function isPilotClipId(value: string): value is PilotClipId {
 }
 
 export function pilotClipUrls(id: string) {
-  return { webm: `/pilot/${id}.webm`, m4a: `/pilot/${id}.m4a` };
+  return { webm: `/dev/pilot/${id}.webm`, m4a: `/dev/pilot/${id}.m4a` };
 }
 
 /** Tomás's cap (11 oct 2026): never more filtered than this. Softer than the old in-head chain. */
