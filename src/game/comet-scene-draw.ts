@@ -162,7 +162,7 @@ function buildNucleus(cave?: CometCave): Nucleus {
       const mouth = shade > 0.4 && edge - rr < 10 + (vnoise(x / 4, y / 4) - 0.5) * 8 ? (shade - 0.4) / 0.6 : 0;
       const rock = 0.75 + vnoise(x / 14 + 9, y / 14) * 0.35;
       lit[k] = rock;
-      alb[k] = rock * (1 - shade * 0.8) * (1 - mouth * 0.85) + (shade < 0.1 && sceneHash(k * 0.37) < 0.004 ? 1.6 : 0);
+      alb[k] = rock * (1 - shade * 0.4) * (1 - mouth * 0.35) + (shade < 0.1 && sceneHash(k * 0.37) < 0.004 ? 1.6 : 0);
     }
   }
   const nx = new Float32Array(n * n);
@@ -202,6 +202,46 @@ function buildNucleus(cave?: CometCave): Nucleus {
   plume.width = n;
   plume.height = n;
   return { n, ext, cv, cx: cv.getContext("2d")!, img, nx, ny, nz, alb, mask, bounce, plume, litRot: NaN, litSun: NaN };
+}
+
+/**
+ * Rubble on the ground side of the ship: a row of rounded boulders across its
+ * middle, closed off below. Shape only; the caller clips, fills or strokes.
+ */
+function rubblePath(ctx: Draw, x: number, y: number, closed: boolean) {
+  const r = Math.hypot(x, y) || 1;
+  const ux = x / r;
+  const uy = y / r;
+  const W = 9;
+  const at = (t: number, j: number) => [x - uy * t + ux * j, y + ux * t + uy * j] as const;
+  ctx.beginPath();
+  let t = -W;
+  const [sx, sy] = at(t, (sceneHash(0.7) - 0.5) * 2);
+  ctx.moveTo(sx, sy);
+  for (let i = 1; t < W; i++) {
+    // Each boulder: a bump 3-7 wide that rises 1-3 above the line between them.
+    const w = 2.5 + sceneHash(i * 5.3) * 2.5;
+    const nt = Math.min(W, t + w);
+    const [qx, qy] = at(nt, (sceneHash(i * 2.9 + 0.4) - 0.5) * 2);
+    const [cx, cy] = at((t + nt) / 2, 0.8 + sceneHash(i * 7.1) * 1.6 + (sceneHash(i * 2.9 - 0.6) - 0.5) * 2);
+    ctx.quadraticCurveTo(cx, cy, qx, qy);
+    t = nt;
+  }
+  if (!closed) return;
+  const D = 16;
+  ctx.lineTo(x - uy * W - ux * D, y + ux * W - uy * D);
+  ctx.lineTo(x + uy * W - ux * D, y - ux * W - uy * D);
+  ctx.closePath();
+}
+
+/** The hollow the ship sits in: a soft dark pool under it. */
+function drawHollow(ctx: Draw, x: number, y: number) {
+  const g = ctx.createRadialGradient(x, y, 0, x, y, 20);
+  g.addColorStop(0, "rgba(0,0,0,0.6)");
+  g.addColorStop(0.55, "rgba(0,0,0,0.35)");
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(x - 20, y - 20, 40, 40);
 }
 
 function drawNucleus(ctx: Draw, scene: CometScene) {
@@ -630,28 +670,34 @@ export function drawCometScene(
   ctx.translate(cssW / 2 + shakeX, cssH / 2 + shakeY);
   ctx.scale(zoom, zoom);
   drawFrost(ctx, sim, scene);
-  // In the cave the rock roof covers the ship: draw it first, then the nucleus over it.
-  const covered = inCave(scene, sim.ship.x, sim.ship.y);
-  if (covered) {
-    hooks.drawParticles(ctx);
-    hooks.drawShip(ctx, 0.82);
-  }
   drawNucleus(ctx, scene);
   drawPlumeOnGround(ctx, sim, scene);
   drawRocks(ctx, sim, scene);
   drawBursts(ctx, scene);
   drawTrajectory(ctx, sim, scene, zoom);
-  if (!covered) hooks.drawParticles(ctx);
+  hooks.drawParticles(ctx);
   const dt = Math.max(0, Math.min(0.1, scene.t - lastT));
   lastT = scene.t;
-  const want = inUmbra(sim.ship.x, sim.ship.y, 0.95) || inCave(scene, sim.ship.x, sim.ship.y) ? 1 : 0;
+  const want = inUmbra(sim.ship.x, sim.ship.y, 0.95) ? 1 : 0;
   shipDark += (want - shipDark) * Math.min(1, dt * 4);
-  if (!covered) hooks.drawShip(ctx, shipDark * 0.82);
-  else {
-    // A dim shape still shows through the mouth, so you can find your ship.
-    ctx.globalAlpha = 0.6;
-    hooks.drawShip(ctx, 0.9);
-    ctx.globalAlpha = 1;
+  const buried = inCave(scene, sim.ship.x, sim.ship.y);
+  if (buried) drawHollow(ctx, sim.ship.x, sim.ship.y);
+  hooks.drawShip(ctx, shipDark * 0.82);
+  // Down in the cave, loose rock hides the lower half of the ship.
+  if (buried) {
+    ctx.save();
+    rubblePath(ctx, sim.ship.x, sim.ship.y, true);
+    ctx.clip();
+    drawNucleus(ctx, scene);
+    drawPlumeOnGround(ctx, sim, scene);
+    drawHollow(ctx, sim.ship.x, sim.ship.y);
+    // Each boulder rounds off into shadow at its top edge.
+    rubblePath(ctx, sim.ship.x, sim.ship.y, false);
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(0,0,0,0.2)";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.restore();
   }
   ctx.restore();
 
