@@ -205,6 +205,8 @@ export type NearbyHeading = {
   kind: NearbyHeadingKind;
   /** Story gate. Random charts leave this unset, so the snapshot stays the same. */
   requires?: string;
+  /** Story route. Random charts leave this unset, so the snapshot stays the same. */
+  target?: { place?: string; leg?: string };
 };
 
 export type Comet = {

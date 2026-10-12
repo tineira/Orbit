@@ -66,8 +66,18 @@ export const PROBE_PLACE: StoryPlace = {
   start: { ref: "rock", fuel: 40 },
 };
 
+/** Where the probe leg arrives. Not a story place. */
+export const PROBE_END: StoryPlace = {
+  id: "probe-end",
+  seed: 2,
+  recipe: {},
+  bodies: [],
+  triggers: [],
+};
+
 const PLACES: Record<string, StoryPlace> = {
   [PROBE_PLACE.id]: PROBE_PLACE,
+  [PROBE_END.id]: PROBE_END,
 };
 
 export function storyPlaceById(id: string): StoryPlace | null {
