@@ -1,5 +1,5 @@
 import type { CampaignState } from "./campaign.ts";
-import { applyLoadout, installEngine } from "./fuel.ts";
+import { grant as grantPiece } from "./fuel.ts";
 import type { Trigger } from "./triggers.ts";
 import type { Planet, PlanetKind, Settlement, Ship } from "./types.ts";
 import { createSystem, G, getPlanets, GRAVITY_BASE, keplerRail, type Recipe } from "./world.ts";
@@ -171,13 +171,8 @@ export function applyBodyGrant(
   campaign: CampaignState | null,
 ) {
   if (!grant) return;
-  if ("engine" in grant) {
-    installEngine(ship, grant.engine);
-    return;
-  }
-  if ("tank" in grant) {
-    ship.tankKind = grant.tank;
-    applyLoadout(ship);
+  if ("engine" in grant || "tank" in grant) {
+    grantPiece(ship, grant);
     return;
   }
   if (!campaign) return;

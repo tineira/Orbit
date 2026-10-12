@@ -56,9 +56,9 @@ import {
   type SimViewPrefs,
   type SpectroVoice,
 } from "./sim";
-import { cycleDrive as stepDrive, cycleTank as stepTank } from "./fuel";
+import { applyLoadout, cycleDrive as stepDrive, cycleTank as stepTank, syncFuelMass } from "./fuel";
 import { HULL_MAX } from "./hull";
-import type { GameUiHandler, HudSnapshot } from "./types";
+import type { EngineKind, FuelKind, GameUiHandler, HudSnapshot, TankKind } from "./types";
 import {
   isVoiceSource,
   makeVoiceLine,
@@ -164,6 +164,7 @@ declare global {
         vx?: number;
         vy?: number;
         kind: string;
+        kicker?: string | null;
         parentId?: string;
         radius: number;
         orbitR?: number;
@@ -219,6 +220,8 @@ declare global {
         flags: string[];
         aside: boolean;
       } | null;
+      getLoadout?: () => { fuel: number; fuelKind: string; engineKind: string; tankKind: string };
+      setLoadout?: (fuelKind: string, engineKind: string, tankKind: string, fuel?: number) => void;
       getComet?: () => { x: number; y: number; vx: number; vy: number; radius: number } | null;
       getCometSpent?: () => boolean;
       getCometHeading?: () => { angle: number; kind: string; name: string } | null;
@@ -988,6 +991,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
           vx: p.vx,
           vy: p.vy,
           kind: p.kind,
+          kicker: p.kicker,
           parentId: p.parentId,
           radius: p.radius,
           orbitR: p.orbitR,
@@ -1041,6 +1045,20 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
               aside: s.campaignAside,
             }
           : null,
+      getLoadout: () => ({
+        fuel: s.ship.fuel,
+        fuelKind: s.ship.fuelKind,
+        engineKind: s.ship.engineKind,
+        tankKind: s.ship.tankKind,
+      }),
+      setLoadout: (fuelKind: string, engineKind: string, tankKind: string, fuel?: number) => {
+        s.ship.fuelKind = fuelKind as FuelKind;
+        s.ship.engineKind = engineKind as EngineKind;
+        s.ship.tankKind = tankKind as TankKind;
+        applyLoadout(s.ship);
+        if (fuel != null) s.ship.fuel = Math.min(s.ship.fuelCapacity, Math.max(0, fuel));
+        syncFuelMass(s.ship);
+      },
       getComet: () =>
         s.comet
           ? { x: s.comet.x, y: s.comet.y, vx: s.comet.vx, vy: s.comet.vy, radius: s.comet.radius }

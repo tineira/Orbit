@@ -95,9 +95,12 @@ import {
   applyLoadout,
   burnFuel,
   engineForce,
+  beginCampaignPadRefill,
   beginPadRefill,
   fillGrade,
   installEngine,
+  methaneCellFits,
+  PAD_CELL_HINT,
   pumpPadRefill,
   syncFuelMass,
   sipField,
@@ -2267,6 +2270,7 @@ export function shipIsRefueling(sim: Sim) {
   const ship = sim.ship;
   if (ship.fuelKind !== DEFAULT_FUEL_KIND) return false;
   if (ship.fuel >= ship.fuelCapacity - 1e-6) return false;
+  if (sim.campaign && !methaneCellFits(ship)) return false;
   const pad = sim.planets.find((p) => p.id === sim.landedId);
   return !!pad && padHasFuel(pad);
 }
@@ -2490,7 +2494,13 @@ export function stepSim(
       stickToPlanet(sim, p);
       faceRadial(sim);
       ship.thrusting = false;
-      if (padHasFuel(p)) pumpPadRefill(ship, dt);
+      if (padHasFuel(p)) {
+        if (sim.campaign && !methaneCellFits(ship)) sim.orbitHint = PAD_CELL_HINT;
+        else {
+          if (sim.orbitHint === PAD_CELL_HINT) sim.orbitHint = null;
+          pumpPadRefill(ship, dt);
+        }
+      }
       repairShipHull(sim, dt);
       sipWell(sim, dt);
     }
@@ -2989,8 +2999,14 @@ function collidePlanets(sim: Sim) {
       s.vx = p.vx;
       s.vy = p.vy;
       if (padHasFuel(p)) {
-        beginPadRefill(s);
-        if (p.unlocksEngine) installEngine(s, p.unlocksEngine);
+        if (sim.campaign) {
+          if (beginCampaignPadRefill(s)) {
+            if (p.unlocksEngine) installEngine(s, p.unlocksEngine);
+          } else sim.orbitHint = PAD_CELL_HINT;
+        } else {
+          beginPadRefill(s);
+          if (p.unlocksEngine) installEngine(s, p.unlocksEngine);
+        }
       }
       if (p.grant) applyBodyGrant(s, p.grant, sim.campaign);
       stickToPlanet(sim, p);
@@ -3038,7 +3054,9 @@ function classify(sim: Sim, nearest: Planet, dist: number) {
 
   if (sim.phase === "landed") {
     sim.status = "landed";
-    sim.orbitHint = null;
+    const pad = sim.landedId ? sim.planets.find((body) => body.id === sim.landedId) : undefined;
+    sim.orbitHint =
+      sim.campaign && pad && padHasFuel(pad) && !methaneCellFits(sim.ship) ? PAD_CELL_HINT : null;
     sim.orbitDwell = 0;
     sim.warpCharge = 0;
     sim.warpApproach = 0;
