@@ -229,9 +229,11 @@ function rubblePath(ctx: Draw, x: number, y: number, closed: boolean) {
     t = nt;
   }
   if (!closed) return;
-  const D = 16;
-  ctx.lineTo(x - uy * W - ux * D, y + ux * W - uy * D);
-  ctx.lineTo(x + uy * W - ux * D, y - ux * W - uy * D);
+  // Down past the tail and the flame, widening as it goes.
+  const D = 70;
+  const B = W * 2.2;
+  ctx.lineTo(x - uy * B - ux * D, y + ux * B - uy * D);
+  ctx.lineTo(x + uy * B - ux * D, y - ux * B - uy * D);
   ctx.closePath();
 }
 
@@ -708,18 +710,20 @@ export function drawCometScene(
   ctx.translate(cssW / 2 + shakeX, cssH / 2 + shakeY);
   ctx.scale(zoom, zoom);
   drawFrost(ctx, sim, scene);
+  const buried = inCave(scene, sim.ship.x, sim.ship.y);
+  // Exhaust in the cave stays under the rock; only its light reaches the walls.
+  if (buried) hooks.drawParticles(ctx);
   drawNucleus(ctx, scene);
   drawPlumeOnGround(ctx, sim, scene);
   drawRocks(ctx, sim, scene);
   drawImpacts(ctx, scene);
   drawBursts(ctx, scene);
   drawTrajectory(ctx, sim, scene, zoom);
-  hooks.drawParticles(ctx);
+  if (!buried) hooks.drawParticles(ctx);
   const dt = Math.max(0, Math.min(0.1, scene.t - lastT));
   lastT = scene.t;
   const want = inUmbra(sim.ship.x, sim.ship.y, 0.95) ? 1 : 0;
   shipDark += (want - shipDark) * Math.min(1, dt * 4);
-  const buried = inCave(scene, sim.ship.x, sim.ship.y);
   if (buried) drawHollow(ctx, sim.ship.x, sim.ship.y);
   hooks.drawShip(ctx, shipDark * 0.82);
   // Down in the cave, loose rock hides the lower half of the ship.
