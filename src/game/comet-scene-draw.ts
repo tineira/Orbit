@@ -2,7 +2,6 @@ import type { Sim } from "./sim";
 import type { CometCave } from "./comet-scene";
 import {
   COMET_HOLD_S,
-  COMET_SUN,
   COMET_TRAVEL,
   NUCLEUS_GRAV_K,
   NUCLEUS_LOBES,
@@ -47,15 +46,17 @@ function starfield() {
 }
 
 /** Background stars as streaks crossing the screen: the comet and the ship move together faster than warp. */
-function drawStreaks(ctx: Draw, t: number, cssW: number, cssH: number, reduced: boolean) {
+function drawStreaks(ctx: Draw, flown: number, travel: number, cssW: number, cssH: number, reduced: boolean) {
   const sp = reduced ? 0.02 : 1.9;
+  const t = flown;
   const k = Math.min(cssW, cssH) / 640;
   ctx.save();
   ctx.lineCap = "round";
   for (const s of starfield()) {
     const x = ((((s.x - t * sp * s.z * WARP.x * 0.35) % 1) + 1) % 1) * (cssW + 240) - 120;
     const y = ((((s.y - t * sp * s.z * WARP.y * 0.35) % 1) + 1) % 1) * (cssH + 240) - 120;
-    const len = (reduced ? 2 : 70 + s.len * 150) * s.z * k;
+    // Arrived: the streaks shrink back to points as the comet stops.
+    const len = Math.max(1.2, (reduced ? 2 : 70 + s.len * 150) * s.z * k * travel);
     ctx.strokeStyle = `rgba(190,196,204,${s.z * 0.16})`;
     ctx.lineWidth = 0.6 + s.z * 0.9;
     ctx.beginPath();
@@ -77,6 +78,7 @@ type Nucleus = {
   /** Rotation and sun the texels were last lit for; relight only when they move. */
   litRot: number;
   litSun: number;
+  litDir: number;
   nx: Float32Array;
   ny: Float32Array;
   nz: Float32Array;
@@ -202,7 +204,7 @@ function buildNucleus(cave?: CometCave): Nucleus {
   const plume = document.createElement("canvas");
   plume.width = n;
   plume.height = n;
-  return { n, ext, cv, cx: cv.getContext("2d")!, img, nx, ny, nz, alb, mask, bounce, plume, litRot: NaN, litSun: NaN };
+  return { n, ext, cv, cx: cv.getContext("2d")!, img, nx, ny, nz, alb, mask, bounce, plume, litRot: NaN, litSun: NaN, litDir: NaN };
 }
 
 /**
@@ -255,7 +257,8 @@ function drawNucleus(ctx: Draw, scene: CometScene) {
   const nuc = nucleus;
   const { cv, ext } = nuc;
   // Half a texel at the rim is ~0.004 rad: below that a relight changes nothing you can see.
-  if (!(Math.abs(scene.rot - nuc.litRot) < 0.004 && nuc.litSun === scene.p.sun)) {
+  const dir = Math.atan2(scene.sun.y, scene.sun.x);
+  if (!(Math.abs(scene.rot - nuc.litRot) < 0.004 && nuc.litSun === scene.p.sun && Math.abs(dir - nuc.litDir) < 0.004)) {
     relightNucleus(nuc, scene);
   }
   ctx.save();
@@ -269,12 +272,13 @@ function relightNucleus(nuc: Nucleus, scene: CometScene) {
   const { n, nx, ny, nz, alb, mask, img } = nuc;
   nuc.litRot = scene.rot;
   nuc.litSun = scene.p.sun;
+  nuc.litDir = Math.atan2(scene.sun.y, scene.sun.x);
   const d = img.data;
   // Sun in the nucleus frame, low over the horizon.
   const c = Math.cos(-scene.rot);
   const sn = Math.sin(-scene.rot);
-  let lx = COMET_SUN.x * c - COMET_SUN.y * sn;
-  let ly = COMET_SUN.x * sn + COMET_SUN.y * c;
+  let lx = scene.sun.x * c - scene.sun.y * sn;
+  let ly = scene.sun.x * sn + scene.sun.y * c;
   let lz = 0.32;
   const m = Math.hypot(lx, ly, lz);
   lx /= m;
@@ -302,7 +306,10 @@ function relightNucleus(nuc: Nucleus, scene: CometScene) {
 let atmo: HTMLCanvasElement | null = null;
 let atmoKey = "";
 function atmosphere(scene: CometScene, cssW: number, cssH: number, dpr: number, zoom: number) {
-  const key = `${cssW}x${cssH}x${dpr}x${zoom}x${scene.kind}`;
+  // The glare and tail follow the star; while it swings round, repaint in steps.
+  const qa = Math.round(Math.atan2(scene.sun.y, scene.sun.x) / 0.05) * 0.05;
+  const toSun = { x: Math.cos(qa), y: Math.sin(qa) };
+  const key = `${cssW}x${cssH}x${dpr}x${zoom}x${scene.kind}x${qa.toFixed(2)}`;
   if (atmo && atmoKey === key) return atmo;
   atmoKey = key;
   atmo = atmo ?? document.createElement("canvas");
@@ -315,20 +322,20 @@ function atmosphere(scene: CometScene, cssW: number, cssH: number, dpr: number, 
   const sun = scene.p.sun;
   const cx = cssW / 2;
   const cy = cssH / 2;
-  const px = -COMET_SUN.y;
-  const py = COMET_SUN.x;
-  const sl = c.createLinearGradient(cx + COMET_SUN.x * 700 * S, cy + COMET_SUN.y * 700 * S, cx, cy);
+  const px = -toSun.y;
+  const py = toSun.x;
+  const sl = c.createLinearGradient(cx + toSun.x * 700 * S, cy + toSun.y * 700 * S, cx, cy);
   sl.addColorStop(0, `rgba(214,220,228,${0.05 * sun})`);
   sl.addColorStop(1, "rgba(214,220,228,0)");
   c.fillStyle = sl;
   c.fillRect(0, 0, cssW, cssH);
-  const coma = c.createRadialGradient(cx + COMET_SUN.x * 30 * S, cy + COMET_SUN.y * 30 * S, NUCLEUS_R * 0.6 * S, cx, cy, 300 * S);
+  const coma = c.createRadialGradient(cx + toSun.x * 30 * S, cy + toSun.y * 30 * S, NUCLEUS_R * 0.6 * S, cx, cy, 300 * S);
   coma.addColorStop(0, `rgba(170,170,166,${0.07 * sun})`);
   coma.addColorStop(1, "rgba(170,170,166,0)");
   c.fillStyle = coma;
   c.fillRect(0, 0, cssW, cssH);
   const L = 900 * S;
-  const tg = c.createLinearGradient(cx, cy, cx - COMET_SUN.x * L, cy - COMET_SUN.y * L);
+  const tg = c.createLinearGradient(cx, cy, cx - toSun.x * L, cy - toSun.y * L);
   tg.addColorStop(0, `rgba(150,148,142,${0.07 * sun})`);
   tg.addColorStop(1, "rgba(150,148,142,0)");
   c.save();
@@ -336,8 +343,8 @@ function atmosphere(scene: CometScene, cssW: number, cssH: number, dpr: number, 
   c.fillStyle = tg;
   c.beginPath();
   c.moveTo(cx + px * NUCLEUS_R * 0.7 * S, cy + py * NUCLEUS_R * 0.7 * S);
-  c.lineTo(cx - COMET_SUN.x * L + px * NUCLEUS_R * 2.6 * S, cy - COMET_SUN.y * L + py * NUCLEUS_R * 2.6 * S);
-  c.lineTo(cx - COMET_SUN.x * L - px * NUCLEUS_R * 2.6 * S, cy - COMET_SUN.y * L - py * NUCLEUS_R * 2.6 * S);
+  c.lineTo(cx - toSun.x * L + px * NUCLEUS_R * 2.6 * S, cy - toSun.y * L + py * NUCLEUS_R * 2.6 * S);
+  c.lineTo(cx - toSun.x * L - px * NUCLEUS_R * 2.6 * S, cy - toSun.y * L - py * NUCLEUS_R * 2.6 * S);
   c.lineTo(cx - px * NUCLEUS_R * 0.7 * S, cy - py * NUCLEUS_R * 0.7 * S);
   c.closePath();
   c.fill();
@@ -347,14 +354,14 @@ function atmosphere(scene: CometScene, cssW: number, cssH: number, dpr: number, 
   const w0 = NUCLEUS_R * 0.95 * S;
   c.save();
   c.filter = `blur(${7 * S}px)`;
-  const ug = c.createLinearGradient(cx, cy, cx - COMET_SUN.x * U, cy - COMET_SUN.y * U);
+  const ug = c.createLinearGradient(cx, cy, cx - toSun.x * U, cy - toSun.y * U);
   ug.addColorStop(0, "rgba(0,0,0,0.8)");
   ug.addColorStop(1, "rgba(0,0,0,0.45)");
   c.fillStyle = ug;
   c.beginPath();
   c.moveTo(cx + px * w0, cy + py * w0);
-  c.lineTo(cx + px * w0 * 0.8 - COMET_SUN.x * U, cy + py * w0 * 0.8 - COMET_SUN.y * U);
-  c.lineTo(cx - px * w0 * 0.8 - COMET_SUN.x * U, cy - py * w0 * 0.8 - COMET_SUN.y * U);
+  c.lineTo(cx + px * w0 * 0.8 - toSun.x * U, cy + py * w0 * 0.8 - toSun.y * U);
+  c.lineTo(cx - px * w0 * 0.8 - toSun.x * U, cy - py * w0 * 0.8 - toSun.y * U);
   c.lineTo(cx - px * w0, cy - py * w0);
   c.closePath();
   c.fill();
@@ -412,7 +419,7 @@ function drawFrost(ctx: Draw, sim: Sim, scene: CometScene) {
     const tw = 0.35 + 0.65 * Math.max(0, Math.sin(scene.t * 14 + g.k * 7));
     let vis = 1;
     let L = 0;
-    if (inUmbra(g.x, g.y)) {
+    if (inUmbra(scene, g.x, g.y)) {
       // Unlit in the shadow, except a rare starlit glint, or the plume.
       L = engineLight(sim, scene, g.x, g.y);
       vis = Math.max(L * 1.6, tw > 0.985 ? 0.5 : 0);
@@ -510,7 +517,7 @@ function drawRocks(ctx: Draw, sim: Sim, scene: CometScene) {
     rockPath(ctx, r);
     ctx.fillStyle = "#0c0c0d";
     ctx.fill();
-    if (inUmbra(r.x, r.y)) {
+    if (inUmbra(scene, r.x, r.y)) {
       if (r.fall) {
         ctx.strokeStyle = "rgba(64,66,72,0.5)";
         ctx.lineWidth = 1;
@@ -537,7 +544,7 @@ function drawRocks(ctx: Draw, sim: Sim, scene: CometScene) {
     ctx.clip();
     ctx.fillStyle = "#8c8780";
     ctx.beginPath();
-    ctx.arc(r.x + COMET_SUN.x * r.r * 1.15, r.y + COMET_SUN.y * r.r * 1.15, r.r * 1.05, 0, TAU);
+    ctx.arc(r.x + scene.sun.x * r.r * 1.15, r.y + scene.sun.y * r.r * 1.15, r.r * 1.05, 0, TAU);
     ctx.fill();
     ctx.restore();
   }
@@ -547,7 +554,7 @@ function drawRocks(ctx: Draw, sim: Sim, scene: CometScene) {
 function drawImpacts(ctx: Draw, scene: CometScene) {
   for (const im of scene.impacts) {
     const u = im.t / IMPACT_LIFE_S;
-    const dark = inUmbra(im.x, im.y);
+    const dark = inUmbra(scene, im.x, im.y);
     const tone = dark ? "52,52,56" : "158,151,142";
     const tx = -im.ny;
     const ty = im.nx;
@@ -650,7 +657,7 @@ function drawReadout(ctx: Draw, sim: Sim, scene: CometScene, cssW: number, cssH:
   const lines: [string, string][] = [[scene.p.label, "rgba(205,204,198,0.85)"]];
   if (sim.phase === "landed" || scene.held > 0) {
     const left = Math.max(0, Math.ceil(COMET_HOLD_S - scene.held));
-    lines.push([`HOLD ${String(left).padStart(4)} s`, "rgba(205,204,198,0.85)"]);
+    if (!scene.done) lines.push([`HOLD ${String(left).padStart(4)} s`, "rgba(205,204,198,0.85)"]);
     if (sim.phase === "landed") {
       const day = siteLit(scene, scene.site);
       const cave = nearCave(scene, scene.site);
@@ -665,10 +672,10 @@ function drawReadout(ctx: Draw, sim: Sim, scene: CometScene, cssW: number, cssH:
     ctx.fillStyle = c;
     ctx.fillText(t, cssW / 2, 16 + i * 17);
   });
-  if (scene.done) {
+  if (scene.done && (!scene.arrived || (scene.arriveT >= 0 && sim.phase === "landed"))) {
     ctx.font = '500 15px "IBM Plex Mono", ui-monospace, monospace';
     ctx.fillStyle = "rgba(205,204,198,0.9)";
-    ctx.fillText("COMET DECELERATING", cssW / 2, cssH - 64);
+    ctx.fillText(scene.arrived ? "COMET IN ORBIT" : "COMET DECELERATING", cssW / 2, cssH - 64);
   } else if (scene.msgT > 0) {
     ctx.font = '500 15px "IBM Plex Mono", ui-monospace, monospace';
     ctx.fillStyle = "#c9543f";
@@ -693,7 +700,7 @@ export function drawCometScene(
   const zoom = sim.camera.zoom;
   ctx.fillStyle = "#030405";
   ctx.fillRect(0, 0, cssW, cssH);
-  drawStreaks(ctx, scene.t, cssW, cssH, sim.reducedMotion);
+  drawStreaks(ctx, scene.flown, scene.travel, cssW, cssH, sim.reducedMotion);
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   // The layer is painted at a stepped zoom (4% steps) and scaled to the live one,
@@ -722,7 +729,7 @@ export function drawCometScene(
   if (!buried) hooks.drawParticles(ctx);
   const dt = Math.max(0, Math.min(0.1, scene.t - lastT));
   lastT = scene.t;
-  const want = inUmbra(sim.ship.x, sim.ship.y, 0.95) ? 1 : 0;
+  const want = inUmbra(scene, sim.ship.x, sim.ship.y, 0.95) ? 1 : 0;
   shipDark += (want - shipDark) * Math.min(1, dt * 4);
   if (buried) drawHollow(ctx, sim.ship.x, sim.ship.y);
   hooks.drawShip(ctx, shipDark * 0.82);

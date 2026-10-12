@@ -19,7 +19,7 @@ import type {
   LostCopy,
   NearbyHeading,
 } from "./types.ts";
-import { makeCometHeading, separateCometHeading, spawnComet, warpHeadings } from "./comet.ts";
+import { COMET_NUCLEUS_R, makeCometHeading, separateCometHeading, spawnComet, warpHeadings } from "./comet.ts";
 import {
   COMET_CRASH_NUCLEUS,
   COMET_CRASH_ROCKS,
@@ -29,14 +29,22 @@ import {
   COMET_SCENES,
   cometViewUnits,
   cometEntryPose,
+  COMET_ENTRY_DIST,
+  COMET_ENTRY_SPEED,
+  COMET_TRAVEL,
   makeCometScene,
   relativeToSurface,
+  startArrival,
   sceneAccel,
   caveWallContact,
   sceneGasHits,
   sceneRockHits,
   stepCometScene,
   surfacePoint,
+  nearCave,
+  sunDot,
+  angleGap,
+  siteExposure,
   surfaceRadiusAt,
   surfaceVelocity,
   ventUnderSite,
@@ -724,10 +732,16 @@ function isCometSceneKind(v: string | null | undefined): v is CometSceneKind {
  * Open the comet scene: the nucleus frame, no star, no planets. The ship comes
  * in from the edge along the warp direction, almost matched.
  */
-export function enterCometScene(sim: Sim, kind: CometSceneKind = COMET_SCENE_DEFAULT, seed?: number) {
+export function enterCometScene(
+  sim: Sim,
+  kind: CometSceneKind = COMET_SCENE_DEFAULT,
+  seed?: number,
+  arrived?: { sun: { x: number; y: number } },
+) {
   clearFlightLocks(sim);
-  resetCometChart(sim);
-  sim.cometScene = makeCometScene(kind, seed ?? (Math.random() * 0x100000000) >>> 0);
+  // A parked comet stays on its chart; a comet you chased is left behind with it.
+  if (!arrived) resetCometChart(sim);
+  sim.cometScene = makeCometScene(kind, seed ?? (Math.random() * 0x100000000) >>> 0, arrived);
   const pose = cometEntryPose();
   const ship = sim.ship;
   ship.x = pose.x;
@@ -774,6 +788,42 @@ export function applyDebugComet(sim: Sim, search = typeof window !== "undefined"
   sim.landedId = null;
   sim.takeoffIgnoreId = null;
   enterCometScene(sim, kind);
+  // `&landed` starts you parked on the day side, anchored until you take off; `&hold=n` starts n s into the hold.
+  const q = new URLSearchParams(raw);
+  if (!q.has("landed")) return;
+  const scene = sim.cometScene!;
+  scene.anchored = true;
+  // In daylight, out of any cave, as far from the vents as the day side allows.
+  const noon = Math.atan2(scene.sun.y, scene.sun.x) - scene.rot;
+  let a = noon;
+  let best = Infinity;
+  for (let k = -28; k <= 28; k++) {
+    const c = noon + k * 0.05;
+    if (nearCave(scene, c, 0.1) || sunDot(scene, c) < 0.2) continue;
+    let gap = Math.PI;
+    for (const j of scene.jets) gap = Math.min(gap, Math.abs(angleGap(c, j.a)));
+    // Out of every cone first, then as far from the nearest vent as it gets.
+    const score = Math.min(siteExposure(scene, c), 100) * 10 - gap;
+    if (score < best) {
+      best = score;
+      a = c;
+    }
+  }
+  const pt = surfacePoint(scene, a, SHIP_HULL);
+  const g = surfaceVelocity(pt.x, pt.y);
+  ship.x = pt.x;
+  ship.y = pt.y;
+  ship.vx = g.x;
+  ship.vy = g.y;
+  ship.yaw = Math.atan2(-Math.cos(pt.w), -Math.sin(pt.w));
+  scene.site = a;
+  sim.phase = "landed";
+  sim.landedId = COMET_CRASH_NUCLEUS;
+  sim.status = "landed";
+  sim.altitude = 0;
+  cometCamera(sim, 0);
+  const hold = Number(q.get("hold"));
+  if (Number.isFinite(hold) && hold > 0) scene.held = Math.min(hold, COMET_HOLD_S - 1);
 }
 
 function cometCamera(sim: Sim, dt: number) {
@@ -816,6 +866,7 @@ function noteScene(scene: CometScene, msg: string) {
 /** Off the ground: thrust lifts straight up; a vent or an outburst throws you. The hold starts over. */
 function leaveSite(sim: Sim, scene: CometScene, speed: number) {
   scene.held = 0;
+  scene.anchored = false;
   const pt = surfacePoint(scene, scene.site);
   const ux = Math.cos(pt.w);
   const uy = Math.sin(pt.w);
@@ -852,10 +903,135 @@ function warpOutOfScene(sim: Sim, ux: number, uy: number, lost: boolean) {
   enterWarp(sim, lost);
 }
 
-/** Hold done: the comet decelerates near another star, and the ship goes on from there. */
-function finishCometHold(sim: Sim, scene: CometScene) {
-  const pt = surfacePoint(scene, scene.site);
-  warpOutOfScene(sim, Math.cos(pt.w), Math.sin(pt.w), false);
+/** Orbit radius for a comet that has ridden into a system, as a share of the chart radius. */
+const PARKED_ORBIT = [0.62, 0.5, 0.72, 0.42, 0.8];
+/** The scene's units per chart unit around a parked comet: out at the scene edge is this far out on the chart. */
+const PARKED_EXIT_R = 5;
+
+/**
+ * Off an arrived comet: back to the chart. The first time, that is the new
+ * system the comet rode into, with the comet left there in a slow orbit.
+ */
+function leaveArrivedComet(sim: Sim, scene: CometScene) {
+  const out = Math.hypot(sim.ship.x, sim.ship.y) || 1;
+  const ux = sim.ship.x / out;
+  const uy = sim.ship.y / out;
+  const rvx = sim.ship.vx;
+  const rvy = sim.ship.vy;
+  sim.cometScene = null;
+  let c = sim.comet?.parked ? sim.comet : null;
+  if (!c) {
+    chartNewSystem(sim);
+    c = parkComet(sim, scene);
+  }
+  sim.comet = c;
+  sim.cometSpent = true;
+  sim.cometEntered = true;
+  sim.cometHeading = null;
+  const ship = sim.ship;
+  ship.x = c.x + ux * c.radius * PARKED_EXIT_R;
+  ship.y = c.y + uy * c.radius * PARKED_EXIT_R;
+  ship.vx = c.vx + rvx;
+  ship.vy = c.vy + rvy;
+  ship.thrusting = false;
+  ship.reverse = false;
+  sim.landedId = null;
+  sim.takeoffIgnoreId = null;
+  sim.phase = "flight";
+  sim.status = "approach";
+  sim.warpTarget = null;
+  sim.warpLost = false;
+  sim.warpCharge = warpCharge(Math.hypot(ship.vx, ship.vy));
+  sim.warpApproach = warpApproach(Math.hypot(ship.vx, ship.vy));
+  const near = gravityAt(ship.x, ship.y, sim.planets, sim.gravityScale);
+  sim.nearest = near.nearest;
+  sim.altitude = near.dist - near.nearest.radius;
+  const cam = sim.camera;
+  cam.x = ship.x;
+  cam.y = ship.y;
+  cam.zoomAuto = 0.86;
+  cam.zoom = cam.zoomAuto * cam.userZoom;
+  sim.approachLatch.seen.clear();
+  sim.approachLatch.inside.clear();
+}
+
+/**
+ * Put the comet that rode in on a slow circular orbit around the new star, on
+ * the side the scene showed the star: the light came from ahead, so the star
+ * lies along the comet's travel.
+ */
+function parkComet(sim: Sim, scene: CometScene): Comet {
+  const star = sim.planets.find((p) => p.kind === "star");
+  const sx = star?.x ?? 0;
+  const sy = star?.y ?? 0;
+  const R = getMinimapWorldR();
+  let best = PARKED_ORBIT[0]! * R;
+  let bestGap = -Infinity;
+  for (const k of PARKED_ORBIT) {
+    const r = k * R;
+    // Clear of every body's whole orbit (they lap the star too), with room for the ship to come off it.
+    let gap = Infinity;
+    for (const p of sim.planets) {
+      if (p.kind === "star") continue;
+      const pr = Math.hypot(p.x - sx, p.y - sy);
+      gap = Math.min(gap, Math.abs(pr - r) - p.radius * 3 - COMET_NUCLEUS_R * PARKED_EXIT_R);
+    }
+    if (gap > bestGap) {
+      bestGap = gap;
+      best = r;
+    }
+    if (gap > 0) break;
+  }
+  const x = sx - COMET_TRAVEL.x * best;
+  const y = sy - COMET_TRAVEL.y * best;
+  const g = gravityAt(x, y, sim.planets, sim.gravityScale);
+  const a = Math.hypot(g.ax, g.ay);
+  const v = Math.sqrt(a * best);
+  const c: Comet = {
+    x,
+    y,
+    // The rail's own velocity (counterclockwise at angle a), so the first exit inherits the right one.
+    vx: COMET_TRAVEL.y * v + (star?.vx ?? 0),
+    vy: -COMET_TRAVEL.x * v + (star?.vy ?? 0),
+    radius: COMET_NUCLEUS_R,
+    mass: COMET_NUCLEUS_R * COMET_NUCLEUS_R * 0.35,
+    parked: {
+      kind: scene.kind,
+      seed: scene.seed,
+      r: best,
+      a: Math.atan2(-COMET_TRAVEL.y, -COMET_TRAVEL.x),
+      w: v / best,
+    },
+  };
+  return c;
+}
+
+/** Fly close to a parked comet and you are back in its scene, in orbit around this star. */
+function tryEnterParkedComet(sim: Sim) {
+  const c = sim.comet;
+  if (!c?.parked || sim.phase !== "flight") return;
+  const dx = sim.ship.x - c.x;
+  const dy = sim.ship.y - c.y;
+  const d = Math.hypot(dx, dy);
+  if (d > c.radius * (PARKED_EXIT_R - 0.5)) return;
+  const kind = isCometSceneKind(c.parked.kind) ? c.parked.kind : COMET_SCENE_DEFAULT;
+  const star = sim.planets.find((p) => p.kind === "star");
+  const sun = { x: (star?.x ?? 0) - c.x, y: (star?.y ?? 0) - c.y };
+  const rvx = sim.ship.vx - c.vx;
+  const rvy = sim.ship.vy - c.vy;
+  enterCometScene(sim, kind, c.parked.seed, { sun });
+  // Come in from where you were, as fast as you were (capped like any approach).
+  const ux = dx / (d || 1);
+  const uy = dy / (d || 1);
+  const sp = Math.hypot(rvx, rvy);
+  const k = sp > COMET_ENTRY_SPEED * 2 ? (COMET_ENTRY_SPEED * 2) / sp : 1;
+  const ship = sim.ship;
+  ship.x = ux * COMET_ENTRY_DIST;
+  ship.y = uy * COMET_ENTRY_DIST;
+  ship.vx = rvx * k;
+  ship.vy = rvy * k;
+  if (sp > 1) ship.yaw = Math.atan2(-ship.vx, -ship.vy);
+  cometCamera(sim, 0);
 }
 
 function stepCometSim(
@@ -898,28 +1074,23 @@ function stepCometSim(
     sim.status = "landed";
     sim.altitude = 0;
     scene.held += dt;
-    applySceneHits(sim, scene, dt);
+    if (!scene.anchored) applySceneHits(sim, scene, dt);
     if (sim.phase !== "landed") {
       decayParticles(sim, dt);
       cometCamera(sim, dt);
       return;
     }
     const vent = ventUnderSite(scene, scene.site);
-    if (vent && !scene.done) {
+    // While the comet slows down you ride it out on the ground; after that it is a comet like any other.
+    if (vent && !scene.anchored && (!scene.done || scene.arrived)) {
       leaveSite(sim, scene, 60 * vent.k);
       noteScene(scene, vent.why);
     } else if (!scene.done && scene.held >= COMET_HOLD_S) {
       scene.done = true;
       scene.doneT = 0;
+      startArrival(scene);
     }
-    if (scene.done) {
-      scene.doneT += dt;
-      if (scene.doneT > 4) {
-        finishCometHold(sim, scene);
-        decayParticles(sim, dt);
-        return;
-      }
-    }
+    if (scene.done) scene.doneT += dt;
     decayParticles(sim, dt);
     cometCamera(sim, dt);
     return;
@@ -993,6 +1164,11 @@ function stepCometSim(
     } else {
       wreckInScene(sim, COMET_CRASH_NUCLEUS);
     }
+  } else if (d > COMET_SCENE_EDGE && scene.arrived) {
+    // In orbit the comet outruns nothing: you fly off into the system around it.
+    leaveArrivedComet(sim, scene);
+    decayParticles(sim, dt);
+    return;
   } else if (d > COMET_SCENE_EDGE) {
     // The comet outruns anything that leaves it: at warp speed that is the usual lost warp.
     const speed = Math.hypot(ship.vx, ship.vy);
@@ -1054,7 +1230,8 @@ function streakSpan(sim: Sim) {
 }
 
 /** Open the new chart and put the ship just off the viewport edge, aimed at the arrival point. */
-function punchWarp(sim: Sim, settle = false) {
+/** Chart the system a warp (or a comet) lands in, and drop everything tied to the old one. */
+function chartNewSystem(sim: Sim) {
   const prefs = simViewPrefs(sim);
   if (sim.campaign) {
     const seed = (Math.random() * 0x100000000) >>> 0;
@@ -1080,6 +1257,10 @@ function punchWarp(sim: Sim, settle = false) {
   clearSpectroChart(sim);
   sim.ntrHold = 0;
   applySimViewPrefs(sim, prefs);
+}
+
+function punchWarp(sim: Sim, settle = false) {
+  chartNewSystem(sim);
   const mag = Math.hypot(sim.transitDirX, sim.transitDirY) || 1;
   const dirx = sim.transitDirX / mag;
   const diry = sim.transitDirY / mag;
@@ -1919,7 +2100,7 @@ export function applyDebugWarp(sim: Sim, search = typeof window !== "undefined" 
 export function takeoff(sim: Sim) {
   if (sim.cometScene) {
     // Once the comet is decelerating the ship stays put for the ride out.
-    if (sim.phase === "landed" && !sim.cometScene.done) leaveSite(sim, sim.cometScene, Math.max(TAKEOFF_SPEED, 25));
+    if (sim.phase === "landed" && (!sim.cometScene.done || sim.cometScene.arrived)) leaveSite(sim, sim.cometScene, Math.max(TAKEOFF_SPEED, 25));
     return;
   }
   if (!sim.landedId) return;
@@ -2158,9 +2339,29 @@ export function stepComet(
   c.y += c.vy * dt;
 }
 
+/**
+ * A parked comet rides a rail around the star, like the planets do: free
+ * gravity lets passing planets pump it off the chart or through a body.
+ */
+function stepParkedComet(sim: Sim, c: Comet, dt: number) {
+  const o = c.parked!;
+  const star = sim.planets.find((p) => p.kind === "star");
+  o.a += o.w * dt;
+  const ca = Math.cos(o.a);
+  const sa = Math.sin(o.a);
+  c.x = (star?.x ?? 0) + ca * o.r;
+  c.y = (star?.y ?? 0) + sa * o.r;
+  c.vx = (star?.vx ?? 0) - sa * o.r * o.w;
+  c.vy = (star?.vy ?? 0) + ca * o.r * o.w;
+}
+
 function stepLiveComet(sim: Sim, dt: number) {
   const c = sim.comet;
   if (!c) return;
+  if (c.parked) {
+    stepParkedComet(sim, c, dt);
+    return;
+  }
   const R = getMinimapWorldR();
   stepComet(c, sim.planets, sim.gravityScale, sim.atmoScale, dt);
   const r1 = Math.hypot(c.x, c.y);
@@ -2818,6 +3019,8 @@ export function stepSim(
   stepSpectro(sim, dt);
   updateMoons(sim, dt);
   stepLiveComet(sim, dt);
+  tryEnterParkedComet(sim);
+  if (sim.cometScene) return;
   invalidateLagrange(sim);
   stepFlares(sim, dt);
   for (const ring of sim.warpRings) ring.age += dt;

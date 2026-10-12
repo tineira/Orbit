@@ -120,6 +120,11 @@ const TRAVEL_RAW = { x: 0.82, y: 0.57 };
 const TRAVEL_M = Math.hypot(TRAVEL_RAW.x, TRAVEL_RAW.y);
 /** The comet's direction of travel on screen: the background stars stream the other way. */
 export const COMET_TRAVEL = { x: TRAVEL_RAW.x / TRAVEL_M, y: TRAVEL_RAW.y / TRAVEL_M };
+/**
+ * After the hold the comet slows near another star: the streaks stop and the
+ * light swings round to the new star, ahead of the comet.
+ */
+export const COMET_ARRIVE_S = 14;
 
 const JET_RANGE = 300;
 const JET_PUSH = 260;
@@ -263,6 +268,20 @@ export type CometScene = {
   /** Hold complete: the comet is decelerating. */
   done: boolean;
   doneT: number;
+  /** Seed the scene was made from, so the same comet can be visited again. */
+  seed: number;
+  /** Unit vector toward the star that lights the nucleus. */
+  sun: { x: number; y: number };
+  /** How fast the comet streaks past the stars: 1 between systems, 0 once it has arrived. */
+  travel: number;
+  /** Streak distance flown so far (the integral of travel). */
+  flown: number;
+  /** Seconds into the slowdown, or -1 before it starts. */
+  arriveT: number;
+  /** In orbit around the new star: the scene opens onto that system. */
+  arrived: boolean;
+  /** Debug (`&landed`): nothing hits or throws the parked ship until it takes off. */
+  anchored?: boolean;
   /** Short notice for the HUD ("VENT UNDER HULL"). */
   msg: string;
   msgT: number;
@@ -274,9 +293,14 @@ export type CometScene = {
   grainAt: number;
 };
 
-export function makeCometScene(kind: CometSceneKind = COMET_SCENE_DEFAULT, seed?: number): CometScene {
+export function makeCometScene(
+  kind: CometSceneKind = COMET_SCENE_DEFAULT,
+  seed?: number,
+  arrived?: { sun: { x: number; y: number } },
+): CometScene {
   const p = { ...COMET_SCENES[kind] };
-  const rng = mulberry32(seed ?? p.seed * 7919);
+  const sceneSeed = seed ?? p.seed * 7919;
+  const rng = mulberry32(sceneSeed);
   const jets: SceneJet[] = [];
   for (let i = 0; i < p.jets; i++) {
     jets.push({
@@ -317,14 +341,51 @@ export function makeCometScene(kind: CometSceneKind = COMET_SCENE_DEFAULT, seed?
     fallClock: 1,
     site: 0,
     held: 0,
-    done: false,
+    done: !!arrived,
     doneT: 0,
+    seed: sceneSeed,
+    sun: arrived ? unit(arrived.sun) : { ...COMET_SUN },
+    travel: arrived ? 0 : 1,
+    flown: 0,
+    arriveT: -1,
+    arrived: !!arrived,
     msg: "",
     msgT: 0,
     glow: 0,
     blast: 0,
     grainAt: -1,
   };
+}
+
+function unit(v: { x: number; y: number }) {
+  const m = Math.hypot(v.x, v.y) || 1;
+  return { x: v.x / m, y: v.y / m };
+}
+
+/** Start the slowdown toward the next star. */
+export function startArrival(scene: CometScene) {
+  if (scene.arriveT < 0 && !scene.arrived) scene.arriveT = 0;
+}
+
+function smooth(e0: number, e1: number, x: number) {
+  const u = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+  return u * u * (3 - 2 * u);
+}
+
+/** Streaks die away, then the light swings from the old sun behind to the new star ahead. */
+function stepArrival(scene: CometScene, dt: number) {
+  if (scene.arriveT < 0 || scene.arrived) return;
+  scene.arriveT += dt;
+  const u = Math.min(1, scene.arriveT / COMET_ARRIVE_S);
+  scene.travel = 1 - smooth(0, 0.7, u);
+  const a0 = Math.atan2(COMET_SUN.y, COMET_SUN.x);
+  const a1 = Math.atan2(COMET_TRAVEL.y, COMET_TRAVEL.x);
+  const a = a0 + angleGap(a1, a0) * smooth(0.3, 1, u);
+  scene.sun = { x: Math.cos(a), y: Math.sin(a) };
+  if (u >= 1) {
+    scene.arrived = true;
+    scene.travel = 0;
+  }
 }
 
 /** Surface radius under a scene point. */
@@ -397,7 +458,7 @@ export function surfacePoint(scene: CometScene, a: number, lift = 0) {
 /** normal · sun for a nucleus-frame angle. > 0 is day. */
 export function sunDot(scene: CometScene, a: number) {
   const w = a + scene.rot;
-  return Math.cos(w) * COMET_SUN.x + Math.sin(w) * COMET_SUN.y;
+  return Math.cos(w) * scene.sun.x + Math.sin(w) * scene.sun.y;
 }
 
 export function siteLit(scene: CometScene, a: number) {
@@ -410,9 +471,10 @@ export function jetLit(scene: CometScene, j: SceneJet) {
 }
 
 /** Inside the shadow column behind the nucleus. */
-export function inUmbra(x: number, y: number, pad = 0.9) {
-  const behind = -(x * COMET_SUN.x + y * COMET_SUN.y);
-  const side = Math.abs(-x * COMET_SUN.y + y * COMET_SUN.x);
+export function inUmbra(scene: CometScene, x: number, y: number, pad = 0.9) {
+  const { sun } = scene;
+  const behind = -(x * sun.x + y * sun.y);
+  const side = Math.abs(-x * sun.y + y * sun.x);
   return behind > 0 && side < NUCLEUS_R * pad;
 }
 
@@ -425,6 +487,8 @@ export function stepCometScene(scene: CometScene, dt: number, reduced = false) {
   const { p, rng } = scene;
   scene.t += dt;
   scene.rot += NUCLEUS_OMEGA * dt;
+  stepArrival(scene, dt);
+  scene.flown += scene.travel * dt;
   if (scene.msgT > 0) scene.msgT = Math.max(0, scene.msgT - dt);
 
   for (const j of scene.jets) {
@@ -475,8 +539,8 @@ export function stepCometScene(scene: CometScene, dt: number, reduced = false) {
 
   const push = SUN_GAS_PUSH * p.sun;
   for (const g of scene.gas) {
-    g.vx -= COMET_SUN.x * push * dt;
-    g.vy -= COMET_SUN.y * push * dt;
+    g.vx -= scene.sun.x * push * dt;
+    g.vy -= scene.sun.y * push * dt;
     if (g.b === 1) {
       const f = 1 - 0.9 * dt;
       g.vx *= f;
@@ -572,7 +636,7 @@ function stepFallback(scene: CometScene, dt: number) {
   scene.fallClock -= dt * p.fallRate;
   if (scene.fallClock > 0) return;
   scene.fallClock += 0.6 + rng() * 0.8;
-  const base = Math.atan2(-COMET_SUN.y, -COMET_SUN.x) + (rng() - 0.5) * 2.4;
+  const base = Math.atan2(-scene.sun.y, -scene.sun.x) + (rng() - 0.5) * 2.4;
   const d0 = 560;
   const sp = 18 + rng() * 26;
   const tang = (rng() - 0.5) * 22;
@@ -793,6 +857,17 @@ function bounceOffHull(
 }
 
 /** A vent or outburst under a landed site throws the ship off. Strength 0 = none. */
+/** How hard the vents could hit a ship parked at `a` if they all fired at once (0 = out of every cone). Debug sites use it. */
+export function siteExposure(scene: CometScene, a: number) {
+  const { x, y } = surfacePoint(scene, a, HULL_CLEAR);
+  let k = 0;
+  for (const j of scene.jets) {
+    if (Math.abs(angleGap(j.a, a)) < 0.16) return Infinity;
+    k = Math.max(k, jetReach(scene, { ...j, on: true, fade: 1 }, x, y));
+  }
+  return k;
+}
+
 export function ventUnderSite(scene: CometScene, site: number): { why: string; k: number } | null {
   if (nearCave(scene, site)) return null;
   // Any vent whose blast reaches the hull lifts it, so a parked ship is never ground down in place.

@@ -221,6 +221,9 @@ export type Comet = {
   radius: number;
   /** Felt by nothing. Present so a later minigame can land. */
   mass: number;
+  /** A comet that rode in and stays in orbit: fly close and you are back in its scene. */
+  /** On a rail around the system's star: orbit radius, angle and angular speed (rad/s). */
+  parked?: { kind: string; seed: number; r: number; a: number; w: number };
 };
 
 export type LostCopy = {

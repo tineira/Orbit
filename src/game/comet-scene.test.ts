@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   COMET_CRASH_NUCLEUS,
   COMET_CRASH_ROCKS,
+  COMET_ARRIVE_S,
   COMET_HOLD_S,
   COMET_SCENE_EDGE,
   COMET_SUN,
@@ -21,6 +22,7 @@ import {
   makeCometScene,
   sceneAccel,
   sceneRockHits,
+  startArrival,
   stepCometScene,
   sunDot,
   surfacePoint,
@@ -28,7 +30,7 @@ import {
   type CometScene,
 } from "./comet-scene.ts";
 import { HULL_MAX } from "./hull.ts";
-import { applyDebugComet, createSim, enterCometScene, enterWarp, hullSafeKind, stepSim, takeoff } from "./sim.ts";
+import { applyDebugComet, createSim, enterCometScene, enterWarp, gravityAt, hullSafeKind, stepSim, takeoff } from "./sim.ts";
 import { createSystem, LAND_SPEED, SHIP_HULL, STEP, WARP_JUMP_SPEED } from "./world.ts";
 
 const idle = { steer: 0, forward: false, reverse: false, aimYaw: null, aimThrust: false };
@@ -285,10 +287,15 @@ test("taking off starts the hold over, a vent under the hull throws you off and 
   for (let i = 0; i < 10; i++) stepSim(sim, STEP, idle);
   assert.ok(scene.done);
   takeoff(sim);
-  assert.equal(sim.phase, "landed", "no takeoff once the comet is decelerating");
-  for (let i = 0; i < 60 * 5 && sim.cometScene; i++) stepSim(sim, STEP, idle);
-  assert.equal(sim.cometScene, null, "the comet lets you go");
-  assert.equal(sim.phase, "transit");
+  assert.equal(sim.phase, "landed", "no takeoff while the comet is decelerating");
+  for (let i = 0; i < 60 * (COMET_ARRIVE_S + 1); i++) stepSim(sim, STEP, idle);
+  assert.ok(sim.cometScene, "the comet does not vanish: you stay on it");
+  assert.equal(scene.arrived, true);
+  assert.equal(scene.travel, 0, "the stars stop streaming");
+  assert.ok(Math.hypot(scene.sun.x - COMET_TRAVEL.x, scene.sun.y - COMET_TRAVEL.y) < 1e-6, "the new star is ahead");
+  assert.equal(sim.phase, "landed");
+  takeoff(sim);
+  assert.equal(sim.phase, "flight", "in orbit you take off when you want");
 });
 
 test("leaving the edge at warp speed is the usual lost warp, and the scene closes", () => {
@@ -326,15 +333,94 @@ test("drifting past the edge slowly is lost too; reaching warp speed inside the 
   assert.notEqual(fast.phase, "transit");
 });
 
-test("the hold exit leaves the scene camera behind", () => {
+/** A scene whose comet has ridden into the next system, with the ship just inside the edge going out. */
+function arrivedSim() {
   const sim = sceneSim();
   const scene = sim.cometScene!;
-  hover(sim, 1, 5);
-  for (let i = 0; i < 30 && sim.phase === "flight"; i++) stepSim(sim, STEP, idle);
-  scene.held = COMET_HOLD_S;
-  for (let i = 0; i < 60 * 5 && sim.cometScene; i++) stepSim(sim, STEP, idle);
+  scene.done = true;
+  startArrival(scene);
+  for (let i = 0; i < 60 * (COMET_ARRIVE_S + 1); i++) stepCometScene(scene, STEP);
+  assert.equal(scene.arrived, true);
+  sim.phase = "flight";
+  sim.ship.x = COMET_SCENE_EDGE + 1;
+  sim.ship.y = 0;
+  sim.ship.vx = 40;
+  sim.ship.vy = 0;
+  return sim;
+}
+
+test("leaving a comet in orbit flies into the new system, with the comet left there", () => {
+  const sim = arrivedSim();
+  const before = sim.planets;
+  stepSim(sim, STEP, idle);
   assert.equal(sim.cometScene, null);
-  assert.ok(Math.hypot(sim.camera.x, sim.camera.y) > 1000, "camera follows the ship out");
+  assert.equal(sim.phase, "flight", "no lost warp: the comet is not running anymore");
+  assert.notEqual(sim.planets, before, "a new system");
+  const c = sim.comet!;
+  assert.ok(c?.parked, "the comet stays in the system");
+  const star = sim.planets.find((p) => p.kind === "star")!;
+  const r = Math.hypot(c.x - star.x, c.y - star.y);
+  // The star lies ahead of the comet, along its travel.
+  assert.ok(((star.x - c.x) * COMET_TRAVEL.x + (star.y - c.y) * COMET_TRAVEL.y) / r > 0.99);
+  const v = Math.hypot(c.vx - star.vx, c.vy - star.vy);
+  const g = gravityAt(c.x, c.y, sim.planets, sim.gravityScale);
+  assert.ok(Math.abs(v - Math.sqrt(Math.hypot(g.ax, g.ay) * r)) < 1e-6 * v + 1e-6, "a circular orbit");
+  assert.ok(Math.hypot(sim.ship.x - c.x, sim.ship.y - c.y) > c.radius * 4, "the ship starts clear of it");
+  assert.ok(Math.hypot(sim.camera.x - sim.ship.x, sim.camera.y - sim.ship.y) < 1, "camera follows the ship out");
+
+  // One more tick on the rail keeps the velocity the ship inherited.
+  const v0 = { x: c.vx, y: c.vy };
+  stepSim(sim, STEP, idle);
+  assert.ok(Math.hypot(c.vx - v0.x, c.vy - v0.y) < 0.01 * Math.hypot(v0.x, v0.y) + 0.01, "the rail moves the way it was launched");
+
+  // It keeps orbiting, and stays on the chart.
+  for (let i = 0; i < 60 * 30; i++) stepSim(sim, STEP, idle);
+  assert.ok(sim.comet?.parked);
+});
+
+test("a parked comet stays on its orbit for good, whatever the planets do", () => {
+  for (let run = 1; run <= 12; run++) {
+    const sim = arrivedSim();
+    stepSim(sim, STEP, idle);
+    const c = sim.comet!;
+    const r0 = c.parked!.r;
+    // Park the ship far off so it neither re-enters nor crashes into anything.
+    for (let i = 0; i < 60 * 60 * 10; i++) {
+      Object.assign(sim.ship, { x: 1e7, y: 1e7, vx: 0, vy: 0 });
+      stepSim(sim, STEP, idle);
+    }
+    assert.equal(sim.comet, c, `run ${run}: still on the chart`);
+    const star = sim.planets.find((p) => p.kind === "star")!;
+    assert.ok(Math.abs(Math.hypot(c.x - star.x, c.y - star.y) - r0) < 1e-6 * r0, `run ${run}: same radius`);
+  }
+});
+
+test("flying back to a parked comet lands you in its scene again, in orbit", () => {
+  const sim = arrivedSim();
+  stepSim(sim, STEP, idle);
+  const c = sim.comet!;
+  const planets = sim.planets;
+  sim.ship.x = c.x + c.radius * 3;
+  sim.ship.y = c.y;
+  sim.ship.vx = c.vx - 20;
+  sim.ship.vy = c.vy;
+  stepSim(sim, STEP, idle);
+  const scene = sim.cometScene!;
+  assert.ok(scene, "back on the comet");
+  assert.equal(scene.arrived, true);
+  assert.equal(scene.travel, 0);
+  assert.ok(sim.ship.x > 0, "you come in from the side you were on");
+  assert.ok(sim.ship.vx < 0);
+  assert.equal(sim.comet, c, "the chart keeps its comet");
+
+  sim.ship.x = COMET_SCENE_EDGE + 1;
+  sim.ship.y = 0;
+  sim.ship.vx = 40;
+  sim.ship.vy = 0;
+  stepSim(sim, STEP, idle);
+  assert.equal(sim.cometScene, null);
+  assert.equal(sim.planets, planets, "the same system as before, not a new one");
+  assert.equal(sim.comet, c);
 });
 
 test("slow jet rocks arc back to the nucleus", () => {
@@ -403,6 +489,27 @@ test("?comet starts on a Lumen drive with a full tank", () => {
   assert.equal(sim.ship.engineKind, "lumen");
   assert.equal(sim.ship.fuelKind, "lumen");
   assert.equal(sim.ship.fuel, sim.ship.fuelCapacity);
+});
+
+test("?comet&landed sets you down on the day side, and &hold skips most of the wait", () => {
+  for (const kind of ["perihelion", "inbound", "marked"]) {
+    createSystem(1);
+    const sim = createSim();
+    sim.viewCssW = 1280;
+    sim.viewCssH = 800;
+    applyDebugComet(sim, `?comet=${kind}&landed&hold=110`);
+    const scene = sim.cometScene!;
+    assert.equal(sim.phase, "landed", kind);
+    assert.ok(siteLit(scene, scene.site), `${kind}: day side, out of a cave`);
+    assert.ok(scene.held >= 110, kind);
+    for (let i = 0; i < 60 * 11; i++) stepSim(sim, STEP, idle);
+    assert.ok(scene.done, `${kind}: the hold completes, whatever the vents and rocks do`);
+    assert.equal(sim.phase, "landed");
+    for (let i = 0; i < 60 * (COMET_ARRIVE_S + 1); i++) stepSim(sim, STEP, idle);
+    takeoff(sim);
+    assert.equal(sim.phase, "flight");
+    assert.equal(scene.anchored, false, "after takeoff it is the usual comet");
+  }
 });
 
 test("a vent beside a landed ship lifts it instead of grinding the hull down in place", () => {
