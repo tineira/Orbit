@@ -7,6 +7,7 @@ import {
   NUCLEUS_GRAV_K,
   NUCLEUS_LOBES,
   NUCLEUS_R,
+  IMPACT_LIFE_S,
   inUmbra,
   caveFloorR,
   inCave,
@@ -540,6 +541,43 @@ function drawRocks(ctx: Draw, sim: Sim, scene: CometScene) {
   }
 }
 
+/** A rock landing on the nucleus: a dust puff that rises and thins, and grit thrown out. */
+function drawImpacts(ctx: Draw, scene: CometScene) {
+  for (const im of scene.impacts) {
+    const u = im.t / IMPACT_LIFE_S;
+    const dark = inUmbra(im.x, im.y);
+    const tone = dark ? "52,52,56" : "158,151,142";
+    const tx = -im.ny;
+    const ty = im.nx;
+    // Dust: lifts off the surface and spreads.
+    const lift = im.r * (0.6 + u * 3.2);
+    const px = im.x + im.nx * lift;
+    const py = im.y + im.ny * lift;
+    const R = im.r * (1.3 + u * 4.5);
+    const a = (dark ? 0.3 : 0.55) * (1 - u) * (1 - u);
+    const g = ctx.createRadialGradient(px, py, 0, px, py, R);
+    g.addColorStop(0, `rgba(${tone},${a})`);
+    g.addColorStop(0.6, `rgba(${tone},${a * 0.45})`);
+    g.addColorStop(1, `rgba(${tone},0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(px - R, py - R, R * 2, R * 2);
+    // Grit: a few chips thrown out in a fan, falling back as they fade.
+    ctx.fillStyle = `rgba(${tone},${(dark ? 0.5 : 0.85) * (1 - u)})`;
+    const n = 5 + Math.round(im.r);
+    for (let i = 0; i < n; i++) {
+      const h = sceneHash(im.k * 5.1 + i * 3.3);
+      const s = (h - 0.5) * 2.2;
+      const sp = im.r * (4 + sceneHash(im.k + i * 1.9) * 7);
+      const out = Math.cos(s) * sp * im.t - 0.5 * 40 * im.t * im.t;
+      const side = Math.sin(s) * sp * im.t;
+      const gx = im.x + im.nx * Math.max(0, out) + tx * side;
+      const gy = im.y + im.ny * Math.max(0, out) + ty * side;
+      const z = 0.6 + h * 0.9;
+      ctx.fillRect(gx - z / 2, gy - z / 2, z, z);
+    }
+  }
+}
+
 function drawPlumeOnGround(ctx: Draw, sim: Sim, scene: CometScene) {
   if (scene.glow <= 0.02 || sim.phase !== "flight") return;
   const nuc = nucleus;
@@ -673,6 +711,7 @@ export function drawCometScene(
   drawNucleus(ctx, scene);
   drawPlumeOnGround(ctx, sim, scene);
   drawRocks(ctx, sim, scene);
+  drawImpacts(ctx, scene);
   drawBursts(ctx, scene);
   drawTrajectory(ctx, sim, scene, zoom);
   hooks.drawParticles(ctx);

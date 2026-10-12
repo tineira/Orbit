@@ -130,6 +130,16 @@ const BURST_PUSH_S = 0.8;
 const BURST_LIFE_S = 6;
 const GAS_CAP = 2400;
 const ROCK_BOUND = 760;
+export const IMPACT_LIFE_S = 1.2;
+const IMPACT_CAP = 40;
+/** How much of its closing speed a rock keeps when it bounces off the hull. */
+const ROCK_BOUNCE = 0.55;
+/** A rock at least this big, hitting at least this hard, breaks into pieces. */
+const ROCK_SPLIT_R = 6;
+const ROCK_SPLIT_V = 40;
+/** Slower than this, a rock on the hull crumbles instead of bouncing (so one cannot rest on a parked ship). */
+const ROCK_SETTLE_V = 8;
+const ROCK_MAX_HITS = 2;
 /** Hielo look: crystals per jet per tick, speed and life factors, spread. */
 const GAS_PER_TICK = 9;
 const GAS_SPEED = 0.75;
@@ -210,7 +220,14 @@ export type SceneRock = {
   fall?: boolean;
   burst?: boolean;
   dead?: boolean;
+  /** Seconds before it can strike the hull again, after bouncing off it. */
+  hitT?: number;
+  /** Times it has bounced off the hull. */
+  hits?: number;
 };
+
+/** Where a rock struck the nucleus: a puff of dust and a spray of grit. Draw only. */
+export type SceneImpact = { x: number; y: number; nx: number; ny: number; r: number; t: number; k: number };
 
 export type SceneGas = {
   x: number;
@@ -236,6 +253,7 @@ export type CometScene = {
   rocks: SceneRock[];
   gas: SceneGas[];
   bursts: SceneBurst[];
+  impacts: SceneImpact[];
   burstClock: number;
   fallClock: number;
   /** Landing site, nucleus frame. Set on touchdown. */
@@ -294,6 +312,7 @@ export function makeCometScene(kind: CometSceneKind = COMET_SCENE_DEFAULT, seed?
     rocks: [],
     gas: [],
     bursts: [],
+    impacts: [],
     burstClock: 1.5,
     fallClock: 1,
     site: 0,
@@ -477,7 +496,11 @@ export function stepCometScene(scene: CometScene, dt: number, reduced = false) {
     r.vx -= (r.x / d) * g * dt;
     r.vy -= (r.y / d) * g * dt;
     // A rock leaves from the surface; it only lands again once it is heading back in.
-    if (r.x * r.vx + r.y * r.vy < 0 && d < nucleusRadiusAt(Math.atan2(r.y, r.x) - scene.rot) + r.r * 0.4) r.dead = true;
+    if (r.x * r.vx + r.y * r.vy < 0 && d < nucleusRadiusAt(Math.atan2(r.y, r.x) - scene.rot) + r.r * 0.4) {
+      r.dead = true;
+      scene.impacts.push({ x: r.x, y: r.y, nx: r.x / d, ny: r.y / d, r: r.r, t: 0, k: r.k });
+    }
+    if (r.hitT) r.hitT = Math.max(0, r.hitT - dt);
     r.x += r.vx * dt;
     r.y += r.vy * dt;
     r.spin += r.w * dt;
@@ -485,6 +508,9 @@ export function stepCometScene(scene: CometScene, dt: number, reduced = false) {
   scene.rocks = scene.rocks.filter(
     (r) => !r.dead && Math.abs(r.x) < ROCK_BOUND && Math.abs(r.y) < ROCK_BOUND,
   );
+  for (const im of scene.impacts) im.t += dt;
+  scene.impacts = scene.impacts.filter((im) => im.t < IMPACT_LIFE_S);
+  if (scene.impacts.length > IMPACT_CAP) scene.impacts.splice(0, scene.impacts.length - IMPACT_CAP);
 }
 
 /** Outbursts: a day-side spot blows. It always warns first, then throws a wide fan of gas and rocks. */
@@ -677,7 +703,8 @@ export function relativeToSurface(x: number, y: number, vx: number, vy: number) 
 
 /**
  * Rocks touching the hull. Same rule as a belt: below 10 closing it is grit,
- * a small rock is a chip, a big one a pebble. Each rock hits once and breaks.
+ * a small rock is a chip, a big one a pebble. The rock bounces off: a graze
+ * bends its path, a head-on hit sends it back. A big rock hit hard breaks.
  */
 export function sceneRockHits(
   scene: CometScene,
@@ -685,16 +712,17 @@ export function sceneRockHits(
   hullR: number,
 ): BeltTick[] {
   const ticks: BeltTick[] = [];
+  const pieces: SceneRock[] = [];
   for (const r of scene.rocks) {
-    if (r.dead) continue;
+    if (r.dead || r.hitT) continue;
     const dx = r.x - ship.x;
     const dy = r.y - ship.y;
     const d = Math.hypot(dx, dy);
     if (d > r.r + hullR) continue;
-    r.dead = true;
     const nx = dx / (d || 1);
     const ny = dy / (d || 1);
     const closing = Math.max(0, (ship.vx - r.vx) * nx + (ship.vy - r.vy) * ny);
+    bounceOffHull(r, ship, nx, ny, closing, hullR, pieces);
     const kind: BeltTickKind = r.r < 5 ? "chip" : "pebble";
     const sz = r.r * 1.4;
     const bright = Math.max(0, Math.min(1, (closing - 10) / 48));
@@ -708,8 +736,60 @@ export function sceneRockHits(
       damage: hullDamage(kind, sz, closing),
     });
   }
-  if (ticks.length) scene.rocks = scene.rocks.filter((r) => !r.dead);
+  if (ticks.length) scene.rocks = scene.rocks.filter((r) => !r.dead).concat(pieces);
   return ticks;
+}
+
+/** Send a rock off the hull: reflect it in the ship's frame, or break a big one hit hard. */
+function bounceOffHull(
+  r: SceneRock,
+  ship: { x: number; y: number; vx: number; vy: number },
+  nx: number,
+  ny: number,
+  closing: number,
+  hullR: number,
+  pieces: SceneRock[],
+) {
+  const rvx = r.vx - ship.vx + nx * closing * (1 + ROCK_BOUNCE);
+  const rvy = r.vy - ship.vy + ny * closing * (1 + ROCK_BOUNCE);
+  const ox = ship.x + nx * (r.r + hullR + 0.5);
+  const oy = ship.y + ny * (r.r + hullR + 0.5);
+  r.hits = (r.hits ?? 0) + 1;
+  if (closing < ROCK_SETTLE_V || r.hits > ROCK_MAX_HITS) {
+    r.dead = true;
+    return;
+  }
+  if (r.r < ROCK_SPLIT_R || closing < ROCK_SPLIT_V) {
+    r.x = ox;
+    r.y = oy;
+    r.vx = ship.vx + rvx;
+    r.vy = ship.vy + rvy;
+    r.w += (sceneHash(r.k * 1.7) - 0.5) * 6;
+    r.hitT = 0.3;
+    return;
+  }
+  r.dead = true;
+  const n = closing > 90 ? 4 : 3;
+  for (let i = 0; i < n; i++) {
+    const h = sceneHash(r.k * 3.1 + i * 7.7);
+    const turn = ((i + 0.5) / n - 0.5) * 1.6 + (h - 0.5) * 0.3;
+    const c = Math.cos(turn);
+    const sn = Math.sin(turn);
+    const sp = 0.8 + sceneHash(r.k + i * 2.3) * 0.5;
+    pieces.push({
+      x: ox + (c * nx - sn * ny) * r.r * 0.4,
+      y: oy + (sn * nx + c * ny) * r.r * 0.4,
+      vx: ship.vx + (rvx * c - rvy * sn) * sp,
+      vy: ship.vy + (rvx * sn + rvy * c) * sp,
+      r: r.r * (0.42 + h * 0.18),
+      spin: r.spin + i,
+      w: (h - 0.5) * 8,
+      k: r.k * 4 + i + 1,
+      burst: r.burst,
+      fall: r.fall,
+      hitT: 0.3,
+    });
+  }
 }
 
 /** A vent or outburst under a landed site throws the ship off. Strength 0 = none. */

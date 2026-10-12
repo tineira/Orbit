@@ -112,13 +112,79 @@ test("rocks follow the belt rule: grit is free, a pebble hurts, a full hull surv
   const grit = sceneRockHits(scene, ship, SHIP_HULL);
   assert.equal(grit.length, 1);
   assert.equal(grit[0]!.damage, 0);
-  assert.equal(scene.rocks.length, 0, "a rock breaks on the hull");
+  assert.equal(scene.rocks.length, 0, "a rock this slow crumbles on the hull");
 
   scene.rocks.push({ x: 0, y: 300 + SHIP_HULL, vx: 0, vy: -150, r: 8, spin: 0, w: 0, k: 2 });
   const pebble = sceneRockHits(scene, ship, SHIP_HULL);
   assert.equal(pebble[0]!.kind, "pebble");
   assert.ok(pebble[0]!.damage >= 6 && pebble[0]!.damage <= 18, `damage ${pebble[0]!.damage}`);
   assert.ok(HULL_MAX - pebble[0]!.damage > 0);
+});
+
+const ROCK_TEST_MAX_TICKS = 3;
+
+test("rocks bounce off the hull: a graze bends the path, a head-on hit sends it back, once", () => {
+  const scene = quiet(makeCometScene("inbound", 1));
+  const ship = { x: 0, y: 300, vx: 0, vy: 0 };
+  // Head-on, straight down onto the hull.
+  scene.rocks.push({ x: 0, y: 300 + SHIP_HULL + 2, vx: 0, vy: -30, r: 4, spin: 0, w: 0, k: 1 });
+  assert.equal(sceneRockHits(scene, ship, SHIP_HULL).length, 1);
+  const back = scene.rocks[0]!;
+  const turn = Math.acos((back.vx * 0 + back.vy * -30) / (Math.hypot(back.vx, back.vy) * 30));
+  assert.ok(turn > (160 * Math.PI) / 180, `head-on turned ${(turn * 180) / Math.PI} deg`);
+  assert.ok(back.vy > 0, "heading away");
+  assert.equal(sceneRockHits(scene, ship, SHIP_HULL).length, 0, "it hits once, not every frame");
+
+  // A graze: moving sideways past the edge of the hull.
+  scene.rocks = [{ x: -1, y: 300 + SHIP_HULL + 3.6, vx: 40, vy: -12, r: 4, spin: 0, w: 0, k: 2 }];
+  assert.equal(sceneRockHits(scene, ship, SHIP_HULL).length, 1);
+  const g = scene.rocks[0]!;
+  const bend = Math.acos((g.vx * 40 + g.vy * -12) / (Math.hypot(g.vx, g.vy) * Math.hypot(40, 12)));
+  assert.ok(bend > 0 && bend < Math.PI / 4, `a graze bent it ${(bend * 180) / Math.PI} deg`);
+});
+
+test("a rock falling on a parked ship bounces a little, then stops ticking", () => {
+  const sim = sceneSim();
+  const scene = quiet(sim.cometScene!);
+  sim.ship.x = 0;
+  sim.ship.y = 130;
+  sim.ship.vx = 0;
+  sim.ship.vy = 0;
+  scene.rocks.push({ x: 0, y: 130 + SHIP_HULL + 30, vx: 0, vy: -40, r: 4, spin: 0, w: 0, k: 9 });
+  let ticks = 0;
+  for (let i = 0; i < 60 * 6; i++) {
+    ticks += sceneRockHits(scene, sim.ship, SHIP_HULL).length;
+    stepCometScene(scene, STEP);
+  }
+  assert.ok(ticks >= 1 && ticks <= ROCK_TEST_MAX_TICKS, `${ticks} hits`);
+});
+
+test("a big rock hit hard breaks into smaller pieces that fly off", () => {
+  const scene = quiet(makeCometScene("inbound", 1));
+  const ship = { x: 0, y: 300, vx: 0, vy: 0 };
+  scene.rocks.push({ x: 0, y: 300 + SHIP_HULL + 4, vx: 0, vy: -120, r: 9, spin: 0, w: 0, k: 7 });
+  sceneRockHits(scene, ship, SHIP_HULL);
+  assert.ok(scene.rocks.length >= 3, `${scene.rocks.length} pieces`);
+  for (const r of scene.rocks) {
+    assert.ok(r.r < 9 * 0.65, "each piece is smaller");
+    assert.ok(Math.hypot(r.x - ship.x, r.y - ship.y) > r.r + SHIP_HULL, "clear of the hull");
+    assert.ok((r.x - ship.x) * r.vx + (r.y - ship.y) * r.vy > 0, "flying away from the ship");
+  }
+  // A small or slow rock does not break.
+  scene.rocks = [{ x: 0, y: 300 + SHIP_HULL + 4, vx: 0, vy: -20, r: 9, spin: 0, w: 0, k: 8 }];
+  sceneRockHits(scene, ship, SHIP_HULL);
+  assert.equal(scene.rocks.length, 1);
+});
+
+test("a rock landing on the nucleus leaves an impact that fades", () => {
+  const scene = quiet(makeCometScene("inbound", 1));
+  const pt = surfacePoint(scene, 0.5);
+  scene.rocks.push({ x: pt.x + Math.cos(pt.w) * 6, y: pt.y + Math.sin(pt.w) * 6, vx: -Math.cos(pt.w) * 40, vy: -Math.sin(pt.w) * 40, r: 5, spin: 0, w: 0, k: 1 });
+  for (let i = 0; i < 30 && scene.rocks.length; i++) stepCometScene(scene, STEP);
+  assert.equal(scene.rocks.length, 0);
+  assert.equal(scene.impacts.length, 1, "the hit shows");
+  for (let i = 0; i < 120; i++) stepCometScene(scene, STEP);
+  assert.equal(scene.impacts.length, 0, "and clears");
 });
 
 test("a rock strike drains the hull and only an empty hull is a crash", () => {
