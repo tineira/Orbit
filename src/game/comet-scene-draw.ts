@@ -81,6 +81,10 @@ type Nucleus = {
   nz: Float32Array;
   alb: Float32Array;
   mask: Uint8Array;
+  /** How much engine light each texel returns (alpha): dark rock and the cave take little. */
+  bounce: HTMLCanvasElement;
+  /** Scratch layer the engine light is painted on, in texel space. */
+  plume: HTMLCanvasElement;
 };
 let nucleus: Nucleus | null = null;
 let nucleusCave: CometCave | undefined;
@@ -119,6 +123,8 @@ function buildNucleus(cave?: CometCave): Nucleus {
   const H = new Float32Array(n * n);
   const mask = new Uint8Array(n * n);
   const alb = new Float32Array(n * n);
+  const roof = new Float32Array(n * n);
+  const lit = new Float32Array(n * n);
   const pits = Array.from({ length: 9 }, (_, i) => ({
     x: (sceneHash(i * 4.1) - 0.5) * 150,
     y: (sceneHash(i * 6.7) - 0.5) * 100,
@@ -134,6 +140,7 @@ function buildNucleus(cave?: CometCave): Nucleus {
       if (rr >= edge) continue;
       mask[k] = 1;
       const shade = caveShade(cave, x, y, rr);
+      roof[k] = shade;
       let h = 0;
       for (const L of NUCLEUS_LOBES) {
         const d = Math.hypot(x - L.x, y - L.y) / L.r;
@@ -151,7 +158,11 @@ function buildNucleus(cave?: CometCave): Nucleus {
       // The roof over the cave sags a little.
       H[k] = h - shade * 5;
       // Charcoal albedo, with rare ice glints; the cave roof is darker and never glints.
-      alb[k] = (0.75 + vnoise(x / 14 + 9, y / 14) * 0.35) * (1 - shade * 0.42) + (shade < 0.1 && sceneHash(k * 0.37) < 0.004 ? 1.6 : 0);
+      // The mouth: a ragged near-black gap where the shaft breaks the surface.
+      const mouth = shade > 0.4 && edge - rr < 10 + (vnoise(x / 4, y / 4) - 0.5) * 8 ? (shade - 0.4) / 0.6 : 0;
+      const rock = 0.75 + vnoise(x / 14 + 9, y / 14) * 0.35;
+      lit[k] = rock;
+      alb[k] = rock * (1 - shade * 0.8) * (1 - mouth * 0.85) + (shade < 0.1 && sceneHash(k * 0.37) < 0.004 ? 1.6 : 0);
     }
   }
   const nx = new Float32Array(n * n);
@@ -174,7 +185,23 @@ function buildNucleus(cave?: CometCave): Nucleus {
   cv.width = n;
   cv.height = n;
   const img = cv.getContext("2d")!.createImageData(n, n);
-  return { n, ext, cv, cx: cv.getContext("2d")!, img, nx, ny, nz, alb, mask, litRot: NaN, litSun: NaN };
+  const bounce = document.createElement("canvas");
+  bounce.width = n;
+  bounce.height = n;
+  const bc = bounce.getContext("2d")!;
+  const bi = bc.createImageData(n, n);
+  for (let k = 0; k < n * n; k++) {
+    if (!mask[k]) continue;
+    const o = k * 4;
+    bi.data[o] = bi.data[o + 1] = bi.data[o + 2] = 255;
+    // Under the roof the plume still reaches the floor, but dimmer than the open rock.
+    bi.data[o + 3] = 255 * Math.min(1, lit[k]! / 1.1) * (1 - roof[k]! * 0.55);
+  }
+  bc.putImageData(bi, 0, 0);
+  const plume = document.createElement("canvas");
+  plume.width = n;
+  plume.height = n;
+  return { n, ext, cv, cx: cv.getContext("2d")!, img, nx, ny, nz, alb, mask, bounce, plume, litRot: NaN, litSun: NaN };
 }
 
 function drawNucleus(ctx: Draw, scene: CometScene) {
@@ -225,20 +252,6 @@ function relightNucleus(nuc: Nucleus, scene: CometScene) {
     d[o + 3] = 255;
   }
   nuc.cx.putImageData(img, 0, 0);
-}
-
-function nucleusPath(ctx: Draw, scene: CometScene) {
-  ctx.beginPath();
-  const n = 72;
-  for (let i = 0; i <= n; i++) {
-    const a = (i / n) * TAU;
-    const r = nucleusRadiusAt(a);
-    const x = Math.cos(a + scene.rot) * r;
-    const y = Math.sin(a + scene.rot) * r;
-    if (i) ctx.lineTo(x, y);
-    else ctx.moveTo(x, y);
-  }
-  ctx.closePath();
 }
 
 // ---- glare, coma, dust tail and umbra: fixed on screen, painted once ----
@@ -489,18 +502,35 @@ function drawRocks(ctx: Draw, sim: Sim, scene: CometScene) {
 
 function drawPlumeOnGround(ctx: Draw, sim: Sim, scene: CometScene) {
   if (scene.glow <= 0.02 || sim.phase !== "flight") return;
+  const nuc = nucleus;
+  if (!nuc) return;
   const e = exhaust(sim);
   const R = 140;
-  ctx.save();
-  nucleusPath(ctx, scene);
-  ctx.clip();
-  ctx.globalCompositeOperation = "lighter";
-  const g = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, R);
+  // Paint the light in the nucleus frame, then keep only what the rock sends back.
+  const c = Math.cos(-scene.rot);
+  const sn = Math.sin(-scene.rot);
+  const ex = e.x * c - e.y * sn;
+  const ey = e.x * sn + e.y * c;
+  const pc = nuc.plume.getContext("2d")!;
+  const k = nuc.n / (nuc.ext * 2);
+  pc.setTransform(1, 0, 0, 1, 0, 0);
+  pc.globalCompositeOperation = "source-over";
+  pc.clearRect(0, 0, nuc.n, nuc.n);
+  pc.setTransform(k, 0, 0, k, nuc.ext * k, nuc.ext * k);
+  const g = pc.createRadialGradient(ex, ey, 0, ex, ey, R);
   g.addColorStop(0, `rgba(255,170,105,${0.34 * scene.glow})`);
   g.addColorStop(0.5, `rgba(255,150,90,${0.12 * scene.glow})`);
   g.addColorStop(1, "rgba(255,150,90,0)");
-  ctx.fillStyle = g;
-  ctx.fillRect(e.x - R, e.y - R, R * 2, R * 2);
+  pc.fillStyle = g;
+  pc.fillRect(ex - R, ey - R, R * 2, R * 2);
+  pc.setTransform(1, 0, 0, 1, 0, 0);
+  pc.globalCompositeOperation = "destination-in";
+  pc.drawImage(nuc.bounce, 0, 0);
+  ctx.save();
+  ctx.rotate(scene.rot);
+  ctx.globalCompositeOperation = "lighter";
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(nuc.plume, -nuc.ext, -nuc.ext, nuc.ext * 2, nuc.ext * 2);
   ctx.restore();
 }
 
@@ -617,6 +647,12 @@ export function drawCometScene(
   const want = inUmbra(sim.ship.x, sim.ship.y, 0.95) || inCave(scene, sim.ship.x, sim.ship.y) ? 1 : 0;
   shipDark += (want - shipDark) * Math.min(1, dt * 4);
   if (!covered) hooks.drawShip(ctx, shipDark * 0.82);
+  else {
+    // A dim shape still shows through the mouth, so you can find your ship.
+    ctx.globalAlpha = 0.6;
+    hooks.drawShip(ctx, 0.9);
+    ctx.globalAlpha = 1;
+  }
   ctx.restore();
 
   const v = ctx.createRadialGradient(cssW / 2, cssH / 2, Math.min(cssW, cssH) * 0.3, cssW / 2, cssH / 2, Math.max(cssW, cssH) * 0.72);
