@@ -1264,7 +1264,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     if (sim.phase === "transit" && prevPhase !== "transit") {
       audio.warpJump();
     }
-    if (sim.cometEntered && !prevCometEntered) audio.cometEnter();
+    // The arrival chime is for a comet crossing in; one you rode here does not announce itself.
+    if (sim.cometEntered && !prevCometEntered && !sim.comet?.parked) audio.cometEnter();
     prevCometEntered = sim.cometEntered;
     prevPunched = sim.transitPunched;
     if (sim.transitBoomed && !prevBoomed) audio.sonicBooms();

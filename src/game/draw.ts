@@ -20,6 +20,7 @@ import {
   flareApexNow,
   sinkAlpha,
   spectroFocus,
+  cometBlendWeight,
 } from "./sim";
 import { bodyPeaks, MZ_MAX, SCAN_SECONDS, SUBSTANCES, type SpectrumPeak } from "./matter";
 import {
@@ -54,7 +55,7 @@ import {
 } from "./world";
 import { asteroidWorldPath, surfaceRadius } from "./asteroid";
 import { COMET_RED, warpHeadings } from "./comet";
-import { drawCometScene } from "./comet-scene-draw";
+import { COMET_ORBIT_VIGNETTE, drawCometScene } from "./comet-scene-draw";
 import { drawChartComet, drawChartCometMark, drawChartCometPath } from "./comet-chart-draw";
 import {
   asteroidMine,
@@ -153,6 +154,9 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
     drawCometScene(ctx, sim, sim.cometScene, { cssW, cssH, dpr, shakeX, shakeY }, {
       drawShip: (c, umbra) => drawShip(c, sim, umbra, dpr),
       drawParticles: (c) => drawParticles(c, sim.particles),
+      drawSky: sim.showGravityGrid
+        ? undefined
+        : (c, alpha) => drawStars(c, cam, cssW, cssH, shakeX, shakeY, sim, alpha),
     });
     const halley = opts.halley;
     if (halley && (halley.on || now - halley.offAt < HALLEY_OFF_ANIM_MS)) {
@@ -207,7 +211,10 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   drawShipLockBars(ctx, sim, cam);
 
   ctx.restore();
-  drawVignette(ctx, cssW, cssH);
+  // Near a parked comet the chart vignette becomes the scene's, so the crossing does not shift.
+  const orbitW = cometBlendWeight(sim);
+  drawVignette(ctx, cssW, cssH, 1 - orbitW);
+  drawCometOrbitVignette(ctx, cssW, cssH, orbitW);
   drawArrivalFlash(ctx, sim, cssW, cssH);
   drawWarpAims(ctx, sim, cssW, cssH);
   if (fade > 0.04) drawChartCometMark(ctx, sim, cssW, cssH);
@@ -629,12 +636,14 @@ function drawStars(
   sx: number,
   sy: number,
   sim?: Sim,
+  alpha = 1,
 ) {
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
   const base = starStreak(sim);
   const full = starStreakFull(sim);
-  const dim = lostStarDim(sim);
+  // Layers set globalAlpha absolutely, so a caller fade rides on dim.
+  const dim = lostStarDim(sim) * alpha;
   const sp = sim ? Math.hypot(sim.ship.vx, sim.ship.vy) : 0;
   const ux = sim && sp > 1e-6 ? sim.ship.vx / sp : 0;
   const uy = sim && sp > 1e-6 ? sim.ship.vy / sp : 0;
@@ -2887,7 +2896,18 @@ function drawShipLockBars(ctx: CanvasRenderingContext2D, sim: Sim, cam: Camera) 
   ctx.restore();
 }
 
-function drawVignette(ctx: CanvasRenderingContext2D, cssW: number, cssH: number) {
+/** Near a parked comet the chart's edges darken toward the scene's, so crossing in keeps the same frame. */
+function drawCometOrbitVignette(ctx: CanvasRenderingContext2D, cssW: number, cssH: number, w: number) {
+  if (w <= 0) return;
+  const g = ctx.createRadialGradient(cssW / 2, cssH / 2, Math.min(cssW, cssH) * 0.3, cssW / 2, cssH / 2, Math.max(cssW, cssH) * 0.72);
+  g.addColorStop(0, "rgba(0,0,0,0)");
+  g.addColorStop(1, `rgba(0,0,0,${COMET_ORBIT_VIGNETTE * w})`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, cssW, cssH);
+}
+
+function drawVignette(ctx: CanvasRenderingContext2D, cssW: number, cssH: number, strength = 1) {
+  if (strength <= 0) return;
   const g = ctx.createRadialGradient(
     cssW / 2,
     cssH / 2,
@@ -2897,7 +2917,7 @@ function drawVignette(ctx: CanvasRenderingContext2D, cssW: number, cssH: number)
     Math.max(cssW, cssH) * 0.72,
   );
   g.addColorStop(0, "rgba(0,0,0,0)");
-  g.addColorStop(1, "rgba(7,8,12,0.22)");
+  g.addColorStop(1, `rgba(7,8,12,${0.22 * strength})`);
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, cssW, cssH);
 }

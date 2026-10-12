@@ -925,6 +925,11 @@ function cometBlend(sim: Sim) {
   return w > 0 ? { c, k, d, w } : null;
 }
 
+/** 0..1: how far the chart view has turned into the comet scene's (for drawing). */
+export function cometBlendWeight(sim: Sim) {
+  return cometBlend(sim)?.w ?? 0;
+}
+
 /**
  * Near a parked comet the chart camera becomes the scene's: centered on the
  * nucleus, at the scene's zoom for this distance. Crossing into the scene (or
@@ -990,6 +995,9 @@ function leaveArrivedComet(sim: Sim, scene: CometScene) {
   // The scene camera sat on the nucleus; the chart camera picks up there and eases back to the ship.
   const cam = sim.camera;
   const zScene = cam.zoom;
+  // The sky is the same one the scene showed: move the camera without moving the stars.
+  cam.starDriftX -= c.x - cam.x;
+  cam.starDriftY -= c.y - cam.y;
   cam.x = c.x;
   cam.y = c.y;
   cam.zoomAuto = zoomFromSpeed(Math.hypot(ship.vx, ship.vy));
@@ -1070,6 +1078,9 @@ function tryEnterParkedComet(sim: Sim) {
   const rvx = sim.ship.vx - c.vx;
   const rvy = sim.ship.vy - c.vy;
   const yaw = sim.ship.yaw;
+  const cam = sim.camera;
+  const camX = cam.x;
+  const camY = cam.y;
   enterCometScene(sim, kind, c.parked.seed, { sun });
   sim.cometScene!.rot = c.parked.rot;
   const ship = sim.ship;
@@ -1079,6 +1090,9 @@ function tryEnterParkedComet(sim: Sim) {
   ship.vy = rvy / k;
   ship.yaw = yaw;
   cometCamera(sim, 0);
+  // The scene camera sits at its origin: keep the stars where they were.
+  cam.starDriftX += camX - cam.x;
+  cam.starDriftY += camY - cam.y;
 }
 
 function stepCometSim(

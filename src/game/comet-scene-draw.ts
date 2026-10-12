@@ -713,7 +713,18 @@ function drawReadout(ctx: Draw, sim: Sim, scene: CometScene, cssW: number, cssH:
 export type CometSceneDrawHooks = {
   drawShip: (ctx: Draw, umbra: number) => void;
   drawParticles: (ctx: Draw) => void;
+  /** The chart's own starfield, at `alpha`: once the comet stops, its sky is the system's. */
+  drawSky?: (ctx: Draw, alpha: number) => void;
 };
+
+/** How much of the system's sky (vs. the streaking one) shows: none in flight, all once the comet has stopped. */
+export function sceneSkyMix(scene: CometScene) {
+  return Math.max(0, Math.min(1, 1 - scene.travel));
+}
+
+/** Edge darkening the scene shares with the chart near a parked comet, so the cross-over keeps its frame. */
+export const COMET_SCENE_VIGNETTE = 0.6;
+export const COMET_ORBIT_VIGNETTE = 0.38;
 
 export function drawCometScene(
   ctx: Draw,
@@ -724,9 +735,17 @@ export function drawCometScene(
 ) {
   const { cssW, cssH, dpr, shakeX, shakeY } = view;
   const zoom = sim.camera.zoom;
-  ctx.fillStyle = "#030405";
+  const sky = hooks.drawSky ? sceneSkyMix(scene) : 0;
+  // Stopped, the background is the chart's; streaking, it is the scene's deeper black.
+  ctx.fillStyle = `rgb(${Math.round(3 + 4 * sky)}, ${Math.round(4 + 4 * sky)}, ${Math.round(5 + 7 * sky)})`;
   ctx.fillRect(0, 0, cssW, cssH);
-  drawStreaks(ctx, scene.flown, scene.travel, cssW, cssH, sim.reducedMotion);
+  if (sky > 0) hooks.drawSky!(ctx, sky);
+  if (sky < 1) {
+    ctx.save();
+    ctx.globalAlpha = 1 - sky;
+    drawStreaks(ctx, scene.flown, scene.travel, cssW, cssH, sim.reducedMotion);
+    ctx.restore();
+  }
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   // The layer is painted at a stepped zoom (4% steps) and scaled to the live one,
@@ -779,7 +798,7 @@ export function drawCometScene(
 
   const v = ctx.createRadialGradient(cssW / 2, cssH / 2, Math.min(cssW, cssH) * 0.3, cssW / 2, cssH / 2, Math.max(cssW, cssH) * 0.72);
   v.addColorStop(0, "rgba(0,0,0,0)");
-  v.addColorStop(1, "rgba(0,0,0,0.6)");
+  v.addColorStop(1, `rgba(0,0,0,${COMET_SCENE_VIGNETTE + (COMET_ORBIT_VIGNETTE - COMET_SCENE_VIGNETTE) * sky})`);
   ctx.fillStyle = v;
   ctx.fillRect(0, 0, cssW, cssH);
   if (!sim.reducedMotion) grain(ctx, cssW, cssH, 0.07);

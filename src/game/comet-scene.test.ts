@@ -432,6 +432,27 @@ test("closing in on a parked comet hands the chart camera to the scene's without
   const zScene = sim.camera.zoom;
   assert.ok(Math.abs(zChart * k - zScene) < zScene * 0.03, `zoom ${zChart * k} vs ${zScene}`);
   assert.ok(Math.abs(sim.ship.x * zScene - onScreen) < 3, "the ship stays where it was on screen");
+  // The stars do not jump: the sky is drawn from camera + drift on both sides.
+  // (Checked on the way out below too.)
+
+});
+
+test("the sky stays put across the comet crossing, both ways", () => {
+  const sim = arrivedSim();
+  const sky = () => ({ x: sim.camera.x + sim.camera.starDriftX, y: sim.camera.y + sim.camera.starDriftY });
+  const before = sky();
+  stepSim(sim, STEP, idle);
+  const out = sky();
+  assert.ok(Math.hypot(out.x - before.x, out.y - before.y) < 1, "leaving");
+  const c = sim.comet!;
+  const k = cometSceneScale(c);
+  Object.assign(sim.ship, { x: c.x + COMET_ENTRY_DIST * k - 1, y: c.y, vx: c.vx, vy: c.vy });
+  const pre = sky();
+  stepSim(sim, STEP, idle);
+  assert.ok(sim.cometScene);
+  const post = sky();
+  // One frame of camera easing at most.
+  assert.ok(Math.hypot(post.x - pre.x, post.y - pre.y) < 2, "entering");
 });
 
 test("flying back to a parked comet lands you in its scene again, in orbit", () => {
@@ -487,8 +508,10 @@ test("the ship always comes in from behind the comet, catching up along its trav
 
 test("the view is wide far out and closes in near the nucleus", () => {
   assert.equal(cometViewUnits(90), COMET_VIEW_UNITS);
-  assert.equal(cometViewUnits(1000), COMET_VIEW_UNITS_FAR);
   assert.ok(cometViewUnits(400) > cometViewUnits(200));
+  assert.ok(cometViewUnits(700) >= COMET_VIEW_UNITS_FAR);
+  // Far out (past the scene edge, onto the chart) the ship stays on screen, inside 80% of the half view.
+  for (const d of [600, 1100, 3300]) assert.ok(d <= cometViewUnits(d) * 0.5 * 0.8 + 1e-9, `ship in view at ${d}`);
 });
 
 test("loose ice only ticks; a jet blast hits like small rocks and drains the hull", () => {

@@ -99,9 +99,17 @@ export const COMET_VIEW_UNITS = 640;
 /** Far out the view opens up to this many units, so the approach shows the whole comet. */
 export const COMET_VIEW_UNITS_FAR = 1500;
 
-/** View size for a ship at distance `d` from the nucleus: close in near the ground, wide far out. */
+/** Past this, the view keeps the ship this far in from the short edge (share of the half view). */
+const COMET_VIEW_KEEP = 0.8;
+
+/**
+ * View size for a ship at distance `d` from the nucleus: close in near the
+ * ground, wide far out, and always wide enough that the ship (with the nucleus
+ * at the center) stays on screen, out past the scene edge onto the chart.
+ */
 export function cometViewUnits(d: number) {
-  return Math.max(COMET_VIEW_UNITS, Math.min(COMET_VIEW_UNITS_FAR, 560 + (d - NUCLEUS_R) * 1.55));
+  const base = Math.max(COMET_VIEW_UNITS, Math.min(COMET_VIEW_UNITS_FAR, 560 + (d - NUCLEUS_R) * 1.55));
+  return Math.max(base, (d * 2) / COMET_VIEW_KEEP);
 }
 
 /** Two lobes, like a contact binary. Nucleus frame. */
