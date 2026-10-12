@@ -223,7 +223,9 @@ export type Comet = {
   mass: number;
   /** A comet that rode in and stays in orbit: fly close and you are back in its scene. */
   /** On a rail around the system's star: orbit radius, angle and angular speed (rad/s). */
-  parked?: { kind: string; seed: number; r: number; a: number; w: number };
+  parked?: { kind: string; seed: number; r: number; a: number; w: number; rot: number };
+  /** Nucleus spin angle, as in its scene. */
+  rot?: number;
 };
 
 export type LostCopy = {

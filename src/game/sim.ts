@@ -30,7 +30,8 @@ import {
   cometViewUnits,
   cometEntryPose,
   COMET_ENTRY_DIST,
-  COMET_ENTRY_SPEED,
+  NUCLEUS_OMEGA,
+  NUCLEUS_R,
   COMET_TRAVEL,
   makeCometScene,
   relativeToSurface,
@@ -248,6 +249,8 @@ export type Sim = {
   cometEntered: boolean;
   /** Set while the ship is in the comet scene (nucleus frame). Null on a chart. */
   cometScene: CometScene | null;
+  /** Log of the scene camera's lag carried onto the chart when you leave a comet; it eases out. */
+  cometZoomCarry: number;
   warpTarget: NearbyHeading | null;
   warpLost: boolean;
   crashAge: number;
@@ -379,6 +382,7 @@ export function createSim(): Sim {
     cometSpent: false,
     cometHeading: null,
     cometEntered: false,
+    cometZoomCarry: 0,
     cometScene: null,
     warpTarget: null,
     warpLost: false,
@@ -905,34 +909,71 @@ function warpOutOfScene(sim: Sim, ux: number, uy: number, lost: boolean) {
 
 /** Orbit radius for a comet that has ridden into a system, as a share of the chart radius. */
 const PARKED_ORBIT = [0.62, 0.5, 0.72, 0.42, 0.8];
-/** The scene's units per chart unit around a parked comet: out at the scene edge is this far out on the chart. */
-const PARKED_EXIT_R = 5;
+/** Out to here (comet radii) the chart camera hands over to the scene's: the scene edge, times three. */
+const PARKED_BLEND_OUT = (COMET_SCENE_EDGE * 3) / NUCLEUS_R;
+
+/** How far the chart camera has handed over to the comet scene's camera (0..1), near a parked comet. */
+function cometBlend(sim: Sim) {
+  const c = sim.comet;
+  if (!c?.parked || sim.cometScene || (sim.phase !== "flight" && sim.phase !== "crashed")) return null;
+  const k = cometSceneScale(c);
+  const d = Math.hypot(sim.ship.x - c.x, sim.ship.y - c.y);
+  const full = COMET_SCENE_EDGE * k;
+  const out = PARKED_BLEND_OUT * c.radius;
+  const u = Math.max(0, Math.min(1, (out - d) / (out - full)));
+  const w = u * u * (3 - 2 * u);
+  return w > 0 ? { c, k, d, w } : null;
+}
 
 /**
- * Off an arrived comet: back to the chart. The first time, that is the new
- * system the comet rode into, with the comet left there in a slow orbit.
+ * Near a parked comet the chart camera becomes the scene's: centered on the
+ * nucleus, at the scene's zoom for this distance. Crossing into the scene (or
+ * out of it) is then the same picture, not a cut.
+ */
+function applyCometZoom(sim: Sim, dt: number) {
+  const b = cometBlend(sim);
+  const cam = sim.camera;
+  sim.cometZoomCarry *= Math.exp(-2.5 * dt);
+  if (!b) return;
+  const span = Math.min(sim.viewCssW || 1280, sim.viewCssH || 800);
+  const zScene = span / (cometViewUnits(b.d / b.k) * b.k);
+  const zChart = Math.max(1e-4, cam.zoomAuto * cam.userZoom);
+  cam.zoom = Math.exp(Math.log(zChart) + (Math.log(zScene) - Math.log(zChart) + sim.cometZoomCarry) * b.w);
+}
+
+/**
+ * Chart units per scene unit around a comet: the scene is the same rock
+ * magnified, so its nucleus is the chart comet's radius. Positions and speeds
+ * cross over by this factor, and the camera matches it, so there is no cut.
+ */
+export function cometSceneScale(c: Comet) {
+  return c.radius / NUCLEUS_R;
+}
+
+/**
+ * Off an arrived comet: back to the chart, at the same spot and speed scaled
+ * down. The first time, that is the new system the comet rode into, with the
+ * comet left there in a slow orbit.
  */
 function leaveArrivedComet(sim: Sim, scene: CometScene) {
-  const out = Math.hypot(sim.ship.x, sim.ship.y) || 1;
-  const ux = sim.ship.x / out;
-  const uy = sim.ship.y / out;
-  const rvx = sim.ship.vx;
-  const rvy = sim.ship.vy;
+  const { x: sx, y: sy, vx: svx, vy: svy } = sim.ship;
   sim.cometScene = null;
   let c = sim.comet?.parked ? sim.comet : null;
   if (!c) {
     chartNewSystem(sim);
     c = parkComet(sim, scene);
   }
+  c.parked!.rot = scene.rot;
   sim.comet = c;
   sim.cometSpent = true;
   sim.cometEntered = true;
   sim.cometHeading = null;
+  const k = cometSceneScale(c);
   const ship = sim.ship;
-  ship.x = c.x + ux * c.radius * PARKED_EXIT_R;
-  ship.y = c.y + uy * c.radius * PARKED_EXIT_R;
-  ship.vx = c.vx + rvx;
-  ship.vy = c.vy + rvy;
+  ship.x = c.x + sx * k;
+  ship.y = c.y + sy * k;
+  ship.vx = c.vx + svx * k;
+  ship.vy = c.vy + svy * k;
   ship.thrusting = false;
   ship.reverse = false;
   sim.landedId = null;
@@ -946,11 +987,19 @@ function leaveArrivedComet(sim: Sim, scene: CometScene) {
   const near = gravityAt(ship.x, ship.y, sim.planets, sim.gravityScale);
   sim.nearest = near.nearest;
   sim.altitude = near.dist - near.nearest.radius;
+  // The scene camera sat on the nucleus; the chart camera picks up there and eases back to the ship.
   const cam = sim.camera;
-  cam.x = ship.x;
-  cam.y = ship.y;
-  cam.zoomAuto = 0.86;
-  cam.zoom = cam.zoomAuto * cam.userZoom;
+  const zScene = cam.zoom;
+  cam.x = c.x;
+  cam.y = c.y;
+  cam.zoomAuto = zoomFromSpeed(Math.hypot(ship.vx, ship.vy));
+  sim.cometZoomCarry = 0;
+  applyCometZoom(sim, 0);
+  cam.x = c.x;
+  cam.y = c.y;
+  // The scene camera eases its zoom, so it can trail the exact one: carry that and let it settle.
+  sim.cometZoomCarry = Math.log(zScene / k / cam.zoom);
+  cam.zoom *= Math.exp(sim.cometZoomCarry);
   sim.approachLatch.seen.clear();
   sim.approachLatch.inside.clear();
 }
@@ -974,7 +1023,7 @@ function parkComet(sim: Sim, scene: CometScene): Comet {
     for (const p of sim.planets) {
       if (p.kind === "star") continue;
       const pr = Math.hypot(p.x - sx, p.y - sy);
-      gap = Math.min(gap, Math.abs(pr - r) - p.radius * 3 - COMET_NUCLEUS_R * PARKED_EXIT_R);
+      gap = Math.min(gap, Math.abs(pr - r) - p.radius * 3 - COMET_NUCLEUS_R * PARKED_BLEND_OUT);
     }
     if (gap > bestGap) {
       bestGap = gap;
@@ -1001,36 +1050,34 @@ function parkComet(sim: Sim, scene: CometScene): Comet {
       r: best,
       a: Math.atan2(-COMET_TRAVEL.y, -COMET_TRAVEL.x),
       w: v / best,
+      rot: scene.rot,
     },
   };
   return c;
 }
 
-/** Fly close to a parked comet and you are back in its scene, in orbit around this star. */
+/** Fly close to a parked comet and you are back in its scene, in orbit around this star, where you were and as fast. */
 function tryEnterParkedComet(sim: Sim) {
   const c = sim.comet;
   if (!c?.parked || sim.phase !== "flight") return;
+  const k = cometSceneScale(c);
   const dx = sim.ship.x - c.x;
   const dy = sim.ship.y - c.y;
-  const d = Math.hypot(dx, dy);
-  if (d > c.radius * (PARKED_EXIT_R - 0.5)) return;
+  if (Math.hypot(dx, dy) > COMET_ENTRY_DIST * k) return;
   const kind = isCometSceneKind(c.parked.kind) ? c.parked.kind : COMET_SCENE_DEFAULT;
   const star = sim.planets.find((p) => p.kind === "star");
   const sun = { x: (star?.x ?? 0) - c.x, y: (star?.y ?? 0) - c.y };
   const rvx = sim.ship.vx - c.vx;
   const rvy = sim.ship.vy - c.vy;
+  const yaw = sim.ship.yaw;
   enterCometScene(sim, kind, c.parked.seed, { sun });
-  // Come in from where you were, as fast as you were (capped like any approach).
-  const ux = dx / (d || 1);
-  const uy = dy / (d || 1);
-  const sp = Math.hypot(rvx, rvy);
-  const k = sp > COMET_ENTRY_SPEED * 2 ? (COMET_ENTRY_SPEED * 2) / sp : 1;
+  sim.cometScene!.rot = c.parked.rot;
   const ship = sim.ship;
-  ship.x = ux * COMET_ENTRY_DIST;
-  ship.y = uy * COMET_ENTRY_DIST;
-  ship.vx = rvx * k;
-  ship.vy = rvy * k;
-  if (sp > 1) ship.yaw = Math.atan2(-ship.vx, -ship.vy);
+  ship.x = dx / k;
+  ship.y = dy / k;
+  ship.vx = rvx / k;
+  ship.vy = rvy / k;
+  ship.yaw = yaw;
   cometCamera(sim, 0);
 }
 
@@ -2347,12 +2394,38 @@ function stepParkedComet(sim: Sim, c: Comet, dt: number) {
   const o = c.parked!;
   const star = sim.planets.find((p) => p.kind === "star");
   o.a += o.w * dt;
+  o.rot += NUCLEUS_OMEGA * dt;
   const ca = Math.cos(o.a);
   const sa = Math.sin(o.a);
   c.x = (star?.x ?? 0) + ca * o.r;
   c.y = (star?.y ?? 0) + sa * o.r;
   c.vx = (star?.vx ?? 0) - sa * o.r * o.w;
   c.vy = (star?.vy ?? 0) + ca * o.r * o.w;
+}
+
+/** Where the comet will be over the next `seconds`, for its dashed path on the chart. */
+export function predictCometPath(sim: Sim, seconds: number): { x: number; y: number }[] {
+  const c = sim.comet;
+  if (!c) return [];
+  const out: { x: number; y: number }[] = [];
+  const n = 30;
+  if (c.parked) {
+    const star = sim.planets.find((p) => p.kind === "star");
+    const o = c.parked;
+    for (let i = 1; i <= n; i++) {
+      const a = o.a + o.w * (seconds * i) / n;
+      out.push({ x: (star?.x ?? 0) + Math.cos(a) * o.r, y: (star?.y ?? 0) + Math.sin(a) * o.r });
+    }
+    return out;
+  }
+  const g: Comet = { ...c };
+  const steps = n * 4;
+  const dt = seconds / steps;
+  for (let i = 1; i <= steps; i++) {
+    stepComet(g, sim.planets, sim.gravityScale, sim.atmoScale, dt);
+    if (i % 4 === 0) out.push({ x: g.x, y: g.y });
+  }
+  return out;
 }
 
 function stepLiveComet(sim: Sim, dt: number) {
@@ -2362,6 +2435,7 @@ function stepLiveComet(sim: Sim, dt: number) {
     stepParkedComet(sim, c, dt);
     return;
   }
+  c.rot = (c.rot ?? 0) + NUCLEUS_OMEGA * dt;
   const R = getMinimapWorldR();
   stepComet(c, sim.planets, sim.gravityScale, sim.atmoScale, dt);
   const r1 = Math.hypot(c.x, c.y);
@@ -3923,13 +3997,26 @@ function updateCamera(sim: Sim, dt: number) {
     : beat === "tunnel"
       ? cruiseLook * (1 - launchU)
       : cruiseLook;
-  const targetX = s.x + s.vx * look;
-  const targetY = s.y + s.vy * look;
+  let targetX = s.x + s.vx * look;
+  let targetY = s.y + s.vy * look;
+  // Near a parked comet the camera aims at the nucleus, as the scene's does.
+  const blend = cometBlend(sim);
+  if (blend) {
+    targetX += (blend.c.x - targetX) * blend.w;
+    targetY += (blend.c.y - targetY) * blend.w;
+  }
   const k = 3.4;
   const a = 1 - Math.exp(-k * dt);
   if (lockCam) {
     sim.camera.x = s.x;
     sim.camera.y = s.y;
+  } else if (blend) {
+    // Ease in the comet's frame, so the camera rides along with it and lands exactly on the nucleus.
+    // Offset from where the comet was last frame: it has moved since the camera was placed.
+    const rx = sim.camera.x - (blend.c.x - blend.c.vx * dt);
+    const ry = sim.camera.y - (blend.c.y - blend.c.vy * dt);
+    sim.camera.x = blend.c.x + rx + (targetX - blend.c.x - rx) * a;
+    sim.camera.y = blend.c.y + ry + (targetY - blend.c.y - ry) * a;
   } else {
     sim.camera.x += (targetX - sim.camera.x) * a;
     sim.camera.y += (targetY - sim.camera.y) * a;
@@ -3954,6 +4041,7 @@ function updateCamera(sim: Sim, dt: number) {
     sim.camera.zoomAuto += (zWant - sim.camera.zoomAuto) * (1 - Math.exp(-zoomK * dt));
   }
   sim.camera.zoom = sim.camera.zoomAuto * sim.camera.userZoom;
+  applyCometZoom(sim, dt);
   sim.camera.trauma = Math.max(0, sim.camera.trauma - dt * 1.6);
   sim.camera.shake = sim.reducedMotion ? 0 : sim.camera.trauma * sim.camera.trauma;
 }

@@ -268,7 +268,33 @@ function drawNucleus(ctx: Draw, scene: CometScene) {
   ctx.restore();
 }
 
-function relightNucleus(nuc: Nucleus, scene: CometScene) {
+type NucleusLight = { rot: number; sun: { x: number; y: number }; p: { sun: number; cave?: CometCave } };
+
+/**
+ * The scene's own nucleus, drawn anywhere at `scale` (scene units to the
+ * caller's units): the chart draws the same rock you land on. `tol` is how far
+ * (rad) it may turn before it is relit; small on screen, it can be coarse.
+ */
+export function drawNucleusSprite(ctx: Draw, x: number, y: number, scale: number, light: NucleusLight, tol = 0.004) {
+  if (!nucleus || nucleusCave !== light.p.cave) {
+    nucleus = buildNucleus(light.p.cave);
+    nucleusCave = light.p.cave;
+  }
+  const nuc = nucleus;
+  const dir = Math.atan2(light.sun.y, light.sun.x);
+  if (!(Math.abs(light.rot - nuc.litRot) < tol && nuc.litSun === light.p.sun && Math.abs(dir - nuc.litDir) < tol)) {
+    relightNucleus(nuc, light);
+  }
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.rotate(light.rot);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(nuc.cv, -nuc.ext, -nuc.ext, nuc.ext * 2, nuc.ext * 2);
+  ctx.restore();
+}
+
+function relightNucleus(nuc: Nucleus, scene: NucleusLight) {
   const { n, nx, ny, nz, alb, mask, img } = nuc;
   nuc.litRot = scene.rot;
   nuc.litSun = scene.p.sun;

@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   COMET_CRASH_NUCLEUS,
   COMET_CRASH_ROCKS,
+  COMET_ENTRY_DIST,
   COMET_ARRIVE_S,
   COMET_HOLD_S,
   COMET_SCENE_EDGE,
@@ -30,7 +31,7 @@ import {
   type CometScene,
 } from "./comet-scene.ts";
 import { HULL_MAX } from "./hull.ts";
-import { applyDebugComet, createSim, enterCometScene, enterWarp, gravityAt, hullSafeKind, stepSim, takeoff } from "./sim.ts";
+import { applyDebugComet, cometSceneScale, createSim, enterCometScene, enterWarp, gravityAt, hullSafeKind, stepSim, takeoff } from "./sim.ts";
 import { createSystem, LAND_SPEED, SHIP_HULL, STEP, WARP_JUMP_SPEED } from "./world.ts";
 
 const idle = { steer: 0, forward: false, reverse: false, aimYaw: null, aimThrust: false };
@@ -352,6 +353,7 @@ function arrivedSim() {
 test("leaving a comet in orbit flies into the new system, with the comet left there", () => {
   const sim = arrivedSim();
   const before = sim.planets;
+  const zBefore = sim.camera.zoom;
   stepSim(sim, STEP, idle);
   assert.equal(sim.cometScene, null);
   assert.equal(sim.phase, "flight", "no lost warp: the comet is not running anymore");
@@ -366,7 +368,17 @@ test("leaving a comet in orbit flies into the new system, with the comet left th
   const g = gravityAt(c.x, c.y, sim.planets, sim.gravityScale);
   assert.ok(Math.abs(v - Math.sqrt(Math.hypot(g.ax, g.ay) * r)) < 1e-6 * v + 1e-6, "a circular orbit");
   assert.ok(Math.hypot(sim.ship.x - c.x, sim.ship.y - c.y) > c.radius * 4, "the ship starts clear of it");
-  assert.ok(Math.hypot(sim.camera.x - sim.ship.x, sim.camera.y - sim.ship.y) < 1, "camera follows the ship out");
+  // No cut: the chart camera starts where the scene's was, on the nucleus, at its zoom.
+  assert.ok(Math.hypot(sim.camera.x - c.x, sim.camera.y - c.y) < 1, "camera picks up on the nucleus");
+  const k = cometSceneScale(c);
+  assert.ok(Math.abs(sim.camera.zoom * k - zBefore) < zBefore * 0.03, "same zoom as the scene's");
+  // And it settles on the scene's exact zoom for that distance.
+  for (let i = 0; i < 60 * 3; i++) {
+    Object.assign(sim.ship, { x: c.x + COMET_SCENE_EDGE * k, y: c.y, vx: c.vx, vy: c.vy });
+    stepSim(sim, STEP, idle);
+  }
+  const zExact = Math.min(sim.viewCssW, sim.viewCssH) / cometViewUnits(COMET_SCENE_EDGE);
+  assert.ok(Math.abs(sim.camera.zoom * k - zExact) < zExact * 0.03, "settles on the scene's zoom");
 
   // One more tick on the rail keeps the velocity the ship inherited.
   const v0 = { x: c.vx, y: c.vy };
@@ -393,6 +405,33 @@ test("a parked comet stays on its orbit for good, whatever the planets do", () =
     const star = sim.planets.find((p) => p.kind === "star")!;
     assert.ok(Math.abs(Math.hypot(c.x - star.x, c.y - star.y) - r0) < 1e-6 * r0, `run ${run}: same radius`);
   }
+});
+
+test("closing in on a parked comet hands the chart camera to the scene's without a jump", () => {
+  const sim = arrivedSim();
+  stepSim(sim, STEP, idle);
+  const c = sim.comet!;
+  const k = cometSceneScale(c);
+  // Just outside the crossing, drifting in with the comet.
+  // Let the camera settle after leaving.
+  for (let i = 0; i < 60 * 3; i++) {
+    Object.assign(sim.ship, { x: c.x + COMET_SCENE_EDGE * k, y: c.y, vx: c.vx, vy: c.vy });
+    stepSim(sim, STEP, idle);
+  }
+  const out = COMET_ENTRY_DIST * k + 0.5;
+  sim.ship.x = c.x + out;
+  sim.ship.y = c.y;
+  sim.ship.vx = c.vx - 20;
+  sim.ship.vy = c.vy;
+  stepSim(sim, STEP, idle);
+  assert.equal(sim.cometScene, null);
+  const zChart = sim.camera.zoom;
+  const onScreen = (sim.ship.x - sim.camera.x) * zChart;
+  for (let i = 0; i < 10 && !sim.cometScene; i++) stepSim(sim, STEP, idle);
+  assert.ok(sim.cometScene, "in the scene");
+  const zScene = sim.camera.zoom;
+  assert.ok(Math.abs(zChart * k - zScene) < zScene * 0.03, `zoom ${zChart * k} vs ${zScene}`);
+  assert.ok(Math.abs(sim.ship.x * zScene - onScreen) < 3, "the ship stays where it was on screen");
 });
 
 test("flying back to a parked comet lands you in its scene again, in orbit", () => {
