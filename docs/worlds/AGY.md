@@ -51,7 +51,7 @@ Cada fase de `README.md` termina con **Aceptación**. Verifica cada punto contra
 | 6 | Un tramo de prueba: siguiendo el rumbo llegas a la ficha en N saltos; un desvío no rompe el tramo; en el puente no hay dónde cargar |
 | 7 | Cada entrega se instala; en campaña el pad no te baja el motor |
 | 8 | Cada recarga nueva con su condición (sin trap no hay skim, sin Cryo el H2 gotea, el paso rasante calienta) |
-| 9 | El cometa se aterriza solo igualando velocidad; en perihelio solo con LUMEN |
+| 9 | Sin LUMEN el cometa E no deja rumbo; con LUMEN sí. Saltar a ese rumbo entra a la escena: núcleo al centro, estrellas en trazos, la nave entra por un borde. Aterrizas bajo 30; una roca te mata; un chorro te empuja. El dibujo vive en su propio archivo y no inventa un look |
 | 10 | La campaña de la fase 1 de punta a punta con `?dev` para acelerar donde haga falta. Al llegar a F, Halley se traba unos segundos y vuelve; F no tiene nombre en el warp ni en el chart |
 | 11 | `/` empieza o retoma la campaña; `?free` es el aleatorio; `?camp` cae en aleatorio. En `?free`, varias cargas: algunos sistemas sin Home; chocar en uno te deja en un sistema con Home |
 

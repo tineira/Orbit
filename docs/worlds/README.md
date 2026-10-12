@@ -29,7 +29,7 @@ El **qué** vive en Notion; aquí está el **cómo**. Si este doc y Notion discr
 | La receta puede forzar `home: "none"` en varios sistemas seguidos; los aleatorios **a veces** salen sin Home | Fase 1 (ya está) y fase 11 |
 | Choque en campaña: vuelves al último pad donde cargaste o a la última ficha, la más reciente, con la nave que tenías | Fase 3 (ya está) |
 | Mundo LUMEN = estación vieja de la civilización | Fase 8.5 y 10 |
-| Cometa = chart propio, aterrizas igualando velocidad; en perihelio solo con LUMEN | Fase 9 |
+| Cometa (cambiado 12 oct): inatrapable; su rumbo aparece con LUMEN (E) o el detector de hush (G); saltar entra a una escena propia donde solo hay que aterrizar entre chorros y rocas. El look lo fija Tomás | Fase 9 |
 | La civilización se llama `civ` en el código; su nombre queda pendiente | Fase 9 y 10 |
 | Transceptor rescatado de una nave desguazada en el hangar de la estación | Fase 10 |
 | Lugares en línea, A→G; cada uno revela el siguiente | Fase 10 |
@@ -273,14 +273,25 @@ Lo que el lock ya definió y nunca se implementó. Un PR por punto, en este orde
 
 **Aceptación de cada punto:** test de la tasa, de la condición (sin trap no hay skim, sin Cryo gotea, etc.) y del snapshot intacto.
 
-### Fase 9: el chart del cometa
+### Fase 9: la escena del cometa
 
-- Saltar al rumbo de un cometa (hoy `beginCometWarp`, stub) entra a un **chart del cometa**: el núcleo es el cuerpo central, aterrizable si la velocidad relativa es < 30 (`LAND_SPEED`).
-- El cometa sigue sin ser un `Planet` de occupancy: un tipo propio o un `Planet` con `kind` nuevo, a elección del implementador, siempre que occupancy y `assignOccupancy` no lo toquen.
-- Parámetro `phase` del cometa (0 = afelio, lento; 1 = perihelio, rápido). En perihelio va cerca de una estrella (masiva, si la ficha lo pide) y a una velocidad que solo LUMEN × Lumen drive alcanza a igualar con un tanque.
+Cambió el 12 oct (Tomás). Ya no se iguala la velocidad del cometa en el chart: con la gravedad de la estrella, aterrizar en perihelio quedaba al límite (29,6 contra 30) y no era estable. Fuente: Notion [Cometa](https://app.notion.com/p/3dfa554c3c408183b66cd95df28a84da), sección **La escena del cometa**. Calza con el lock de Cometa (decisiones 2 y 5): el cometa sigue inatrapable en el chart y saltar a su rumbo entra al minijuego.
+
+- **El cometa en el chart no cambia.** Sigue siendo el actor de paso de hoy (`comet.ts`), más rápido que el warp, sin colisión. Nada de planear una pose de llegada ni de igualar su velocidad: si tienes trabajo sin commitear con `planAphelion` o `cometArrivalPose`, bórralo.
+- **El rumbo del cometa aparece cuando la nave puede.** `sim.cometHeading` solo se crea si se cumple lo que pide la ficha: `cometRequires?: CampaignFlag | Grant | { fuel: FuelKind }` en `StoryPlace` o en el `comet` que trae el rumbo. El cometa E pide `{ fuel: "lumen" }` (LUMEN en el tanque), el G pide el módulo `hushDetector`. Sin eso, el cometa cruza y se va sin dejar rumbo. En modo libre, como hoy (`?dev` + C) y sin requisito.
+- **Entrar.** El warp de siempre: 1500 u/s apuntando al rumbo del cometa (`beginCometWarp`, hoy un stub). En vez de `createSystem`, entra a la **escena del cometa**, un modo propio del sim (`sim.phase` o un `sim.scene = "comet"`, a elección).
+- **La escena.** Marco del núcleo: el núcleo está quieto en el origen y gira despacio (ω ≈ 0,11 rad/s). No hay estrella ni planetas ni su gravedad; el núcleo tiene una gravedad propia débil. Cámara fija desde arriba, centrada en el núcleo, con un zoom más cerca que el chart (el núcleo se ve de radio ~80 u de escena). Las estrellas del fondo se dibujan como trazos que cruzan la pantalla a velocidad warp. La nave entra por un borde, ya casi igualada (~70 u/s hacia el núcleo).
+- **El desafío es solo aterrizar.** Contacto con la superficie con velocidad relativa a la superficie que gira bajo `LAND_SPEED` (30): posado. Si no, choque.
+  - **Chorros:** puntos fijos del núcleo que giran con él. Cada uno tiene periodo, fracción encendida y fuerza. Encendido, empuja la nave dentro de su cono y suelta gas y rocas.
+  - **Rocas:** salen de los chorros y vuelan en línea recta. Tocarlas es choque.
+  - **Choque** en la escena = el choque de campaña (vuelves al checkpoint).
+- **Parámetros por cometa** (en los datos, no en el código): `CometScene = { jets: number; rockRate: number; jetPower: number; litOnly?: boolean; sunDir?: number }`. Punto de partida, a ajustar jugando: E (perihelio) `jets: 7, rockRate: 1.5, jetPower: 1`; G (marcado) `jets: 3, rockRate: 0.6, jetPower: 0.6`. `litOnly` hace que un chorro solo se encienda cuando su punto mira al sol (`sunDir`), por si el look elegido es Día y noche.
+- **Salir.** Despegas y te alejas. Si cruzas el borde de la escena a velocidad warp, es el warp perdido de siempre (`warpLost`).
+- **Look: lo fija Tomás, no esta fase.** Hay cuatro propuestas jugables en el artefacto [Escena del cometa](https://claude.ai/artifact/M3TkVdBvpS7N5fFFkZFxGt). Mientras no esté elegido en Notion, dibuja la escena con lo que ya existe en `drawComet` (núcleo, cráteres, cola, polvo) y pon todo el dibujo de la escena en un archivo propio (`src/game/comet-scene-draw.ts`), para cambiar el look sin tocar la simulación. No inventes un look.
+- **Lo que ya sirve del trabajo previo:** `landedFor` (quedarse posado dispara el efecto), el cometa en `StoryPlace` y en `NearbyHeading`, y el warp perdido lejos del núcleo.
 - Flag `civ` en el cometa. Aterrizar en uno con `civ` y con `hushDetector` entrega HUSH × Coil + Hold (fila de Descubrimiento).
-- "Quedarse posado" en un cometa de ficha puede llevar a otra ficha (efecto `revealHeading` + salto automático): lo define la ficha con un disparador `land` + un temporizador. Agrega `{ on: "landedFor"; ref; seconds }` a `TriggerEvent`.
-- **Aceptación:** tests de aterrizaje por velocidad relativa, de la velocidad en perihelio vs Δv de cada nave, y del grant.
+- "Quedarse posado" en un cometa de ficha lleva a otra ficha: disparador `{ on: "landedFor"; ref; seconds }` + `revealHeading` + salto automático. Si despegas antes, el contador vuelve a cero.
+- **Aceptación:** tests puros de la escena: aterrizar bajo 30 relativo a la superficie que gira, choque sobre 30, choque con roca, empuje de un chorro dentro y fuera de su cono, `litOnly` apaga un chorro de espaldas al sol, el rumbo del cometa no aparece sin su requisito y sí con él, `landedFor` se reinicia al despegar, y el grant de HUSH. Ningún test depende de la gravedad de una estrella.
 
 ### Fase 10: datos de la fase 1
 
