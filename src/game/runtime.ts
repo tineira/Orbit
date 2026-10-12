@@ -31,6 +31,7 @@ import {
   listLagrangePoints,
   predictPlanetPaths,
   launchSim,
+  applyDebugComet,
   applyDebugWarp,
   applyCampaignBoot,
   bindCampaignChart,
@@ -434,7 +435,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     const hud: HudSnapshot = {
       phase: sim.phase,
       speed: Math.hypot(s.vx, s.vy),
-      drag: atmoDrag(sim),
+      drag: sim.cometScene ? 0 : atmoDrag(sim),
       headingDeg: ((wrapPi(s.yaw) * 180) / Math.PI + 360) % 360,
       mass: s.mass,
       fuel: s.fuel,
@@ -1211,8 +1212,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       sim.ship.thrusting && playing(),
       Math.min(1, Math.hypot(sim.ship.vx, sim.ship.vy) / 120),
     );
-    audio.setAtmo(sim.phase === "flight" ? atmoDrag(sim) : 0);
-    if (sim.phase === "flight") {
+    audio.setAtmo(sim.phase === "flight" && !sim.cometScene ? atmoDrag(sim) : 0);
+    if (sim.phase === "flight" || (sim.cometScene && sim.phase === "landed")) {
       audio.setBeltDust(sim.beltDust, sim.beltDustBright);
       for (const tick of sim.beltTicks) audio.hullTick(tick);
     } else {
@@ -1409,6 +1410,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     }
     attachProbe(sim);
     applyDebugWarp(sim);
+    applyDebugComet(sim);
     last = performance.now();
     acc = 0;
     prevLanded = sim.landedId;

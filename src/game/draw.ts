@@ -54,6 +54,7 @@ import {
 } from "./world";
 import { asteroidWorldPath, surfaceRadius } from "./asteroid";
 import { COMET_RED, warpHeadings } from "./comet";
+import { drawCometScene } from "./comet-scene-draw";
 import {
   asteroidMine,
   MINE_BEACON_PERIOD_MS,
@@ -146,6 +147,18 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
     : (hash(now * 0.09 + 9) - 0.5) * cam.shake * 18 +
       (hash(now * 0.71 + 3) - 0.5) * rumble * 4.8 +
       (hash(now * 1.6 + 5) - 0.5) * rumble * 2.1;
+
+  if (sim.cometScene) {
+    drawCometScene(ctx, sim, sim.cometScene, { cssW, cssH, dpr, shakeX, shakeY }, {
+      drawShip: (c, umbra) => drawShip(c, sim, umbra, dpr),
+      drawParticles: (c) => drawParticles(c, sim.particles),
+    });
+    const halley = opts.halley;
+    if (halley && (halley.on || now - halley.offAt < HALLEY_OFF_ANIM_MS)) {
+      drawHalley(ctx, sim, halley, cssW, cssH, now);
+    }
+    return;
+  }
 
   if (!sim.showGravityGrid) drawStars(ctx, cam, cssW, cssH, shakeX, shakeY, sim);
   ctx.save();

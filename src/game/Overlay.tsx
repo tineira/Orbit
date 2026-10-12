@@ -10,6 +10,7 @@ import type {
 } from "./types";
 import { engineGrade, fuelGrade, tankGrade } from "./fuel";
 import { HULL_MAX } from "./hull";
+import { COMET_CRASH_NUCLEUS, COMET_CRASH_ROCKS } from "./comet-scene";
 import { SCAN_SECONDS } from "./matter";
 import { ATMO_STEPS, GRAVITY_STEPS, ORBIT_DRAG_BREAK, getPlanets, isGhostBody, planetById } from "./world";
 import { AIRLOCK_DELAY_MS, CLOCK_REVEAL_MS, airlockScreenFade, splitFoodClock, usesLostCard } from "./adrift";
@@ -318,6 +319,7 @@ export function Overlay({
             hud.crashKind,
             crashed,
             hud.wreckSeed,
+            hud.crashedId,
           )}
           onReboot={onReboot}
           onNewWorld={onNewWorld}
@@ -731,9 +733,13 @@ function crashDetail(
   kind: HudSnapshot["crashKind"],
   body: NonNullable<ReturnType<typeof planetById>> | null,
   seed: number,
+  crashedId: string | null = null,
 ) {
   // Seed is fixed per crash, so the variant is stable across renders but rotates between crashes.
   const pick = (pool: string[]) => pool[Math.floor(seed) % pool.length]!;
+  // Plain status lines, not story copy: the comet's lines stay in Notion until closed.
+  if (crashedId === COMET_CRASH_NUCLEUS) return "Hit the nucleus over 30 relative to its surface.";
+  if (crashedId === COMET_CRASH_ROCKS) return "Hull breached by comet debris.";
   if (kind === "wreck" && !body) {
     return pick([
       "The belt wore through the hull. Nothing left to hold the dark out.",

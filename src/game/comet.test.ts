@@ -303,7 +303,7 @@ test("leftover comet heading persists across rebootSim", () => {
   assert.equal(sim.cometSpent, true);
 });
 
-test("warp commit at comet heading stays on this chart", () => {
+test("warp commit at comet heading jumps to the comet scene, not a new chart", () => {
   const sim = boot(9);
   fly(sim);
   const heading = makeCometHeading(separateCometHeading(0.3, sim.nearby));
@@ -311,11 +311,13 @@ test("warp commit at comet heading stays on this chart", () => {
   const seed = getSystem().seed;
   aimShip(sim, heading.angle, WARP_JUMP_SPEED);
   stepSim(sim, 1 / 60, idle);
-  assert.equal(getSystem().seed, seed);
-  assert.equal(sim.phase, "flight");
+  assert.equal(sim.phase, "transit");
   assert.equal(sim.warpLost, false);
   assert.equal(sim.warpTarget, heading);
-  assert.ok(Math.hypot(sim.ship.vx, sim.ship.vy) < WARP_JUMP_SPEED);
+  for (let i = 0; i < 60 * 10 && !sim.cometScene; i++) stepSim(sim, 1 / 60, idle);
+  assert.ok(sim.cometScene);
+  assert.equal(sim.phase, "flight");
+  assert.equal(getSystem().seed, seed);
 });
 
 test("warp commit at a star heading still warps", () => {
