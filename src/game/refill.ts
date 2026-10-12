@@ -20,6 +20,18 @@ export const HUSH_CHARGE_RATE = 2;
 
 const TIGHT_H2_TANKS = new Set<TankKind>(["cryo", "hold", "cistern"]);
 
+/** Low to high. A skim may replace a lower grade. It never dumps a higher one that still has liters. */
+const GRADE_RANK: Record<FuelKind, number> = {
+  ch4: 0,
+  nh3: 1,
+  h2: 2,
+  ntr: 3,
+  d: 4,
+  he3: 5,
+  lumen: 6,
+  hush: 7,
+};
+
 type Fueled = {
   fuel: number;
   fuelCapacity: number;
@@ -46,7 +58,10 @@ export function switchGrade(ship: Fueled, kind: FuelKind) {
 
 export function addGrade(ship: Fueled, kind: FuelKind, liters: number) {
   if (liters <= 0) return;
-  if (ship.fuelKind !== kind) switchGrade(ship, kind);
+  if (ship.fuelKind !== kind) {
+    if (ship.fuel > 1e-9 && GRADE_RANK[ship.fuelKind] > GRADE_RANK[kind]) return;
+    switchGrade(ship, kind);
+  }
   ship.fuel = Math.min(ship.fuelCapacity, ship.fuel + liters);
   syncFuelMass(ship);
 }
@@ -88,12 +103,12 @@ function finishNtr(ship: Fueled, hold: { ntrHold: number }) {
 
 /** Convert H2 already in the tank. `hold.ntrHold` keeps the liters refined so far. */
 export function refineNtr(ship: Fueled, dt: number, hold: { ntrHold: number }, active: boolean) {
-  if (ship.fuelKind !== "h2") return;
+  if (ship.fuelKind !== "h2" || !active) return;
   if (ship.fuel <= 1e-9 && hold.ntrHold > 0) {
     finishNtr(ship, hold);
     return;
   }
-  if (!active || ship.fuel <= 0 || dt <= 0) return;
+  if (ship.fuel <= 0 || dt <= 0) return;
   const step = Math.min(ship.fuel, NTR_REFINE_RATE * dt);
   ship.fuel -= step;
   hold.ntrHold += step;

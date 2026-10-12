@@ -2563,7 +2563,7 @@ export function stepSim(
       }
       repairShipHull(sim, dt);
       leakH2(ship, dt);
-      refineNtr(ship, dt, sim, p.kicker === "Workshop");
+      refineNtr(ship, dt, sim, p.kicker === "Workshop" || p.workshop === true);
       sipWell(sim, dt);
     }
     sim.warpCharge = 0;

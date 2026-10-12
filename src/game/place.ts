@@ -18,6 +18,8 @@ export type BodyOverride = {
   settlement?: Settlement;
   pad?: "on" | "off";
   grant?: NonNullable<Planet["grant"]>;
+  /** Refines NTR on landing even when the rolled kicker is not Workshop. */
+  workshop?: boolean;
   /** Marks this body as the campaign LUMEN world. */
   lumen?: boolean;
 };
@@ -138,6 +140,7 @@ export function applyStoryBodies(planets: Planet[], place: StoryPlace): string[]
     }
     if (over.pad) body.pad = over.pad;
     if (over.grant) body.grant = over.grant;
+    if (over.workshop) body.workshop = true;
     if (over.lumen) body.lumenWorld = true;
     let refresh = false;
     if (over.orbit && body.orbitA != null) {

@@ -81,7 +81,10 @@ test("skim rate scales with density and a new grade dumps the old one", () => {
 
 test("without the trap a giant does not skim, and random charts are not LUMEN worlds", () => {
   createSystem(4);
-  for (const body of getPlanets()) assert.equal(body.lumenWorld, undefined);
+  for (const body of getPlanets()) {
+    assert.equal(body.lumenWorld, undefined);
+    assert.equal(body.workshop, undefined);
+  }
   const sim = createSim();
   const giant = sim.planets.find((p) => p.kind === "gas");
   assert.ok(giant);
@@ -120,6 +123,11 @@ test("the trap skims NH3 from the haze and H2 from deeper in", () => {
   stepSim(sim, 1, idle);
   assert.equal(sim.ship.fuelKind, "h2");
   assert.ok(sim.ship.fuel > haze);
+  const deep = sim.ship.fuel;
+  park(sim, giant!, (GAS_CLOUD_FACTOR + 1.85) / 2);
+  stepSim(sim, 1 / 30, idle);
+  assert.equal(sim.ship.fuelKind, "h2");
+  assert.equal(sim.ship.fuel, deep);
 
   giant!.matter = "gas-methane";
   sim.ship.fuelKind = "ch4";
@@ -129,6 +137,41 @@ test("the trap skims NH3 from the haze and H2 from deeper in", () => {
   stepSim(sim, 1, idle);
   assert.equal(sim.ship.fuelKind, "ch4");
   assert.equal(sim.ship.fuel, 10);
+});
+
+test("a skim does not dump a higher grade that still has liters", () => {
+  const kept = tank(40, "ntr", "thermal", "cryo");
+  addGrade(kept, "h2", 5);
+  assert.equal(kept.fuelKind, "ntr");
+  assert.equal(kept.fuel, 40);
+  const empty = tank(0, "ntr", "thermal", "cryo");
+  addGrade(empty, "nh3", 2);
+  assert.equal(empty.fuelKind, "nh3");
+  assert.equal(empty.fuel, 2);
+
+  createSystem(4);
+  const sim = createSim();
+  const giant = sim.planets.find((p) => p.kind === "gas");
+  assert.ok(giant);
+  giant!.matter = "gas-ammonia";
+  fly(sim);
+  withTrap(sim);
+  for (const load of [
+    { fuelKind: "ntr" as const, engineKind: "thermal" as const, tankKind: "cryo" as const },
+    { fuelKind: "lumen" as const, engineKind: "lumen" as const, tankKind: "hold" as const },
+    { fuelKind: "hush" as const, engineKind: "coil" as const, tankKind: "hold" as const },
+  ]) {
+    sim.ship.fuelKind = load.fuelKind;
+    sim.ship.engineKind = load.engineKind;
+    sim.ship.tankKind = load.tankKind;
+    applyLoadout(sim.ship);
+    sim.ship.fuel = 40;
+    syncFuelMass(sim.ship);
+    park(sim, giant!, (1 + GAS_CLOUD_FACTOR) / 2);
+    stepSim(sim, 0.5, idle);
+    assert.equal(sim.ship.fuelKind, load.fuelKind);
+    assert.equal(sim.ship.fuel, 40);
+  }
 });
 
 test("H2 leaks from a Fuel tank and stays in Cryo", () => {
@@ -243,6 +286,64 @@ test("a Workshop refines H2 into NTR at a fixed rate", () => {
   assert.equal(sim.ship.fuelKind, "h2");
   assert.ok(Math.abs(sim.ship.fuel - 5) < 1e-6);
   assert.equal(sim.ntrHold, 5);
+
+  const parked = tank(4, "h2", "v2", "cryo");
+  const away = { ntrHold: 3 };
+  parked.fuel = 0;
+  syncFuelMass(parked);
+  refineNtr(parked, 1, away, false);
+  assert.equal(parked.fuelKind, "h2");
+  assert.equal(away.ntrHold, 3);
+  refineNtr(parked, 1, away, true);
+  assert.equal(parked.fuelKind, "ntr");
+  assert.equal(parked.engineKind, "thermal");
+  assert.equal(away.ntrHold, 0);
+
+  createSystem(4);
+  const plain = createSim();
+  const rock = plain.planets.find((p) => p.kind === "rocky" && p.kicker !== "Workshop");
+  assert.ok(rock);
+  fly(plain);
+  plain.phase = "landed";
+  plain.landedId = rock!.id;
+  plain.ntrHold = 4;
+  plain.ship.fuelKind = "h2";
+  plain.ship.engineKind = "v2";
+  plain.ship.tankKind = "cryo";
+  applyLoadout(plain.ship);
+  plain.ship.fuel = 0;
+  syncFuelMass(plain.ship);
+  stepSim(plain, 0.5, idle);
+  assert.equal(plain.ship.fuelKind, "h2");
+  assert.equal(plain.ntrHold, 4);
+
+  createSystem(4);
+  const host = getPlanets().find((p) => p.kind === "rocky" && p.kicker !== "Workshop");
+  assert.ok(host);
+  const marked = {
+    ...PROBE_PLACE,
+    start: undefined,
+    bodies: [{ ref: "shop", match: { kind: "rocky" as const, kicker: host!.kicker }, workshop: true }],
+  };
+  assert.deepEqual(applyStoryBodies(getPlanets(), marked), []);
+  assert.equal(host!.workshop, true);
+  const flagged = createSim();
+  const shopBody = flagged.planets.find((p) => p.id === host!.id);
+  assert.equal(shopBody?.workshop, true);
+  assert.notEqual(shopBody?.kicker, "Workshop");
+  fly(flagged);
+  flagged.phase = "landed";
+  flagged.landedId = shopBody!.id;
+  flagged.ship.fuelKind = "h2";
+  flagged.ship.engineKind = "v2";
+  flagged.ship.tankKind = "cryo";
+  applyLoadout(flagged.ship);
+  flagged.ship.fuel = 10;
+  syncFuelMass(flagged.ship);
+  stepSim(flagged, 1, idle);
+  assert.equal(flagged.ship.fuelKind, "h2");
+  assert.ok(Math.abs(flagged.ship.fuel - 5) < 1e-6);
+  assert.equal(flagged.ntrHold, 5);
 });
 
 test("the LUMEN world grants the drive, and a corona graze refills and heats", () => {

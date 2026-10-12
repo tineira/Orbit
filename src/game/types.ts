@@ -108,6 +108,8 @@ export type Planet = {
   placeRef?: string;
   /** Campaign LUMEN world. Absent on a random chart. */
   lumenWorld?: boolean;
+  /** Story workshop. Absent on a random chart; those refine when kicker is Workshop. */
+  workshop?: boolean;
 };
 
 export type Ship = {
