@@ -18,6 +18,8 @@ export type BodyOverride = {
   settlement?: Settlement;
   pad?: "on" | "off";
   grant?: NonNullable<Planet["grant"]>;
+  /** Marks this body as the campaign LUMEN world. */
+  lumen?: boolean;
 };
 
 export type StoryPlace = {
@@ -136,6 +138,7 @@ export function applyStoryBodies(planets: Planet[], place: StoryPlace): string[]
     }
     if (over.pad) body.pad = over.pad;
     if (over.grant) body.grant = over.grant;
+    if (over.lumen) body.lumenWorld = true;
     let refresh = false;
     if (over.orbit && body.orbitA != null) {
       if (over.orbit.a != null) body.orbitA = over.orbit.a;

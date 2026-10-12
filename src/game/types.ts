@@ -106,6 +106,8 @@ export type Planet = {
     | { module: "transceiver" | "atmoTrap" | "hushDetector" };
   /** Story-place ref, such as "rock". Absent on a random chart. */
   placeRef?: string;
+  /** Campaign LUMEN world. Absent on a random chart. */
+  lumenWorld?: boolean;
 };
 
 export type Ship = {
