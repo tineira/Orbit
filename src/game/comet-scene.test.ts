@@ -5,6 +5,7 @@ import {
   COMET_CRASH_ROCKS,
   COMET_HOLD_S,
   COMET_SCENE_EDGE,
+  COMET_SUN,
   COMET_TRAVEL,
   COMET_VIEW_UNITS,
   COMET_VIEW_UNITS_FAR,
@@ -344,4 +345,12 @@ test("a vent beside a landed ship lifts it instead of grinding the hull down in 
   stepSim(sim, STEP, idle);
   assert.equal(sim.phase, "flight");
   assert.equal(sim.ship.hull, HULL_MAX);
+});
+
+test("you catch the comet leaving the sun: the way in is always the day side", () => {
+  const sim = sceneSim();
+  const scene = sim.cometScene!;
+  assert.ok(COMET_TRAVEL.x * COMET_SUN.x + COMET_TRAVEL.y * COMET_SUN.y < -0.9, "moving away from the sun");
+  const a = Math.atan2(sim.ship.y, sim.ship.x) - scene.rot;
+  assert.ok(sunDot(scene, a) > 0.9, "entry over the day side");
 });

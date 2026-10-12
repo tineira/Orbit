@@ -107,8 +107,9 @@ const SUN_RAW = { x: -0.94, y: -0.34 };
 const SUN_M = Math.hypot(SUN_RAW.x, SUN_RAW.y);
 /** Direction toward the sun, fixed on screen. */
 export const COMET_SUN = { x: SUN_RAW.x / SUN_M, y: SUN_RAW.y / SUN_M };
-// Inbound: the comet heads sunward, head first, with the tail trailing behind it.
-const TRAVEL_RAW = { x: -0.82, y: -0.57 };
+// You catch a comet as it leaves a system, moving away from the sun: you always
+// come in from behind, which is always its day side. The tail points away from the sun.
+const TRAVEL_RAW = { x: 0.82, y: 0.57 };
 const TRAVEL_M = Math.hypot(TRAVEL_RAW.x, TRAVEL_RAW.y);
 /** The comet's direction of travel on screen: the background stars stream the other way. */
 export const COMET_TRAVEL = { x: TRAVEL_RAW.x / TRAVEL_M, y: TRAVEL_RAW.y / TRAVEL_M };
