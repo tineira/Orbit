@@ -20,9 +20,26 @@ El **qué** vive en Notion; aquí está el **cómo**. Si este doc y Notion discr
 | [Descubrimiento](https://app.notion.com/p/3e0a554c3c40819f9fe7c20f610b01b2) | Cómo se gana cada grado y motor |
 | [Mundos](https://app.notion.com/p/3dfa554c3c40810b838edf3fe5cceecd), [Cometa](https://app.notion.com/p/3dfa554c3c408183b66cd95df28a84da) | Catálogo de cuerpos y lock del cometa |
 
-**Decisiones reabiertas por Tomás (11 oct 2026).** "Home siempre habitado", "el cometa no se aterriza", "mundo LUMEN con vida alien" y "no hay estrella masiva" están reabiertas en Notion (aviso naranjo arriba de Mundos, Descubrimiento y Cometa). Este spec las implementa **según la propuesta escrita en Construcción de mundos**. No reabras nada más. Si una fase depende de una propuesta que Tomás todavía no aprobó, está marcada con ⏳: hazla igual detrás del modo campaña, sin cambiar el modo aleatorio.
+**Decisiones reabiertas por Tomás (11 oct 2026).** "Home siempre habitado", "el cometa no se aterriza", "mundo LUMEN con vida alien" y "no hay estrella masiva" se reabrieron en Notion (aviso naranjo arriba de Mundos, Descubrimiento y Cometa) y **Tomás aprobó las cuatro propuestas el 11 oct** (✅ en Construcción de mundos). No reabras nada más.
 
-**Copy:** las líneas de voz, los textos de muralla y las transmisiones no van al repo hasta que se cierren en Historia. En código, todo texto de historia se referencia por **id** (`text:a2-wall`, `halley-05`, `thought-07`) y se resuelve desde un manifest en `public/dev/` solo con `?dev`, igual que `halley.ts` y `pilot.ts`. Sin manifest, el efecto se salta en silencio.
+**Decisiones del 11 oct que tocan este spec** (✅ en Construcción de mundos y en el Mapa):
+
+| Decisión | Dónde entra |
+|---|---|
+| La receta puede forzar `home: "none"` en varios sistemas seguidos; los aleatorios **a veces** salen sin Home | Fase 1 (ya está) y fase 11 |
+| Choque en campaña: vuelves al último pad donde cargaste o a la última ficha, la más reciente, con la nave que tenías | Fase 3 (ya está) |
+| Mundo LUMEN = estación vieja de la civilización | Fase 8.5 y 10 |
+| Cometa = chart propio, aterrizas igualando velocidad; en perihelio solo con LUMEN | Fase 9 |
+| La civilización se llama `civ` en el código; su nombre queda pendiente | Fase 9 y 10 |
+| Transceptor rescatado de una nave desguazada en el hangar de la estación | Fase 10 |
+| Lugares en línea, A→G; cada uno revela el siguiente | Fase 10 |
+| Saltos por tramo como en el Mapa (13–17 en total) | Fase 10 |
+| Posado ~120 s en el cometa E antes de que desacelere | Fase 10 |
+| Nombres: homenaje a Alien (tabla en el Mapa) | Fase 10 |
+| Glitch de Halley al llegar a F | Fase 10 |
+| La campaña es el modo por defecto; el aleatorio pasa a `?free` | Fase 11 |
+
+**Copy:** las líneas de voz, los textos de muralla y las transmisiones no van al repo hasta que se cierren en Historia. En código, todo texto de historia se referencia por **id** (`text:a2-wall`, `halley-05`, `thought-07`) y se resuelve desde un manifest en `public/dev/` solo con `?dev`, igual que `halley.ts` y `pilot.ts`. Sin manifest, el efecto se salta en silencio. La única excepción es `halleyGlitch` (fase 10), que es visual y corre igual.
 
 ## Glosario
 
@@ -191,7 +208,7 @@ Cada fase deja el juego jugable, con el modo aleatorio idéntico. Cada test nuev
 - `activePads: n`: después de `assignOccupancy`, fuerza exactamente `n` landables `active` (los demás pasan a `abandoned`/`unexplored` según su kind).
 - **Aceptación:** el snapshot no cambia. Tests por campo en `src/game/recipe.test.ts`.
 
-### Fase 2: estrella masiva ⏳
+### Fase 2: estrella masiva
 
 - `star: "massive"`: radio ~400–500, `surfaceG` mayor que `star-hot`, corona (`STAR_ATMO_FACTOR`) más ancha, receta de materia nueva `star-massive` con más `lumen` en la atmósfera que `star-hot`. Paleta blanco-azul más intensa.
 - `placeOnRails` tiene que dejar espacio: el primer riel empieza más lejos.
@@ -201,9 +218,9 @@ Cada fase deja el juego jugable, con el modo aleatorio idéntico. Cada test nuev
 ### Fase 3: estado de campaña, guardado y checkpoint
 
 - Nuevo módulo `src/game/campaign.ts` (puro, sin DOM) con `CampaignState`, `newCampaign()`, `saveCampaign()`/`loadCampaign()` sobre `localStorage` (clave `orbit.campaign.v1`, envuelto en try/catch: si falla, la campaña sigue en memoria).
-- Modo: `?campaign` activa la campaña (más adelante será el modo por defecto; eso lo decide Tomás). Sin `?campaign`, nada cambia.
+- Modo: `?campaign` activa la campaña. Sin `?campaign`, nada cambia. (Tomás decidió el 11 oct que la campaña será el modo por defecto: eso es la fase 11, no esta.)
 - **Checkpoint:** se guarda al aterrizar en una ficha y al terminar de cargar combustible en cualquier pad. Guarda nave, módulos, marcas, ficha o tramo y semilla.
-- **Choque o muerte a la deriva en campaña:** en vez de `freshShip()` en Home, `restoreCheckpoint()`: mismo sistema (misma semilla), misma nave, posado donde se guardó. En modo aleatorio, `rebootSim` sigue igual.
+- **Choque o muerte a la deriva en campaña:** en vez de `freshShip()` en Home, `restoreCheckpoint()` (en el código quedó como `rechartToCheckpoint` en `sim.ts`): mismo sistema (misma semilla), misma nave, posado donde se guardó. En modo aleatorio, `rebootSim` sigue igual.
 - **Aceptación:** tests de serialización, de restaurar, y de que el modo aleatorio no lee ni escribe `localStorage`.
 
 ### Fase 4: fichas (lugares de historia)
@@ -251,12 +268,12 @@ Lo que el lock ya definió y nunca se implementó. Un PR por punto, en este orde
 2. **Skim profundo (H2):** cualquier gigante, más adentro. En un estanque que no es Cryo, Hold ni Cistern, el H2 **gotea** con el tiempo.
 3. **Outpost de luna (Thermal + Cryo):** aterrizar en una luna `abandoned` de un gigante con H2 en el tanque entrega Thermal + Cryo.
 4. **Refinar NTR:** aterrizado en un Workshop (cualquier settlement), con H2 en el tanque, convierte H2 en NTR a una tasa fija.
-5. **LUMEN:** el mundo LUMEN ⏳ (rocoso chico interior junto a una estrella caliente o masiva; en campaña lo pone una ficha o un tramo) entrega LUMEN × Lumen drive al aterrizar. Recarga: **paso rasante por la corona** de cualquier estrella: dentro de la corona carga, más adentro carga más y calienta el casco. Usa la corona y los flares que ya existen.
+5. **LUMEN:** el mundo LUMEN (rocoso chico interior junto a una estrella caliente o masiva; en campaña lo pone una ficha o un tramo) entrega LUMEN × Lumen drive al aterrizar. Recarga: **paso rasante por la corona** de cualquier estrella: dentro de la corona carga, más adentro carga más y calienta el casco. Usa la corona y los flares que ya existen.
 6. **HUSH en Lagrange:** sostener un punto de Lagrange carga HUSH (el lock de Lagrange ya existe). `sipField` sigue drenando en pozos.
 
 **Aceptación de cada punto:** test de la tasa, de la condición (sin trap no hay skim, sin Cryo gotea, etc.) y del snapshot intacto.
 
-### Fase 9: el chart del cometa ⏳
+### Fase 9: el chart del cometa
 
 - Saltar al rumbo de un cometa (hoy `beginCometWarp`, stub) entra a un **chart del cometa**: el núcleo es el cuerpo central, aterrizable si la velocidad relativa es < 30 (`LAND_SPEED`).
 - El cometa sigue sin ser un `Planet` de occupancy: un tipo propio o un `Planet` con `kind` nuevo, a elección del implementador, siempre que occupancy y `assignOccupancy` no lo toquen.
@@ -270,11 +287,50 @@ Lo que el lock ya definió y nunca se implementó. Un PR por punto, en este orde
 - `src/game/campaign/phase1.ts`: las fichas A–G y los tramos 1–4 del Mapa en Notion, traducidos a datos. Todo texto por id. Sin copy.
 - Ids de cuerpos y marcas en inglés corto (`a1`, `a2`, `a3`, `hasV2`, `sawWall`).
 - Las semillas de las fichas se eligen jugando: busca semillas cuyo sistema tirado se vea bien y deja el número fijo.
-- **Aceptación:** un test recorre la campaña "en papel" (marcas y grants en orden) y comprueba que cada tramo es cruzable con la nave que se gana antes de él, usando `jumpsPerTank`.
+- **En línea:** A→B→C→D→E→F→G. Cada ficha revela el rumbo a la siguiente (`revealHeading`); no hay otro orden. Largos de tramo como en el Mapa: tramo 1 `[3, 4]`, tramo 2 `[4, 5]`, tramo 3 `[4, 5]`, tramo 4 `[2, 3]`.
+- **Estación (B):** el transceptor es una entrega al aterrizar junto a la nave desguazada del hangar (un `BodyOverride` con `grant: "transceiver"`), no un depósito ni una compra.
+- **Cometa E:** disparador `landedFor` con `seconds: 120` (unos 2 minutos sin despegar). Si despegas antes, el contador vuelve a cero.
+- **Glitch de Halley (nuevo efecto):** agrega `{ halleyGlitch: number }` a `Effect` (segundos). Sube el daño de la señal de Halley (`halley.ts`: CRT y audio) a 1 durante esos segundos y vuelve solo al valor de la nave, sin tocar `hull`. Si suena un clip, se traba y se repite como en el daño máximo. Curva: sube a 1 en 0,3 s, se sostiene el resto y baja al valor de la nave en 0,8 s. Prende el CRT de Halley aunque no suene ningún clip. Lo usa la ficha F en `enterSystem` (`halleyGlitch: 4`), junto con la línea de llegada por id. Sin manifest, el glitch corre igual (es visual). Test puro de la curva: sube, se sostiene y vuelve.
+- **Nombres (homenaje a Alien, aprobados en el Mapa).** Son nombres propios cerrados en Notion, no copy: pueden ir en el código.
+
+  Agrega `starName?: string | null` a `StoryPlace` (`place.ts`) y pásalo a `createSystem` como `starNameForced`. Ojo: `makeSystem` prueba `starNameForced` como verdadero o falso (`world.ts`), así que `""` hoy cae en un nombre al azar. F pasa `""` y necesita que `""` signifique "sin nombre" (distinto de `null`, que sigue siendo "al azar"). El rumbo que lleva a cada ficha (`NearbyHeading.name`) usa el mismo nombre.
+
+  | Ficha | Estrella (`starName`) | Cuerpo clave | Apodo |
+  |---|---|---|---|
+  | A | `Eta Caeli` | asteroide 2: `LV-114` | `Lethe` |
+  | B | `Theta Pyxidis` | estación: `LV-387` | `Styx` |
+  | C | `Kappa Fornacis` | naufragio: `LV-921` | `Cocytus` |
+  | D | `Nu Pictoris` | Workshop viejo: `LV-1206` | colonia `Marlow's Rest` |
+  | Tramo 4 y E | `Mu Doradus` (masiva) | mundo LUMEN: `LV-1540` | `Phlegethon` |
+  | F | **sin nombre**: el campo de nombre queda vacío en el warp y el chart | — | — |
+
+  - Los sistemas de los tramos llevan como estrella un código `LV-` con un número dentro del rango del tramo (tramo 1: 115–386, tramo 2: 388–920, tramo 3: 922–1205, tramo 4: 1207–1539). El nombre lo pone el **rumbo** que lleva a ese paso del tramo (el `NearbyHeading` con `target.leg`, que hoy nombra `rollNearby` en el sistema de origen) y viaja como `starName` al tirar el sistema. El número sale de la semilla del paso del tramo con un RNG aparte (`mulberry32(seed ^ 0x4c56)` o similar), para no correr los demás sorteos. Los rumbos de desvío siguen con los nombres al azar de hoy.
+  - Naves (ids, por ahora no se muestran): la tuya `pcss-patna`, la del cometa `pcss-tremolino`, la misión muerta `pcss-torrens`.
+  - Civilización: `civ`. Si un tipo o una función necesita nombre, usa `civ`; el nombre real se decide después.
+- **Aceptación:** un test recorre la campaña "en papel" (marcas y grants en orden) y comprueba que cada tramo es cruzable con la nave que se gana antes de él, usando `jumpsPerTank`. Otro test comprueba que F no tiene nombre y que las fichas A–E usan los de la tabla.
+
+### Fase 11: el modo aleatorio cambia (a propósito)
+
+La única fase que **sí** cambia el modo aleatorio. Lo pidió Tomás el 11 oct. Va al final, cuando la campaña de la fase 10 se puede jugar entera. Dos PR, en este orden.
+
+1. **Aleatorios a veces sin Home.**
+   - En `makeSystem` sin receta, 1 de cada 6 sistemas sale sin Home habitada: la mitad con `home: "abandoned"` y la otra mitad con `home: "none"`. La decisión es función de la semilla con un **RNG aparte** (`mulberry32(seed ^ K)`, sin `Math.random`), para no correr los sorteos del resto del sistema. La proporción va en una constante (`RANDOM_HOMELESS_RATE = 1 / 6`) para ajustarla jugando.
+   - El sistema con el que empieza la página siempre tiene Home habitada: en `?free`, la primera carga se tira con receta `home: "active"` (no se cambia la semilla).
+   - Choque en modo aleatorio en un sistema sin Home: `rebootSim` tira una semilla nueva hasta tener Home habitada y te deja ahí con `freshShip()`, como hoy.
+   - El snapshot **se regenera en este PR y solo en este**. El diff del snapshot tiene que mostrar solo cambios de Home (asiento 0, settlement y lo que dependa de él); si cambia otra cosa, está mal. agy lo revisa línea por línea.
+   - Otros tests que usan una semilla fija y esperan Home (por ejemplo `adrift.test.ts` con `createSystem(3)`) pueden pasar `home: "active"` en la receta. No cambies lo que prueban.
+   - **Aceptación:** test de la proporción en 600 semillas (entre 1/8 y 1/4.5), test de que la primera carga siempre tiene Home, test del reboot.
+2. **La campaña es el modo por defecto.**
+   - `/` empieza la campaña, o la retoma si hay guardado. `?free` es el modo aleatorio de siempre. `?campaign` sigue funcionando (alias de `/`); `?campaign=0`, `off` o `false` equivalen a `?free`. `?place=<id>` (la puerta de prueba, por ejemplo `probe`) funciona sin `?campaign`.
+   - `campaignFromSearch` hoy devuelve un booleano; puede seguir así (true salvo `?free`, flags de debug o `?campaign=0`) o pasar a un modo `"campaign" | "free"`.
+   - Los flags de debug del chart (`?camp`, `?belt`, `?twins`, `?settlement=`, `?mine=`) implican `?free`. `?dev` funciona en los dos modos.
+   - En `?free`, nada lee ni escribe `orbit.campaign.v1`.
+   - La pantalla de título no cambia.
+   - **Aceptación:** test de `campaignFromSearch` (o su reemplazo) para `/`, `?free`, `?campaign`, `?campaign=0` y cada flag de debug.
 
 ## Qué no hacer
 
-- No cambiar el modo aleatorio. El snapshot manda.
+- No cambiar el modo aleatorio, salvo en la fase 11. El snapshot manda.
 - No inventar física: aterrizar sigue siendo velocidad < 30 y despegar sigue siendo el empujón de hoy.
 - No subir copy de líneas, muralla ni transmisiones. Solo ids.
 - No mezclar dos fases en un PR.

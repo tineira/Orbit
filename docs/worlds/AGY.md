@@ -6,6 +6,7 @@ Validas cada fase que Grok implementa de [`README.md`](README.md). No escribes l
 
 - La rama de la fase (`worlds/phase-N-<slug>`).
 - El reporte de Grok: `tmp/worlds-phase-N-report.md`.
+- Las páginas de Notion de la tabla Fuentes de `README.md`, si tienes acceso. Úsalas para revisar que lo implementado calza con lo que es el juego; no las edites.
 
 ## Qué revisas, en este orden
 
@@ -25,7 +26,7 @@ Compara con `main`: un fallo que ya estaba en `main` no es de la fase, pero anó
 
 ### 2. Los invariantes (valen para todas las fases)
 
-- [ ] **Modo aleatorio idéntico.** `src/game/world-snapshot.test.ts` pasa y su snapshot **no** cambió en el diff (`git diff main -- '*snapshot*'`). Si cambió, es FAIL salvo que Tomás lo haya pedido por escrito.
+- [ ] **Modo aleatorio idéntico.** `src/game/world-snapshot.test.ts` pasa y su snapshot **no** cambió en el diff (`git diff main -- '*snapshot*'`). Si cambió, es FAIL salvo en la fase 11, punto 1: ahí tiene que cambiar, y solo en lo que depende de Home.
 - [ ] **Sin copy de historia.** Busca en el diff frases en inglés que parezcan líneas de voz, muralla o transmisión. Solo ids. Los manifests con texto viven en `public/dev/` y se leen solo con `?dev`.
 - [ ] **Solo la fase N.** Nada de cambios de otras fases ni refactors no pedidos.
 - [ ] **Tests en la lista.** Cada `*.test.ts` nuevo aparece en `"test"` de `package.json`.
@@ -51,7 +52,8 @@ Cada fase de `README.md` termina con **Aceptación**. Verifica cada punto contra
 | 7 | Cada entrega se instala; en campaña el pad no te baja el motor |
 | 8 | Cada recarga nueva con su condición (sin trap no hay skim, sin Cryo el H2 gotea, el paso rasante calienta) |
 | 9 | El cometa se aterriza solo igualando velocidad; en perihelio solo con LUMEN |
-| 10 | La campaña de la fase 1 de punta a punta con `?dev` para acelerar donde haga falta |
+| 10 | La campaña de la fase 1 de punta a punta con `?dev` para acelerar donde haga falta. Al llegar a F, Halley se traba unos segundos y vuelve; F no tiene nombre en el warp ni en el chart |
+| 11 | `/` empieza o retoma la campaña; `?free` es el aleatorio; `?camp` cae en aleatorio. En `?free`, varias cargas: algunos sistemas sin Home; chocar en uno te deja en un sistema con Home |
 
 ### 5. Lee el diff como adversario
 
