@@ -27,11 +27,12 @@ import {
   COMET_SCENE_DEFAULT,
   COMET_SCENE_EDGE,
   COMET_SCENES,
-  COMET_VIEW_UNITS,
+  cometViewUnits,
   cometEntryPose,
   makeCometScene,
   relativeToSurface,
   sceneAccel,
+  sceneGasHits,
   sceneRockHits,
   stepCometScene,
   surfacePoint,
@@ -726,9 +727,7 @@ export function enterCometScene(sim: Sim, kind: CometSceneKind = COMET_SCENE_DEF
   clearFlightLocks(sim);
   resetCometChart(sim);
   sim.cometScene = makeCometScene(kind, seed ?? (Math.random() * 0x100000000) >>> 0);
-  const dir =
-    sim.transitDirX || sim.transitDirY ? { x: sim.transitDirX, y: sim.transitDirY } : shipTravelDir(sim.ship);
-  const pose = cometEntryPose(dir.x, dir.y);
+  const pose = cometEntryPose();
   const ship = sim.ship;
   ship.x = pose.x;
   ship.y = pose.y;
@@ -765,6 +764,12 @@ export function applyDebugComet(sim: Sim, search = typeof window !== "undefined"
   const v = new URLSearchParams(raw).get("comet");
   if (v == null) return;
   const kind = isCometSceneKind(v.trim()) ? (v.trim() as CometSceneKind) : COMET_SCENE_DEFAULT;
+  // The comet is reached on Lumen: start with the drive and a full field tank.
+  const ship = sim.ship;
+  ship.engineKind = "lumen";
+  ship.tankKind = "hold";
+  applyLoadout(ship);
+  fillGrade(ship, "lumen");
   sim.landedId = null;
   sim.takeoffIgnoreId = null;
   enterCometScene(sim, kind);
@@ -774,15 +779,17 @@ function cometCamera(sim: Sim, dt: number) {
   const cam = sim.camera;
   cam.x = 0;
   cam.y = 0;
-  cam.zoomAuto = Math.min(sim.viewCssW, sim.viewCssH) / COMET_VIEW_UNITS;
+  // Wide on the approach, closing in as the ship nears the nucleus.
+  const want = Math.min(sim.viewCssW, sim.viewCssH) / cometViewUnits(Math.hypot(sim.ship.x, sim.ship.y));
+  cam.zoomAuto = dt > 0 ? cam.zoomAuto + (want - cam.zoomAuto) * Math.min(1, dt * 1.5) : want;
   cam.zoom = cam.zoomAuto;
   cam.trauma = Math.max(0, cam.trauma - dt * 1.6);
   cam.shake = sim.reducedMotion ? 0 : cam.trauma * cam.trauma;
 }
 
-/** Rocks on the hull: the belt rule. Ticks feed the belt audio; damage drains the hull. */
-function applySceneHits(sim: Sim, scene: CometScene) {
-  const ticks = sceneRockHits(scene, sim.ship, SHIP_HULL);
+/** Rocks, ice and jet blast on the hull: the belt rule. Ticks feed the belt audio; damage drains the hull. */
+function applySceneHits(sim: Sim, scene: CometScene, dt: number) {
+  const ticks = [...sceneRockHits(scene, sim.ship, SHIP_HULL), ...sceneGasHits(scene, sim.ship, SHIP_HULL, dt)];
   if (!ticks.length) return;
   let hit = 0;
   for (const tick of ticks) {
@@ -890,7 +897,7 @@ function stepCometSim(
     sim.status = "landed";
     sim.altitude = 0;
     scene.held += dt;
-    applySceneHits(sim, scene);
+    applySceneHits(sim, scene, dt);
     if (sim.phase !== "landed") {
       decayParticles(sim, dt);
       cometCamera(sim, dt);
@@ -944,7 +951,7 @@ function stepCometSim(
   ship.x += ship.vx * dt;
   ship.y += ship.vy * dt;
 
-  applySceneHits(sim, scene);
+  applySceneHits(sim, scene, dt);
   if (sim.phase !== "flight") {
     decayParticles(sim, dt);
     cometCamera(sim, dt);

@@ -2,6 +2,7 @@ import type { Sim } from "./sim";
 import {
   COMET_HOLD_S,
   COMET_SUN,
+  COMET_TRAVEL,
   NUCLEUS_GRAV_K,
   NUCLEUS_LOBES,
   NUCLEUS_R,
@@ -25,7 +26,7 @@ import {
 
 type Draw = CanvasRenderingContext2D;
 
-const WARP = { x: 0.82, y: 0.57 };
+const WARP = COMET_TRAVEL;
 const TAU = Math.PI * 2;
 
 let stars: { x: number; y: number; z: number; len: number }[] | null = null;
@@ -219,7 +220,7 @@ function nucleusPath(ctx: Draw, scene: CometScene) {
 let atmo: HTMLCanvasElement | null = null;
 let atmoKey = "";
 function atmosphere(scene: CometScene, cssW: number, cssH: number, dpr: number, zoom: number) {
-  const key = `${cssW}x${cssH}x${dpr}x${zoom.toFixed(4)}x${scene.kind}`;
+  const key = `${cssW}x${cssH}x${dpr}x${zoom}x${scene.kind}`;
   if (atmo && atmoKey === key) return atmo;
   atmoKey = key;
   atmo = atmo ?? document.createElement("canvas");
@@ -558,7 +559,14 @@ export function drawCometScene(
   drawStreaks(ctx, scene.t, cssW, cssH, sim.reducedMotion);
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.drawImage(atmosphere(scene, cssW, cssH, dpr, zoom), shakeX * dpr, shakeY * dpr);
+  // The layer is painted at a stepped zoom (4% steps) and scaled to the live one,
+  // so zooming in on approach does not re-blur it every frame.
+  const zq = Math.exp(Math.floor(Math.log(zoom) / 0.04) * 0.04); // never above zoom: the layer overscans
+  const layer = atmosphere(scene, cssW, cssH, dpr, zq);
+  const sc = zoom / zq;
+  const lw = cssW * dpr * sc;
+  const lh = cssH * dpr * sc;
+  ctx.drawImage(layer, (cssW * dpr - lw) / 2 + shakeX * dpr, (cssH * dpr - lh) / 2 + shakeY * dpr, lw, lh);
   ctx.restore();
 
   ctx.save();

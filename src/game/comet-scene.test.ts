@@ -5,6 +5,11 @@ import {
   COMET_CRASH_ROCKS,
   COMET_HOLD_S,
   COMET_SCENE_EDGE,
+  COMET_TRAVEL,
+  COMET_VIEW_UNITS,
+  COMET_VIEW_UNITS_FAR,
+  cometViewUnits,
+  sceneGasHits,
   NUCLEUS_GRAV_K,
   makeCometScene,
   sceneAccel,
@@ -16,7 +21,7 @@ import {
   type CometScene,
 } from "./comet-scene.ts";
 import { HULL_MAX } from "./hull.ts";
-import { createSim, enterCometScene, enterWarp, hullSafeKind, stepSim, takeoff } from "./sim.ts";
+import { applyDebugComet, createSim, enterCometScene, enterWarp, hullSafeKind, stepSim, takeoff } from "./sim.ts";
 import { createSystem, LAND_SPEED, SHIP_HULL, STEP, WARP_JUMP_SPEED } from "./world.ts";
 
 const idle = { steer: 0, forward: false, reverse: false, aimYaw: null, aimThrust: false };
@@ -272,4 +277,71 @@ test("no star gravity: the only pull is the nucleus", () => {
   const a = sceneAccel(scene, 300, 0);
   assert.ok(Math.abs(a.ax + NUCLEUS_GRAV_K / (300 * 300)) < 1e-9);
   assert.ok(Math.abs(a.ay) < 1e-9);
+});
+
+test("the ship always comes in from behind the comet, catching up along its travel", () => {
+  const sim = sceneSim();
+  const d = Math.hypot(sim.ship.x, sim.ship.y);
+  assert.ok((sim.ship.x * COMET_TRAVEL.x + sim.ship.y * COMET_TRAVEL.y) / d < -0.99, "behind");
+  const v = Math.hypot(sim.ship.vx, sim.ship.vy);
+  assert.ok((sim.ship.vx * COMET_TRAVEL.x + sim.ship.vy * COMET_TRAVEL.y) / v > 0.99, "moving with it");
+});
+
+test("the view is wide far out and closes in near the nucleus", () => {
+  assert.equal(cometViewUnits(90), COMET_VIEW_UNITS);
+  assert.equal(cometViewUnits(1000), COMET_VIEW_UNITS_FAR);
+  assert.ok(cometViewUnits(400) > cometViewUnits(200));
+});
+
+test("loose ice only ticks; a jet blast hits like small rocks and drains the hull", () => {
+  const scene = quiet(makeCometScene("inbound", 8));
+  const ship = { x: 0, y: 400, vx: 0, vy: 0 };
+  scene.gas.push({ x: 0, y: 401, vx: 40, vy: 0, life: 2, age: 0, b: 0, k: 0 });
+  const grit = sceneGasHits(scene, ship, SHIP_HULL, STEP);
+  assert.equal(grit.length, 1);
+  assert.equal(grit[0]!.damage, 0);
+
+  scene.jets = [
+    { a: 0, period: 10, phase: 0, duty: 1, power: 1, rockRate: 0, lag: 5, dark: 0, fade: 1, on: true, acc: 0 },
+  ];
+  const vent = surfacePoint(scene, 0, 20);
+  const near = { x: vent.x, y: vent.y, vx: 0, vy: 0 };
+  let hull = 0;
+  let hits = 0;
+  for (let i = 0; i < 60; i++) {
+    for (const t of sceneGasHits(scene, near, SHIP_HULL, STEP)) {
+      hull += t.damage;
+      if (t.damage > 0) hits++;
+    }
+  }
+  assert.ok(hits >= 2 && hits <= 5, `hits in a second ${hits}`);
+  assert.ok(hull > 5 && hull < 30, `damage in a second ${hull}`);
+  const far = { x: -vent.x, y: -vent.y, vx: 0, vy: 0 };
+  assert.equal(sceneGasHits(scene, far, SHIP_HULL, STEP).filter((t) => t.damage > 0).length, 0);
+});
+
+test("?comet starts on a Lumen drive with a full tank", () => {
+  createSystem(1);
+  const sim = createSim();
+  sim.viewCssW = 1280;
+  sim.viewCssH = 800;
+  applyDebugComet(sim, "?comet=perihelion");
+  assert.ok(sim.cometScene);
+  assert.equal(sim.ship.engineKind, "lumen");
+  assert.equal(sim.ship.fuelKind, "lumen");
+  assert.equal(sim.ship.fuel, sim.ship.fuelCapacity);
+});
+
+test("a vent beside a landed ship lifts it instead of grinding the hull down in place", () => {
+  const sim = sceneSim();
+  const scene = sim.cometScene!;
+  hover(sim, 1, 5);
+  for (let i = 0; i < 30 && sim.phase === "flight"; i++) stepSim(sim, STEP, idle);
+  assert.equal(sim.phase, "landed");
+  scene.jets = [
+    { a: scene.site + 0.3, period: 10, phase: 0, duty: 1, power: 0.8, rockRate: 0, lag: 99, dark: 0, fade: 1, on: true, acc: 0 },
+  ];
+  stepSim(sim, STEP, idle);
+  assert.equal(sim.phase, "flight");
+  assert.equal(sim.ship.hull, HULL_MAX);
 });

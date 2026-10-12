@@ -83,12 +83,19 @@ export const NUCLEUS_OMEGA = 0.11;
 export const NUCLEUS_GRAV_K = 1.6e5;
 /** Seconds landed (summed across hops; a crash starts over) before the comet decelerates. */
 export const COMET_HOLD_S = 120;
-export const COMET_ENTRY_DIST = 420;
+export const COMET_ENTRY_DIST = 640;
 export const COMET_ENTRY_SPEED = 70;
 /** Past this the comet outruns you. */
 export const COMET_SCENE_EDGE = 1100;
 /** The view fits this many scene units on its short side. */
 export const COMET_VIEW_UNITS = 640;
+/** Far out the view opens up to this many units, so the approach shows the whole comet. */
+export const COMET_VIEW_UNITS_FAR = 1500;
+
+/** View size for a ship at distance `d` from the nucleus: close in near the ground, wide far out. */
+export function cometViewUnits(d: number) {
+  return Math.max(COMET_VIEW_UNITS, Math.min(COMET_VIEW_UNITS_FAR, 560 + (d - NUCLEUS_R) * 1.55));
+}
 
 /** Two lobes, like a contact binary. Nucleus frame. */
 export const NUCLEUS_LOBES = [
@@ -100,6 +107,11 @@ const SUN_RAW = { x: -0.94, y: -0.34 };
 const SUN_M = Math.hypot(SUN_RAW.x, SUN_RAW.y);
 /** Direction toward the sun, fixed on screen. */
 export const COMET_SUN = { x: SUN_RAW.x / SUN_M, y: SUN_RAW.y / SUN_M };
+// Inbound: the comet heads sunward, head first, with the tail trailing behind it.
+const TRAVEL_RAW = { x: -0.82, y: -0.57 };
+const TRAVEL_M = Math.hypot(TRAVEL_RAW.x, TRAVEL_RAW.y);
+/** The comet's direction of travel on screen: the background stars stream the other way. */
+export const COMET_TRAVEL = { x: TRAVEL_RAW.x / TRAVEL_M, y: TRAVEL_RAW.y / TRAVEL_M };
 
 const JET_RANGE = 300;
 const JET_PUSH = 260;
@@ -230,6 +242,10 @@ export type CometScene = {
   msgT: number;
   /** Engine plume light 0..1, smoothed. */
   glow: number;
+  /** Jet blast building toward the next hit on the hull. */
+  blast: number;
+  /** Scene time of the last ice tick on the hull. */
+  grainAt: number;
 };
 
 export function makeCometScene(kind: CometSceneKind = COMET_SCENE_DEFAULT, seed?: number): CometScene {
@@ -270,6 +286,8 @@ export function makeCometScene(kind: CometSceneKind = COMET_SCENE_DEFAULT, seed?
     msg: "",
     msgT: 0,
     glow: 0,
+    blast: 0,
+    grainAt: -1,
   };
 }
 
@@ -484,33 +502,99 @@ export function sceneAccel(scene: CometScene, x: number, y: number) {
   let ax = (-x / d) * g;
   let ay = (-y / d) * g;
   for (const j of scene.jets) {
-    if (!j.on) continue;
-    const { x: bx, y: by, w } = surfacePoint(scene, j.a);
-    const dx = x - bx;
-    const dy = y - by;
-    const dd = Math.hypot(dx, dy);
-    const along = dx * Math.cos(w) + dy * Math.sin(w);
-    const off = Math.abs(-dx * Math.sin(w) + dy * Math.cos(w));
-    if (along > 0 && dd < JET_RANGE && off < 30 + along * 0.32) {
-      const f = JET_PUSH * j.power * j.fade * (1 - dd / JET_RANGE);
-      ax += Math.cos(w) * f;
-      ay += Math.sin(w) * f;
-    }
+    const k = jetReach(scene, j, x, y);
+    if (!k) continue;
+    const w = surfacePoint(scene, j.a).w;
+    ax += Math.cos(w) * JET_PUSH * k;
+    ay += Math.sin(w) * JET_PUSH * k;
   }
   for (const b of scene.bursts) {
-    if (b.t < b.warn || b.t > b.warn + BURST_PUSH_S) continue;
-    const { x: bx, y: by, w } = surfacePoint(scene, b.a);
-    const dx = x - bx;
-    const dy = y - by;
-    const dd = Math.hypot(dx, dy) || 1;
-    const along = dx * Math.cos(w) + dy * Math.sin(w);
-    if (along > 0 && dd < BURST_RANGE && along / dd > 0.35) {
-      const f = BURST_PUSH * (1 - dd / BURST_RANGE);
-      ax += (dx / dd) * f;
-      ay += (dy / dd) * f;
-    }
+    const k = burstReach(scene, b, x, y);
+    if (!k) continue;
+    const { x: bx, y: by } = surfacePoint(scene, b.a);
+    const dd = Math.hypot(x - bx, y - by) || 1;
+    ax += ((x - bx) / dd) * BURST_PUSH * k;
+    ay += ((y - by) / dd) * BURST_PUSH * k;
   }
   return { ax, ay };
+}
+
+/** How hard a jet reaches the point: 0 outside its cone, up to power at the vent. */
+function jetReach(scene: CometScene, j: SceneJet, x: number, y: number) {
+  if (!j.on) return 0;
+  const { x: bx, y: by, w } = surfacePoint(scene, j.a);
+  const dx = x - bx;
+  const dy = y - by;
+  const dd = Math.hypot(dx, dy);
+  const along = dx * Math.cos(w) + dy * Math.sin(w);
+  const off = Math.abs(-dx * Math.sin(w) + dy * Math.cos(w));
+  if (along <= 0 || dd >= JET_RANGE || off >= 30 + along * 0.32) return 0;
+  return j.power * j.fade * (1 - dd / JET_RANGE);
+}
+
+/** Same for an outburst, during its push. */
+function burstReach(scene: CometScene, b: SceneBurst, x: number, y: number) {
+  if (b.t < b.warn || b.t > b.warn + BURST_PUSH_S) return 0;
+  const { x: bx, y: by, w } = surfacePoint(scene, b.a);
+  const dx = x - bx;
+  const dy = y - by;
+  const dd = Math.hypot(dx, dy) || 1;
+  const along = dx * Math.cos(w) + dy * Math.sin(w);
+  if (along <= 0 || dd >= BURST_RANGE || along / dd <= 0.35) return 0;
+  return 1 - dd / BURST_RANGE;
+}
+
+/** Blast hits per second at full reach, and the hull each one takes at most. */
+const BLAST_RATE = 4;
+const BLAST_HIT_MAX = 6;
+/** Ice grains tick on the hull at most this often (seconds), like belt grit. */
+const GRAIN_GAP = 0.05;
+/** Height of a landed hull's centre above the ground (the ship's hull radius). */
+const HULL_CLEAR = 9;
+
+/**
+ * Gas and ice on the hull. Loose grains only tick, like belt grit. Inside a jet
+ * or an outburst the blast hits like small rocks: belt noise and hull damage.
+ */
+export function sceneGasHits(
+  scene: CometScene,
+  ship: { x: number; y: number; vx: number; vy: number },
+  hullR: number,
+  dt: number,
+): BeltTick[] {
+  const ticks: BeltTick[] = [];
+  for (const g of scene.gas) {
+    if (scene.t - scene.grainAt < GRAIN_GAP) break;
+    const dx = g.x - ship.x;
+    const dy = g.y - ship.y;
+    if (dx * dx + dy * dy > (hullR + 2) * (hullR + 2)) continue;
+    g.age = g.life;
+    scene.grainAt = scene.t;
+    const closing = Math.hypot(ship.vx - g.vx, ship.vy - g.vy);
+    const speedW = Math.min(1, closing / 120);
+    ticks.push({ kind: "chip", volume: 0.02 + speedW * 0.03, bright: speedW * 0.4, ring: 0.05, pan: Math.max(-1, Math.min(1, dx / hullR)), damage: 0 });
+  }
+  let reach = 0;
+  for (const j of scene.jets) reach = Math.max(reach, jetReach(scene, j, ship.x, ship.y));
+  for (const b of scene.bursts) reach = Math.max(reach, burstReach(scene, b, ship.x, ship.y) * 2);
+  if (reach <= 0) {
+    scene.blast = 0;
+    return ticks;
+  }
+  scene.blast += dt * BLAST_RATE * Math.min(2, reach);
+  while (scene.blast >= 1) {
+    scene.blast -= 1;
+    const k = Math.min(1, reach);
+    ticks.push({
+      kind: "pebble",
+      volume: 0.08 + k * 0.12,
+      bright: 0.4 + k * 0.6,
+      ring: 0.5 + k * 0.4,
+      pan: (scene.rng() - 0.5) * 1.2,
+      damage: Math.max(1, Math.round(BLAST_HIT_MAX * k)),
+    });
+  }
+  return ticks;
 }
 
 /** Speed of a scene point relative to the ground spinning under it. */
@@ -558,21 +642,26 @@ export function sceneRockHits(
 
 /** A vent or outburst under a landed site throws the ship off. Strength 0 = none. */
 export function ventUnderSite(scene: CometScene, site: number): { why: string; k: number } | null {
+  // Any vent whose blast reaches the hull lifts it, so a parked ship is never ground down in place.
+  const { x, y } = surfacePoint(scene, site, HULL_CLEAR);
   for (const j of scene.jets) {
-    if (j.on && Math.abs(angleGap(j.a, site)) < 0.16) return { why: "Vent under hull", k: j.power * j.fade };
+    if (j.on && (Math.abs(angleGap(j.a, site)) < 0.16 || jetReach(scene, j, x, y) > 0)) {
+      return { why: "Vent under hull", k: Math.max(0.3, j.power * j.fade) };
+    }
   }
   for (const b of scene.bursts) {
     const k = b.t - b.warn;
-    if (k > 0 && k < BURST_PUSH_S && Math.abs(angleGap(b.a, site)) < 0.5) return { why: "Outburst", k: 2 };
+    if (k > 0 && k < BURST_PUSH_S && (Math.abs(angleGap(b.a, site)) < 0.5 || burstReach(scene, b, x, y) > 0)) {
+      return { why: "Outburst", k: 2 };
+    }
   }
   return null;
 }
 
-/** Entry pose: in from the edge along the warp direction, almost matched. */
-export function cometEntryPose(dirx: number, diry: number) {
-  const m = Math.hypot(dirx, diry) || 1;
-  const ux = dirx / m;
-  const uy = diry / m;
+/** Entry pose: always from behind the comet, catching up along its travel, almost matched. */
+export function cometEntryPose() {
+  const ux = COMET_TRAVEL.x;
+  const uy = COMET_TRAVEL.y;
   return {
     x: -ux * COMET_ENTRY_DIST,
     y: -uy * COMET_ENTRY_DIST,
