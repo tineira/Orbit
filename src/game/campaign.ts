@@ -12,7 +12,7 @@ export type Grant =
   | { tank: TankKind }
   | { module: CampaignModule };
 
-export type CampaignLeg = { id: string; step: number; seed: number };
+export type CampaignLeg = { id: string; step: number; seed: number; length?: number };
 
 /** The loadout a checkpoint can put back. Position comes from the body. */
 export type CampaignShip = Pick<Ship, "fuelKind" | "engineKind" | "tankKind" | "fuel" | "hull">;
@@ -227,7 +227,10 @@ function blankCheckpoint(seed: number, landedId: string | null, ship: CampaignSh
 }
 
 function cloneLeg(leg: CampaignLeg | null): CampaignLeg | null {
-  return leg ? { id: leg.id, step: leg.step, seed: leg.seed >>> 0 } : null;
+  if (!leg) return null;
+  const copy: CampaignLeg = { id: leg.id, step: leg.step, seed: leg.seed >>> 0 };
+  if (leg.length != null) copy.length = leg.length;
+  return copy;
 }
 
 function cloneGrant(grant: Grant): Grant {
@@ -343,7 +346,11 @@ function parseLeg(value: unknown): CampaignLeg | null | undefined {
   if (typeof row.id !== "string" || !row.id) return undefined;
   if (typeof row.step !== "number" || !Number.isInteger(row.step) || row.step < 0) return undefined;
   if (seed == null) return undefined;
-  return { id: row.id, step: row.step, seed };
+  const leg: CampaignLeg = { id: row.id, step: row.step, seed };
+  if (row.length == null) return leg;
+  if (typeof row.length !== "number" || !Number.isInteger(row.length) || row.length < 1) return undefined;
+  leg.length = row.length;
+  return leg;
 }
 
 function parseFlags(value: unknown): CampaignFlag[] | null {

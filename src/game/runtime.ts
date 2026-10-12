@@ -33,6 +33,7 @@ import {
   launchSim,
   applyDebugWarp,
   applyCampaignBoot,
+  bindCampaignChart,
   applyStoryStart,
   commitPadCheckpoint,
   rebootSim,
@@ -171,6 +172,8 @@ declare global {
         orbitE?: number;
         orbitPeri?: number;
         mass?: number;
+        settlement?: string | null;
+        pad?: "on" | "off" | null;
       }[];
       getPos?: () => { x: number; y: number; vx: number; vy: number };
       getCamera?: () => { x: number; y: number; zoom: number };
@@ -204,7 +207,18 @@ declare global {
       getTransitPunched?: () => boolean;
       getTransitBoomed?: () => boolean;
       getTransitAge?: () => number;
-      getNearby?: () => { angle: number; name: string }[];
+      getNearby?: () => {
+        angle: number;
+        name: string;
+        target?: { place?: string; leg?: string } | null;
+        requires?: string | null;
+      }[];
+      getCampaign?: () => {
+        place: string | null;
+        leg: { id: string; step: number; seed: number; length?: number } | null;
+        flags: string[];
+        aside: boolean;
+      } | null;
       getComet?: () => { x: number; y: number; vx: number; vy: number; radius: number } | null;
       getCometSpent?: () => boolean;
       getCometHeading?: () => { angle: number; kind: string; name: string } | null;
@@ -982,6 +996,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
           orbitE: p.orbitE,
           orbitPeri: p.orbitPeri,
           mass: p.mass,
+          settlement: p.settlement,
+          pad: p.pad ?? null,
         })),
       getPos: () => ({ x: s.ship.x, y: s.ship.y, vx: s.ship.vx, vy: s.ship.vy }),
       getCamera: () => ({ x: s.camera.x, y: s.camera.y, zoom: s.camera.zoomAuto }),
@@ -1009,7 +1025,22 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       getTransitPunched: () => s.transitPunched,
       getTransitBoomed: () => s.transitBoomed,
       getTransitAge: () => s.transitAge,
-      getNearby: () => s.nearby.map((n) => ({ angle: n.angle, name: n.name })),
+      getNearby: () =>
+        s.nearby.map((n) => ({
+          angle: n.angle,
+          name: n.name,
+          target: n.target ?? null,
+          requires: n.requires ?? null,
+        })),
+      getCampaign: () =>
+        s.campaign
+          ? {
+              place: s.campaign.place,
+              leg: s.campaign.leg,
+              flags: s.campaign.flags.slice(),
+              aside: s.campaignAside,
+            }
+          : null,
       getComet: () =>
         s.comet
           ? { x: s.comet.x, y: s.comet.y, vx: s.comet.vx, vy: s.comet.vy, radius: s.comet.radius }
@@ -1341,6 +1372,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         });
         saveCampaign(sim.campaign);
       }
+      bindCampaignChart(sim);
     }
     sim.reducedMotion = reducedMotion;
     if (pendingPrefs) {

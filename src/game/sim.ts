@@ -126,6 +126,13 @@ import {
 } from "./campaign.ts";
 import { applyBodyGrant, chartStoryPlace, storyPlaceById, type StoryPlace } from "./place.ts";
 import {
+  chartCampaignWarp,
+  legById,
+  resolvedLength,
+  stampCampaignHeadings,
+  stepRecipe,
+} from "./leg.ts";
+import {
   approachCrossings,
   jumpBlocked,
   type ApproachLatch,
@@ -223,6 +230,8 @@ export type Sim = {
   campaign: CampaignState | null;
   /** Story place id for this chart. Landing here freezes a checkpoint. Phase 4 sets it. */
   campaignPlaceId: string | null;
+  /** True on a detour. The leg step and its seed stay on the route. Not saved. */
+  campaignAside: boolean;
   /** Story events queued this frame. Runtime drains them. Random mode stays empty. */
   campaignEvents: GameEvent[];
   /** Approach hysteresis. Keyed by ref and radius so two bubbles do not share a latch. */
@@ -349,6 +358,7 @@ export function createSim(): Sim {
     airlockSeqAt: 0,
     campaign: null,
     campaignPlaceId: null,
+    campaignAside: false,
     campaignEvents: [],
     approachLatch: { seen: new Set(), inside: new Set() },
     warpBlockHeading: null,
@@ -437,6 +447,7 @@ export function rebootSim(sim: Sim) {
   if (!campaign) sim.ship = freshShip();
   else {
     restoreCampaignFields(campaign);
+    sim.campaignAside = false;
     rechartToCheckpoint(sim, campaign.checkpoint.seed);
     applyCampaignShip(sim.ship, campaign.checkpoint.ship);
   }
@@ -538,15 +549,38 @@ function applyCampaignShip(ship: Ship, saved: CampaignState["checkpoint"]["ship"
 }
 
 function rechartToCheckpoint(sim: Sim, seed: number) {
-  const placeId = sim.campaign?.place;
+  const campaign = sim.campaign;
+  const placeId = campaign?.place;
   const place = placeId ? storyPlaceById(placeId) : null;
   if (place && place.seed === seed) {
     const already = getSystem().seed === seed && getPlanets().some((p) => p.placeRef != null);
     if (!already) chartIntoSim(sim, () => chartStoryPlace(place, false));
+    sim.campaignAside = false;
+    sim.campaignPlaceId = place.id;
+    bindCampaignChart(sim);
     return;
   }
-  if (getSystem().seed === seed) return;
-  chartIntoSim(sim, () => createSystem(seed));
+  const legState = campaign?.place ? null : (campaign?.leg ?? null);
+  const leg = legState ? legById(legState.id) : null;
+  if (leg && legState && seed === legState.seed) {
+    const length = resolvedLength(leg, legState.length);
+    chartIntoSim(sim, () => createSystem(seed, {}, null, null, stepRecipe(leg, legState.step, length)));
+    sim.campaignAside = false;
+    sim.campaignPlaceId = null;
+    bindCampaignChart(sim);
+    return;
+  }
+  if (getSystem().seed !== seed) chartIntoSim(sim, () => createSystem(seed));
+  sim.campaignAside = leg != null;
+  sim.campaignPlaceId = null;
+  bindCampaignChart(sim);
+}
+
+/** Put the route heading on this chart. No-op without a campaign, so random mode stays bare. */
+export function bindCampaignChart(sim: Sim) {
+  if (!sim.campaign) return;
+  stampCampaignHeadings(getSystem().nearby, sim.campaign, sim.campaignAside);
+  sim.nearby = getSystem().nearby.slice();
 }
 
 function chartIntoSim(sim: Sim, chart: () => void) {
@@ -688,10 +722,25 @@ function streakSpan(sim: Sim) {
 /** Open the new chart and put the ship just off the viewport edge, aimed at the arrival point. */
 function punchWarp(sim: Sim, settle = false) {
   const prefs = simViewPrefs(sim);
-  createSystem(undefined, {}, sim.warpTarget?.pal ?? null, sim.warpTarget?.name ?? null);
+  if (sim.campaign) {
+    const seed = (Math.random() * 0x100000000) >>> 0;
+    const charted = chartCampaignWarp(
+      sim.campaign,
+      sim.warpTarget,
+      sim.campaignAside,
+      seed,
+      sim.warpTarget?.pal ?? null,
+      sim.warpTarget?.name ?? null,
+    );
+    sim.campaignAside = charted.aside;
+    sim.campaignPlaceId = charted.placeId;
+  } else {
+    createSystem(undefined, {}, sim.warpTarget?.pal ?? null, sim.warpTarget?.name ?? null);
+  }
   const sys = getSystem();
   sim.planets = copyPlanets(sys.planets);
   sim.nearby = sys.nearby.slice();
+  bindCampaignChart(sim);
   sim.warpTarget = null;
   resetCometChart(sim);
   clearSpectroChart(sim);
