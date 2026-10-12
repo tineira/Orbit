@@ -1,4 +1,5 @@
 import type { Sim } from "./sim";
+import type { CometCave } from "./comet-scene";
 import {
   COMET_HOLD_S,
   COMET_SUN,
@@ -82,6 +83,7 @@ type Nucleus = {
   mask: Uint8Array;
 };
 let nucleus: Nucleus | null = null;
+let nucleusCave: CometCave | undefined;
 
 function vnoise(x: number, y: number) {
   const xi = Math.floor(x);
@@ -94,7 +96,23 @@ function vnoise(x: number, y: number) {
   return (h(xi, yi) * (1 - u) + h(xi + 1, yi) * u) * (1 - v) + (h(xi, yi + 1) * (1 - u) + h(xi + 1, yi + 1) * u) * v;
 }
 
-function buildNucleus(): Nucleus {
+/**
+ * How much darker this texel is for the cave: 0 outside, up to 1 over it. The
+ * shaft runs under a rock roof, so from above it is only a slightly darker,
+ * sunken patch with ragged edges, like a lava tube or a collapsed vent.
+ */
+function caveShade(cave: CometCave | undefined, x: number, y: number, rr: number) {
+  if (!cave) return 0;
+  const a = Math.atan2(y, x);
+  const g = Math.abs(Math.atan2(Math.sin(a - cave.a), Math.cos(a - cave.a)));
+  const rag = (vnoise(rr / 6, 2.3) - 0.5) * 0.12 + (vnoise(x / 3, y / 3) - 0.5) * 0.05;
+  const across = 1 - Math.max(0, Math.min(1, (g - cave.half * 0.75 - rag) / (cave.half * 0.5)));
+  const floor = caveFloorR(cave) - 4;
+  const along = Math.max(0, Math.min(1, (rr - floor) / 8));
+  return across * along;
+}
+
+function buildNucleus(cave?: CometCave): Nucleus {
   const n = 220;
   const ext = 130;
   const cell = (ext * 2) / n;
@@ -115,6 +133,7 @@ function buildNucleus(): Nucleus {
       const k = j * n + i;
       if (rr >= edge) continue;
       mask[k] = 1;
+      const shade = caveShade(cave, x, y, rr);
       let h = 0;
       for (const L of NUCLEUS_LOBES) {
         const d = Math.hypot(x - L.x, y - L.y) / L.r;
@@ -129,9 +148,10 @@ function buildNucleus(): Nucleus {
         if (d < 1) h -= (1 - d * d) ** 2 * p.r * 0.28;
         else if (d < 1.2) h += (1.2 - d) * p.r * 0.12;
       }
-      H[k] = h;
-      // Charcoal albedo, with rare ice glints.
-      alb[k] = 0.75 + vnoise(x / 14 + 9, y / 14) * 0.35 + (sceneHash(k * 0.37) < 0.004 ? 1.6 : 0);
+      // The roof over the cave sags a little.
+      H[k] = h - shade * 5;
+      // Charcoal albedo, with rare ice glints; the cave roof is darker and never glints.
+      alb[k] = (0.75 + vnoise(x / 14 + 9, y / 14) * 0.35) * (1 - shade * 0.42) + (shade < 0.1 && sceneHash(k * 0.37) < 0.004 ? 1.6 : 0);
     }
   }
   const nx = new Float32Array(n * n);
@@ -158,7 +178,10 @@ function buildNucleus(): Nucleus {
 }
 
 function drawNucleus(ctx: Draw, scene: CometScene) {
-  if (!nucleus) nucleus = buildNucleus();
+  if (!nucleus || nucleusCave !== scene.p.cave) {
+    nucleus = buildNucleus(scene.p.cave);
+    nucleusCave = scene.p.cave;
+  }
   const nuc = nucleus;
   const { cv, ext } = nuc;
   // Half a texel at the rim is ~0.004 rad: below that a relight changes nothing you can see.
@@ -202,64 +225,6 @@ function relightNucleus(nuc: Nucleus, scene: CometScene) {
     d[o + 3] = 255;
   }
   nuc.cx.putImageData(img, 0, 0);
-}
-
-/**
- * The shaft: from afar it reads as one more crater shadow, only a little too
- * deep and never frosted. Up close the engine lights its walls.
- */
-function drawCave(ctx: Draw, sim: Sim, scene: CometScene) {
-  const c = scene.p.cave;
-  if (!c) return;
-  const floor = caveFloorR(c);
-  const a0 = c.a - c.half;
-  const a1 = c.a + c.half;
-  const lip0 = nucleusRadiusAt(a0) + 1.5;
-  const lip1 = nucleusRadiusAt(a1) + 1.5;
-  const rim = Math.max(lip0, lip1);
-  ctx.save();
-  ctx.rotate(scene.rot);
-  const shaft = () => {
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(a0) * lip0, Math.sin(a0) * lip0);
-    ctx.lineTo(Math.cos(a0) * floor, Math.sin(a0) * floor);
-    ctx.arc(0, 0, floor, a0, a1);
-    ctx.lineTo(Math.cos(a1) * lip1, Math.sin(a1) * lip1);
-    ctx.closePath();
-  };
-  const ux = Math.cos(c.a);
-  const uy = Math.sin(c.a);
-  const fill = ctx.createLinearGradient(ux * rim, uy * rim, ux * floor, uy * floor);
-  fill.addColorStop(0, "rgba(6,6,7,0.55)");
-  fill.addColorStop(0.35, "rgba(3,3,4,0.93)");
-  fill.addColorStop(1, "rgba(2,2,3,0.98)");
-  ctx.shadowColor = "rgba(0,0,0,0.85)";
-  ctx.shadowBlur = 5;
-  ctx.fillStyle = fill;
-  shaft();
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  // The plume is the only light that gets in.
-  const mid = (floor + rim) / 2;
-  const w = c.a + scene.rot;
-  const L = engineLight(sim, scene, Math.cos(w) * mid, Math.sin(w) * mid);
-  if (L > 0.02) {
-    ctx.strokeStyle = `rgba(255,196,150,${Math.min(0.75, L * 0.9)})`;
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(a0) * lip0, Math.sin(a0) * lip0);
-    ctx.lineTo(Math.cos(a0) * floor, Math.sin(a0) * floor);
-    ctx.arc(0, 0, floor, a0, a1);
-    ctx.lineTo(Math.cos(a1) * lip1, Math.sin(a1) * lip1);
-    ctx.stroke();
-    const glow = ctx.createRadialGradient(ux * floor, uy * floor, 0, ux * floor, uy * floor, rim - floor);
-    glow.addColorStop(0, `rgba(255,190,140,${L * 0.22})`);
-    glow.addColorStop(1, "rgba(255,190,140,0)");
-    ctx.fillStyle = glow;
-    shaft();
-    ctx.fill();
-  }
-  ctx.restore();
 }
 
 function nucleusPath(ctx: Draw, scene: CometScene) {
@@ -635,18 +600,23 @@ export function drawCometScene(
   ctx.translate(cssW / 2 + shakeX, cssH / 2 + shakeY);
   ctx.scale(zoom, zoom);
   drawFrost(ctx, sim, scene);
+  // In the cave the rock roof covers the ship: draw it first, then the nucleus over it.
+  const covered = inCave(scene, sim.ship.x, sim.ship.y);
+  if (covered) {
+    hooks.drawParticles(ctx);
+    hooks.drawShip(ctx, 0.82);
+  }
   drawNucleus(ctx, scene);
-  drawCave(ctx, sim, scene);
   drawPlumeOnGround(ctx, sim, scene);
   drawRocks(ctx, sim, scene);
   drawBursts(ctx, scene);
   drawTrajectory(ctx, sim, scene, zoom);
-  hooks.drawParticles(ctx);
+  if (!covered) hooks.drawParticles(ctx);
   const dt = Math.max(0, Math.min(0.1, scene.t - lastT));
   lastT = scene.t;
   const want = inUmbra(sim.ship.x, sim.ship.y, 0.95) || inCave(scene, sim.ship.x, sim.ship.y) ? 1 : 0;
   shipDark += (want - shipDark) * Math.min(1, dt * 4);
-  hooks.drawShip(ctx, shipDark * 0.82);
+  if (!covered) hooks.drawShip(ctx, shipDark * 0.82);
   ctx.restore();
 
   const v = ctx.createRadialGradient(cssW / 2, cssH / 2, Math.min(cssW, cssH) * 0.3, cssW / 2, cssH / 2, Math.max(cssW, cssH) * 0.72);

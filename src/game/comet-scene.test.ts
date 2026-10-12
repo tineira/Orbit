@@ -369,7 +369,7 @@ test("the cave on E: land on its floor, no vent, outburst or rock reaches you, a
   enterCometScene(sim, "perihelion", 3);
   const scene = sim.cometScene!;
   const cave = scene.p.cave!;
-  for (const j of scene.jets) assert.ok(Math.abs(angleGap(j.a, cave.a)) > cave.half + 0.2, "no vent on the lips");
+  for (const j of scene.jets) assert.ok(Math.abs(angleGap(j.a, cave.a)) >= cave.half, "no vent inside the cave");
   scene.rocks = [];
   hover(sim, cave.a, 5);
   for (let i = 0; i < 30 && sim.phase === "flight"; i++) stepSim(sim, STEP, idle);
@@ -428,4 +428,24 @@ test("cave walls: a slow brush slides, a hard hit wrecks", () => {
   sim.ship.vy = g.y + Math.cos(w) * 60;
   stepSim(sim, STEP, idle);
   assert.equal(sim.phase, "crashed");
+});
+
+test("the way into the cave is not sheltered: above the rim a jet still reaches you", () => {
+  const scene = quiet(makeCometScene("perihelion", 3));
+  const cave = scene.p.cave!;
+  const lipA = cave.a + cave.half + 0.04;
+  scene.jets = [
+    { a: lipA, period: 10, phase: 0, duty: 1, power: 1, rockRate: 0, lag: 5, dark: 0, fade: 1, on: true, acc: 0 },
+  ];
+  // Hovering over the mouth, in the vent's cone.
+  const vent = surfacePoint(scene, lipA, 25);
+  const ship = { x: vent.x, y: vent.y, vx: 0, vy: 0 };
+  let dmg = 0;
+  for (let i = 0; i < 60; i++) for (const t of sceneGasHits(scene, ship, SHIP_HULL, STEP)) dmg += t.damage;
+  assert.ok(dmg > 0, "the approach takes hits");
+  // Down on the floor the same vent does nothing.
+  const floor = surfacePoint(scene, cave.a, SHIP_HULL);
+  let safe = 0;
+  for (let i = 0; i < 60; i++) for (const t of sceneGasHits(scene, { x: floor.x, y: floor.y, vx: 0, vy: 0 }, SHIP_HULL, STEP)) safe += t.damage;
+  assert.equal(safe, 0);
 });

@@ -275,12 +275,13 @@ export function makeCometScene(kind: CometSceneKind = COMET_SCENE_DEFAULT, seed?
       acc: 0,
     });
   }
-  // No vent on the cave's lips: the shaft stays quiet.
+  // No vent inside the cave itself. Its lips keep theirs: the shelter is the
+  // floor under the roof, not the way in.
   const c = p.cave;
   if (c) {
     for (const j of jets) {
       const g = angleGap(j.a, c.a);
-      if (Math.abs(g) < c.half + 0.25) j.a = c.a + (g >= 0 ? 1 : -1) * (c.half + 0.3);
+      if (Math.abs(g) < c.half) j.a = c.a + (g >= 0 ? 1 : -1) * (c.half + 0.04);
     }
   }
   return {
@@ -494,7 +495,7 @@ function stepBursts(scene: CometScene, dt: number, reduced: boolean) {
     scene.burstClock = p.burstEvery * (0.7 + rng() * 0.6);
     for (let tries = 0; tries < 20; tries++) {
       const a = rng() * Math.PI * 2;
-      if (sunDot(scene, a) > Math.max(0.2, p.lit + 0.25) && !nearCave(scene, a, 0.6)) {
+      if (sunDot(scene, a) > Math.max(0.2, p.lit + 0.25) && !nearCave(scene, a)) {
         scene.bursts.push({ a, t: 0, warn: BURST_WARN_S, fired: false });
         break;
       }
