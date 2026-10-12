@@ -1,3 +1,4 @@
+import type { Grant } from "./campaign.ts";
 import type { EngineKind, FuelKind, Ship, TankKind } from "./types.ts";
 import { CH4_FULL_MASS, FUEL_BURN_MAIN, RETRO_FORCE, SHIP_FUEL_CAPACITY, THRUST_FORCE } from "./world.ts";
 
@@ -256,6 +257,66 @@ export function installEngine(ship: Fueled, engine: EngineKind) {
   if (!cell) return false;
   ship.engineKind = engine;
   ship.tankKind = snapTank(ship.tankKind, cell.tanks);
+  applyLoadout(ship);
+  return true;
+}
+
+function cellForEngine(fuel: FuelKind, engine: EngineKind): DriveCell | null {
+  return driveCell(fuel, engine) ?? DRIVE_CELLS.find((cell) => cell.engine === engine) ?? null;
+}
+
+function cellForTank(fuel: FuelKind, engine: EngineKind, tank: TankKind): DriveCell | null {
+  const here = driveCell(fuel, engine);
+  if (here?.tanks.includes(tank)) return here;
+  return (
+    DRIVE_CELLS.find((cell) => cell.engine === engine && cell.tanks.includes(tank)) ??
+    DRIVE_CELLS.find((cell) => cell.fuel === fuel && cell.tanks.includes(tank)) ??
+    DRIVE_CELLS.find((cell) => cell.tanks.includes(tank)) ??
+    null
+  );
+}
+
+/**
+ * Story grant of an engine or a tank. The granted piece stays.
+ * The other axis moves onto a legal cell, then `legalizeLoadout` snaps the tank.
+ * Liters that fit the new tank stay. A new grade does not refill.
+ */
+export function grant(ship: Fueled, piece: Extract<Grant, { engine: EngineKind } | { tank: TankKind }>): boolean {
+  if ("engine" in piece) {
+    const cell = cellForEngine(ship.fuelKind, piece.engine);
+    if (!cell) return false;
+    ship.fuelKind = cell.fuel;
+    ship.engineKind = cell.engine;
+  } else {
+    const cell = cellForTank(ship.fuelKind, ship.engineKind, piece.tank);
+    if (!cell) return false;
+    ship.fuelKind = cell.fuel;
+    ship.engineKind = cell.engine;
+    ship.tankKind = piece.tank;
+  }
+  legalizeLoadout(ship);
+  return true;
+}
+
+/** Shown while a campaign pad refuses this engine and tank. Not a story line. */
+export const PAD_CELL_HINT = "Pad cannot load this ship";
+
+/** True when methane, this engine, and this tank are one legal cell. */
+export function methaneCellFits(ship: Pick<Fueled, "engineKind" | "tankKind">): boolean {
+  const cell = driveCell(DEFAULT_FUEL_KIND, ship.engineKind);
+  return !!cell && cell.tanks.includes(ship.tankKind);
+}
+
+/**
+ * Campaign pad. Switches the grade to methane when the cell already fits.
+ * Does not change the engine or the tank. Returns false when the pad must not load.
+ */
+export function beginCampaignPadRefill(ship: Fueled): boolean {
+  if (!methaneCellFits(ship)) return false;
+  if (ship.fuelKind !== DEFAULT_FUEL_KIND) {
+    ship.fuelKind = DEFAULT_FUEL_KIND;
+    ship.fuel = 0;
+  }
   applyLoadout(ship);
   return true;
 }
