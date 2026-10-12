@@ -109,6 +109,18 @@ import {
   DEFAULT_TANK_KIND,
 } from "./fuel.ts";
 import { HULL_MAX, hullRepairRate, type HullRepairKind } from "./hull.ts";
+import {
+  addGrade,
+  campaignHasModule,
+  chargeHush,
+  coronaHullPerSec,
+  deliverLumen,
+  deliverMoonOutpost,
+  leakH2,
+  lumenLiters,
+  refineNtr,
+  skimLiters,
+} from "./refill.ts";
 import { SHIP_SPRITE_H } from "./ship-sprite.ts";
 import {
   adriftStarved,
@@ -192,6 +204,8 @@ export type Sim = {
   lagrangeDwell: number;
   flares: SolarFlare[];
   flareWait: number;
+  /** Liters of H2 already refined toward NTR. Cleared when the tank flips. */
+  ntrHold: number;
   burned: boolean;
   burnCause: BurnCause | null;
   crashKind: CrashKind | null;
@@ -322,6 +336,7 @@ export function createSim(): Sim {
     lagrangeDwell: 0,
     flares: [],
     flareWait: 6,
+    ntrHold: 0,
     burned: false,
     burnCause: null,
     crashKind: null,
@@ -594,6 +609,7 @@ function chartIntoSim(sim: Sim, chart: () => void) {
   sim.nearby = sys.nearby.slice();
   resetCometChart(sim);
   clearSpectroChart(sim);
+  sim.ntrHold = 0;
   applySimViewPrefs(sim, prefs);
   sim.approachLatch.seen.clear();
   sim.approachLatch.inside.clear();
@@ -747,6 +763,7 @@ function punchWarp(sim: Sim, settle = false) {
   sim.warpTarget = null;
   resetCometChart(sim);
   clearSpectroChart(sim);
+  sim.ntrHold = 0;
   applySimViewPrefs(sim, prefs);
   const mag = Math.hypot(sim.transitDirX, sim.transitDirY) || 1;
   const dirx = sim.transitDirX / mag;
@@ -1350,7 +1367,50 @@ function stepLockedLagrange(
   sim.orbitHint = lagrangeHint(pt, true);
   emitIonTrail(sim);
   sipWell(sim, dt);
+  chargeHush(sim.ship, dt);
   return true;
+}
+
+function moonOutpost(body: Planet, planets: Planet[]): boolean {
+  if (body.kind !== "moon" || body.settlement !== "abandoned") return false;
+  const parent = body.parentId ? planets.find((p) => p.id === body.parentId) : undefined;
+  return parent?.kind === "gas";
+}
+
+function pickSkim(sim: Sim): { kind: "nh3" | "h2"; density: number } | null {
+  if (!campaignHasModule(sim.campaign?.modules, "atmoTrap")) return null;
+  let best: { kind: "nh3" | "h2"; density: number } | null = null;
+  for (const p of sim.planets) {
+    if (p.kind !== "gas" || isGhostBody(p) || p.radius <= 0) continue;
+    const d = Math.hypot(sim.ship.x - p.x, sim.ship.y - p.y);
+    const density = atmoDensityAt(p, d);
+    if (density <= 0) continue;
+    const deep = d < p.radius * GAS_CLOUD_FACTOR;
+    const kind = deep ? "h2" : p.matter === "gas-ammonia" || p.matter === "gas-water" ? "nh3" : null;
+    if (!kind) continue;
+    if (!best || density > best.density) best = { kind, density };
+  }
+  return best;
+}
+
+function coronaDensity(sim: Sim): number {
+  const star = sim.planets.find((p) => p.kind === "star");
+  if (!star) return 0;
+  const d = Math.hypot(sim.ship.x - star.x, sim.ship.y - star.y);
+  return atmoDensityAt(star, d);
+}
+
+function stepFlightRefill(sim: Sim, dt: number) {
+  const ship = sim.ship;
+  leakH2(ship, dt);
+  const skim = pickSkim(sim);
+  if (skim) addGrade(ship, skim.kind, skimLiters(skim.density) * dt);
+  if (ship.fuelKind !== "lumen") return;
+  const density = coronaDensity(sim);
+  if (density <= 0) return;
+  addGrade(ship, "lumen", lumenLiters(density) * dt);
+  ship.hull = Math.max(0, ship.hull - coronaHullPerSec(density) * dt);
+  if (ship.hull <= 0) breachHull(sim);
 }
 
 function atmoRadius(p: Planet) {
@@ -2502,6 +2562,8 @@ export function stepSim(
         }
       }
       repairShipHull(sim, dt);
+      leakH2(ship, dt);
+      refineNtr(ship, dt, sim, p.kicker === "Workshop" || p.workshop === true);
       sipWell(sim, dt);
     }
     sim.warpCharge = 0;
@@ -2611,6 +2673,7 @@ export function stepSim(
   ship.vy += (gy + drag.ay + ty) * dt;
   ship.x += ship.vx * dt;
   ship.y += ship.vy * dt;
+  stepFlightRefill(sim, dt);
   emitIonTrail(sim);
 
   collidePlanets(sim);
@@ -3009,6 +3072,8 @@ function collidePlanets(sim: Sim) {
         }
       }
       if (p.grant) applyBodyGrant(s, p.grant, sim.campaign);
+      if (moonOutpost(p, sim.planets) && s.fuelKind === "h2" && s.fuel > 0) deliverMoonOutpost(s);
+      if (p.lumenWorld) deliverLumen(s);
       stickToPlanet(sim, p);
       faceRadial(sim);
       sim.camera.trauma = Math.min(1, sim.camera.trauma + 0.18);

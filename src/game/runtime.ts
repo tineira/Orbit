@@ -175,6 +175,7 @@ declare global {
         mass?: number;
         settlement?: string | null;
         pad?: "on" | "off" | null;
+        matter?: string | null;
       }[];
       getPos?: () => { x: number; y: number; vx: number; vy: number };
       getCamera?: () => { x: number; y: number; zoom: number };
@@ -222,6 +223,7 @@ declare global {
       } | null;
       getLoadout?: () => { fuel: number; fuelKind: string; engineKind: string; tankKind: string };
       setLoadout?: (fuelKind: string, engineKind: string, tankKind: string, fuel?: number) => void;
+      setModules?: (ids: string[]) => void;
       getComet?: () => { x: number; y: number; vx: number; vy: number; radius: number } | null;
       getCometSpent?: () => boolean;
       getCometHeading?: () => { angle: number; kind: string; name: string } | null;
@@ -1002,6 +1004,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
           mass: p.mass,
           settlement: p.settlement,
           pad: p.pad ?? null,
+          matter: p.matter,
         })),
       getPos: () => ({ x: s.ship.x, y: s.ship.y, vx: s.ship.vx, vy: s.ship.vy }),
       getCamera: () => ({ x: s.camera.x, y: s.camera.y, zoom: s.camera.zoomAuto }),
@@ -1058,6 +1061,13 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
         applyLoadout(s.ship);
         if (fuel != null) s.ship.fuel = Math.min(s.ship.fuelCapacity, Math.max(0, fuel));
         syncFuelMass(s.ship);
+      },
+      setModules: (ids: string[]) => {
+        if (!s.campaign) return;
+        const allowed = new Set(["transceiver", "atmoTrap", "hushDetector"]);
+        s.campaign.modules = ids
+          .filter((id): id is "transceiver" | "atmoTrap" | "hushDetector" => allowed.has(id))
+          .map((module) => ({ module }));
       },
       getComet: () =>
         s.comet
