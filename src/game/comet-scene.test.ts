@@ -7,6 +7,12 @@ import {
   COMET_SCENE_EDGE,
   COMET_SUN,
   COMET_TRAVEL,
+  angleGap,
+  caveFloorR,
+  caveRimR,
+  caveWallContact,
+  nucleusRadiusAt,
+  siteLit,
   COMET_VIEW_UNITS,
   COMET_VIEW_UNITS_FAR,
   cometViewUnits,
@@ -353,4 +359,73 @@ test("you catch the comet leaving the sun: the way in is always the day side", (
   assert.ok(COMET_TRAVEL.x * COMET_SUN.x + COMET_TRAVEL.y * COMET_SUN.y < -0.9, "moving away from the sun");
   const a = Math.atan2(sim.ship.y, sim.ship.x) - scene.rot;
   assert.ok(sunDot(scene, a) > 0.9, "entry over the day side");
+});
+
+test("the cave on E: land on its floor, no vent, outburst or rock reaches you, and the hold runs", () => {
+  createSystem(1);
+  const sim = createSim();
+  sim.viewCssW = 1280;
+  sim.viewCssH = 800;
+  enterCometScene(sim, "perihelion", 3);
+  const scene = sim.cometScene!;
+  const cave = scene.p.cave!;
+  for (const j of scene.jets) assert.ok(Math.abs(angleGap(j.a, cave.a)) > cave.half + 0.2, "no vent on the lips");
+  scene.rocks = [];
+  hover(sim, cave.a, 5);
+  for (let i = 0; i < 30 && sim.phase === "flight"; i++) stepSim(sim, STEP, idle);
+  assert.equal(sim.phase, "landed");
+  assert.ok(Math.hypot(sim.ship.x, sim.ship.y) < caveRimR(cave), "down in the shaft");
+  assert.equal(siteLit(scene, scene.site), false);
+  for (let i = 0; i < 60 * 20; i++) {
+    stepSim(sim, STEP, idle);
+    if (sim.phase !== "landed") break;
+  }
+  assert.equal(sim.phase, "landed", "twenty seconds of a busy perihelion and still down");
+  assert.equal(sim.ship.hull, HULL_MAX);
+  assert.ok(scene.held > 19);
+});
+
+test("cave walls: a slow brush slides, a hard hit wrecks", () => {
+  const scene = quiet(makeCometScene("perihelion", 3));
+  const cave = scene.p.cave!;
+  // On the tall lip's side, above the low lip: still wall there.
+  const tall = nucleusRadiusAt(cave.a - cave.half) > nucleusRadiusAt(cave.a + cave.half) ? -1 : 1;
+  const high = (caveRimR(cave) + nucleusRadiusAt(cave.a + tall * cave.half)) / 2;
+  const at = cave.a + tall * (cave.half - 0.02);
+  assert.ok(caveWallContact(scene, Math.cos(at) * high, Math.sin(at) * high, SHIP_HULL), "the taller wall runs to its own lip");
+  const r = caveFloorR(cave) + 20;
+  const a = cave.a + cave.half - 0.05;
+  const contact = caveWallContact(scene, Math.cos(a) * r, Math.sin(a) * r, SHIP_HULL);
+  assert.ok(contact, "touching the wall");
+  assert.equal(caveWallContact(scene, Math.cos(cave.a) * r, Math.sin(cave.a) * r, SHIP_HULL), null, "clear in the middle");
+
+  createSystem(1);
+  const sim = createSim();
+  sim.viewCssW = 1280;
+  sim.viewCssH = 800;
+  enterCometScene(sim, "perihelion", 3);
+  quiet(sim.cometScene!);
+  const s = sim.cometScene!;
+  const w = a + s.rot;
+  const g = surfaceVelocity(Math.cos(w) * r, Math.sin(w) * r);
+  sim.ship.x = Math.cos(w) * r;
+  sim.ship.y = Math.sin(w) * r;
+  // A slow brush: slide along it, pushed back clear, nothing into the wall left.
+  sim.ship.x = Math.cos(w) * r;
+  sim.ship.y = Math.sin(w) * r;
+  sim.ship.vx = g.x - Math.sin(w) * 10;
+  sim.ship.vy = g.y + Math.cos(w) * 10;
+  stepSim(sim, STEP, idle);
+  assert.equal(sim.phase, "flight");
+  const after = caveWallContact(s, sim.ship.x, sim.ship.y, SHIP_HULL);
+  assert.ok(!after || after.depth < 0.01, "pushed back clear of the wall");
+  const n = { x: Math.sin(w), y: -Math.cos(w) };
+  const g2 = surfaceVelocity(sim.ship.x, sim.ship.y);
+  assert.ok((sim.ship.vx - g2.x) * n.x + (sim.ship.vy - g2.y) * n.y > -1, "no speed left into the wall");
+
+  // Straight at the wall, sideways in the shaft.
+  sim.ship.vx = g.x - Math.sin(w) * 60;
+  sim.ship.vy = g.y + Math.cos(w) * 60;
+  stepSim(sim, STEP, idle);
+  assert.equal(sim.phase, "crashed");
 });

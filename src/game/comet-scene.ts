@@ -27,7 +27,12 @@ export type CometSceneParams = {
   /** Fallback rocks per second onto the night side. */
   fallRate: number;
   label: string;
+  /** A shaft into the nucleus where no vent, outburst, rock or sunlight reaches. */
+  cave?: CometCave;
 };
+
+/** Nucleus-frame angle of the shaft, its angular half width, and how deep its floor is below the rim. */
+export type CometCave = { a: number; half: number; depth: number };
 
 /** Starting points from the playable look (artifact "Escena del cometa"). Tune by playing. */
 export const COMET_SCENES: Record<CometSceneKind, CometSceneParams> = {
@@ -42,6 +47,8 @@ export const COMET_SCENES: Record<CometSceneKind, CometSceneParams> = {
     burstEvery: 5.5,
     fallRate: 1.1,
     label: "COMET · PERIHELION",
+    // On the far end of the big lobe: about three ships wide at the mouth, four deep.
+    cave: { a: Math.PI, half: 0.3, depth: 36 },
   },
   inbound: {
     seed: 17,
@@ -268,6 +275,14 @@ export function makeCometScene(kind: CometSceneKind = COMET_SCENE_DEFAULT, seed?
       acc: 0,
     });
   }
+  // No vent on the cave's lips: the shaft stays quiet.
+  const c = p.cave;
+  if (c) {
+    for (const j of jets) {
+      const g = angleGap(j.a, c.a);
+      if (Math.abs(g) < c.half + 0.25) j.a = c.a + (g >= 0 ? 1 : -1) * (c.half + 0.3);
+    }
+  }
   return {
     kind,
     p,
@@ -294,7 +309,57 @@ export function makeCometScene(kind: CometSceneKind = COMET_SCENE_DEFAULT, seed?
 
 /** Surface radius under a scene point. */
 export function surfaceRadiusAt(scene: CometScene, x: number, y: number) {
-  return nucleusRadiusAt(Math.atan2(y, x) - scene.rot);
+  return groundRadiusAt(scene, Math.atan2(y, x) - scene.rot);
+}
+
+/** Ground under a nucleus-frame angle: the shape, or the cave floor inside the shaft. */
+export function groundRadiusAt(scene: CometScene, a: number) {
+  const c = scene.p.cave;
+  if (c && Math.abs(angleGap(a, c.a)) < c.half) return caveFloorR(c);
+  return nucleusRadiusAt(a);
+}
+
+export function caveFloorR(c: CometCave) {
+  return nucleusRadiusAt(c.a) - c.depth;
+}
+
+/** The lower of the two lips: below it you are between the walls. */
+export function caveRimR(c: CometCave) {
+  return Math.min(nucleusRadiusAt(c.a - c.half), nucleusRadiusAt(c.a + c.half));
+}
+
+/** Inside the shaft, below the rim: sheltered from vents, outbursts, rocks and the sun. */
+export function inCave(scene: CometScene, x: number, y: number) {
+  const c = scene.p.cave;
+  if (!c) return false;
+  const a = Math.atan2(y, x) - scene.rot;
+  return Math.abs(angleGap(a, c.a)) < c.half && Math.hypot(x, y) < caveRimR(c);
+}
+
+/** A nucleus-frame angle within `pad` of the shaft. */
+export function nearCave(scene: CometScene, a: number, pad = 0) {
+  const c = scene.p.cave;
+  return !!c && Math.abs(angleGap(a, c.a)) < c.half + pad;
+}
+
+/**
+ * A hull of radius `hullR` touching a shaft wall: the unit normal back into the
+ * shaft, and how far the hull is in. Null when clear.
+ */
+export function caveWallContact(scene: CometScene, x: number, y: number, hullR: number) {
+  const c = scene.p.cave;
+  if (!c) return null;
+  const d = Math.hypot(x, y);
+  if (d <= 1) return null;
+  const g = angleGap(Math.atan2(y, x) - scene.rot, c.a);
+  if (Math.abs(g) >= c.half) return null;
+  const sgn = g >= 0 ? 1 : -1;
+  // Each wall runs up to its own lip; the two lips are not the same height.
+  if (d >= nucleusRadiusAt(c.a + sgn * c.half)) return null;
+  const clear = d * Math.sin(c.half - Math.abs(g));
+  if (clear >= hullR) return null;
+  const w = c.a + sgn * c.half + scene.rot;
+  return { nx: sgn * Math.sin(w), ny: -sgn * Math.cos(w), depth: hullR - clear };
 }
 
 /** Velocity of the spinning ground at a scene point. */
@@ -305,7 +370,7 @@ export function surfaceVelocity(x: number, y: number) {
 /** Scene position of a nucleus-frame surface angle, lifted by `lift`. */
 export function surfacePoint(scene: CometScene, a: number, lift = 0) {
   const w = a + scene.rot;
-  const r = nucleusRadiusAt(a) + lift;
+  const r = groundRadiusAt(scene, a) + lift;
   return { x: Math.cos(w) * r, y: Math.sin(w) * r, w };
 }
 
@@ -316,6 +381,7 @@ export function sunDot(scene: CometScene, a: number) {
 }
 
 export function siteLit(scene: CometScene, a: number) {
+  if (nearCave(scene, a)) return false;
   return sunDot(scene, a) > 0;
 }
 
@@ -410,7 +476,7 @@ export function stepCometScene(scene: CometScene, dt: number, reduced = false) {
     r.vx -= (r.x / d) * g * dt;
     r.vy -= (r.y / d) * g * dt;
     // A rock leaves from the surface; it only lands again once it is heading back in.
-    if (r.x * r.vx + r.y * r.vy < 0 && d < surfaceRadiusAt(scene, r.x, r.y) + r.r * 0.4) r.dead = true;
+    if (r.x * r.vx + r.y * r.vy < 0 && d < nucleusRadiusAt(Math.atan2(r.y, r.x) - scene.rot) + r.r * 0.4) r.dead = true;
     r.x += r.vx * dt;
     r.y += r.vy * dt;
     r.spin += r.w * dt;
@@ -428,7 +494,7 @@ function stepBursts(scene: CometScene, dt: number, reduced: boolean) {
     scene.burstClock = p.burstEvery * (0.7 + rng() * 0.6);
     for (let tries = 0; tries < 20; tries++) {
       const a = rng() * Math.PI * 2;
-      if (sunDot(scene, a) > Math.max(0.2, p.lit + 0.25)) {
+      if (sunDot(scene, a) > Math.max(0.2, p.lit + 0.25) && !nearCave(scene, a, 0.6)) {
         scene.bursts.push({ a, t: 0, warn: BURST_WARN_S, fired: false });
         break;
       }
@@ -522,7 +588,7 @@ export function sceneAccel(scene: CometScene, x: number, y: number) {
 
 /** How hard a jet reaches the point: 0 outside its cone, up to power at the vent. */
 function jetReach(scene: CometScene, j: SceneJet, x: number, y: number) {
-  if (!j.on) return 0;
+  if (!j.on || inCave(scene, x, y)) return 0;
   const { x: bx, y: by, w } = surfacePoint(scene, j.a);
   const dx = x - bx;
   const dy = y - by;
@@ -535,7 +601,7 @@ function jetReach(scene: CometScene, j: SceneJet, x: number, y: number) {
 
 /** Same for an outburst, during its push. */
 function burstReach(scene: CometScene, b: SceneBurst, x: number, y: number) {
-  if (b.t < b.warn || b.t > b.warn + BURST_PUSH_S) return 0;
+  if (b.t < b.warn || b.t > b.warn + BURST_PUSH_S || inCave(scene, x, y)) return 0;
   const { x: bx, y: by, w } = surfacePoint(scene, b.a);
   const dx = x - bx;
   const dy = y - by;
@@ -564,6 +630,10 @@ export function sceneGasHits(
   dt: number,
 ): BeltTick[] {
   const ticks: BeltTick[] = [];
+  if (inCave(scene, ship.x, ship.y)) {
+    scene.blast = 0;
+    return ticks;
+  }
   for (const g of scene.gas) {
     if (scene.t - scene.grainAt < GRAIN_GAP) break;
     const dx = g.x - ship.x;
@@ -643,6 +713,7 @@ export function sceneRockHits(
 
 /** A vent or outburst under a landed site throws the ship off. Strength 0 = none. */
 export function ventUnderSite(scene: CometScene, site: number): { why: string; k: number } | null {
+  if (nearCave(scene, site)) return null;
   // Any vent whose blast reaches the hull lifts it, so a parked ship is never ground down in place.
   const { x, y } = surfacePoint(scene, site, HULL_CLEAR);
   for (const j of scene.jets) {

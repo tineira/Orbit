@@ -32,6 +32,7 @@ import {
   makeCometScene,
   relativeToSurface,
   sceneAccel,
+  caveWallContact,
   sceneGasHits,
   sceneRockHits,
   stepCometScene,
@@ -956,6 +957,25 @@ function stepCometSim(
     decayParticles(sim, dt);
     cometCamera(sim, dt);
     return;
+  }
+
+  // Cave walls: brush them slowly and you slide; hit them fast and the hull goes.
+  const wall = caveWallContact(scene, ship.x, ship.y, SHIP_HULL);
+  if (wall) {
+    const g = surfaceVelocity(ship.x, ship.y);
+    const vn = (ship.vx - g.x) * wall.nx + (ship.vy - g.y) * wall.ny;
+    if (vn < -LAND_SPEED) {
+      wreckInScene(sim, COMET_CRASH_NUCLEUS);
+      decayParticles(sim, dt);
+      cometCamera(sim, dt);
+      return;
+    }
+    if (vn < 0) {
+      ship.vx -= vn * wall.nx;
+      ship.vy -= vn * wall.ny;
+    }
+    ship.x += wall.nx * wall.depth;
+    ship.y += wall.ny * wall.depth;
   }
 
   const d = Math.hypot(ship.x, ship.y);

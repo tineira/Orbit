@@ -7,6 +7,9 @@ import {
   NUCLEUS_LOBES,
   NUCLEUS_R,
   inUmbra,
+  caveFloorR,
+  inCave,
+  nearCave,
   nucleusRadiusAt,
   sceneHash,
   siteLit,
@@ -199,6 +202,64 @@ function relightNucleus(nuc: Nucleus, scene: CometScene) {
     d[o + 3] = 255;
   }
   nuc.cx.putImageData(img, 0, 0);
+}
+
+/**
+ * The shaft: from afar it reads as one more crater shadow, only a little too
+ * deep and never frosted. Up close the engine lights its walls.
+ */
+function drawCave(ctx: Draw, sim: Sim, scene: CometScene) {
+  const c = scene.p.cave;
+  if (!c) return;
+  const floor = caveFloorR(c);
+  const a0 = c.a - c.half;
+  const a1 = c.a + c.half;
+  const lip0 = nucleusRadiusAt(a0) + 1.5;
+  const lip1 = nucleusRadiusAt(a1) + 1.5;
+  const rim = Math.max(lip0, lip1);
+  ctx.save();
+  ctx.rotate(scene.rot);
+  const shaft = () => {
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a0) * lip0, Math.sin(a0) * lip0);
+    ctx.lineTo(Math.cos(a0) * floor, Math.sin(a0) * floor);
+    ctx.arc(0, 0, floor, a0, a1);
+    ctx.lineTo(Math.cos(a1) * lip1, Math.sin(a1) * lip1);
+    ctx.closePath();
+  };
+  const ux = Math.cos(c.a);
+  const uy = Math.sin(c.a);
+  const fill = ctx.createLinearGradient(ux * rim, uy * rim, ux * floor, uy * floor);
+  fill.addColorStop(0, "rgba(6,6,7,0.55)");
+  fill.addColorStop(0.35, "rgba(3,3,4,0.93)");
+  fill.addColorStop(1, "rgba(2,2,3,0.98)");
+  ctx.shadowColor = "rgba(0,0,0,0.85)";
+  ctx.shadowBlur = 5;
+  ctx.fillStyle = fill;
+  shaft();
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  // The plume is the only light that gets in.
+  const mid = (floor + rim) / 2;
+  const w = c.a + scene.rot;
+  const L = engineLight(sim, scene, Math.cos(w) * mid, Math.sin(w) * mid);
+  if (L > 0.02) {
+    ctx.strokeStyle = `rgba(255,196,150,${Math.min(0.75, L * 0.9)})`;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a0) * lip0, Math.sin(a0) * lip0);
+    ctx.lineTo(Math.cos(a0) * floor, Math.sin(a0) * floor);
+    ctx.arc(0, 0, floor, a0, a1);
+    ctx.lineTo(Math.cos(a1) * lip1, Math.sin(a1) * lip1);
+    ctx.stroke();
+    const glow = ctx.createRadialGradient(ux * floor, uy * floor, 0, ux * floor, uy * floor, rim - floor);
+    glow.addColorStop(0, `rgba(255,190,140,${L * 0.22})`);
+    glow.addColorStop(1, "rgba(255,190,140,0)");
+    ctx.fillStyle = glow;
+    shaft();
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 function nucleusPath(ctx: Draw, scene: CometScene) {
@@ -517,7 +578,8 @@ function drawReadout(ctx: Draw, sim: Sim, scene: CometScene, cssW: number, cssH:
     lines.push([`HOLD ${String(left).padStart(4)} s`, "rgba(205,204,198,0.85)"]);
     if (sim.phase === "landed") {
       const day = siteLit(scene, scene.site);
-      lines.push([`SITE ${day ? "  DAY" : "NIGHT"}`, day ? "#c9543f" : "rgba(205,204,198,0.85)"]);
+      const cave = nearCave(scene, scene.site);
+      lines.push([`SITE ${cave ? " CAVE" : day ? "  DAY" : "NIGHT"}`, day ? "#c9543f" : "rgba(205,204,198,0.85)"]);
     }
   }
   ctx.save();
@@ -574,6 +636,7 @@ export function drawCometScene(
   ctx.scale(zoom, zoom);
   drawFrost(ctx, sim, scene);
   drawNucleus(ctx, scene);
+  drawCave(ctx, sim, scene);
   drawPlumeOnGround(ctx, sim, scene);
   drawRocks(ctx, sim, scene);
   drawBursts(ctx, scene);
@@ -581,7 +644,7 @@ export function drawCometScene(
   hooks.drawParticles(ctx);
   const dt = Math.max(0, Math.min(0.1, scene.t - lastT));
   lastT = scene.t;
-  const want = inUmbra(sim.ship.x, sim.ship.y, 0.95) ? 1 : 0;
+  const want = inUmbra(sim.ship.x, sim.ship.y, 0.95) || inCave(scene, sim.ship.x, sim.ship.y) ? 1 : 0;
   shipDark += (want - shipDark) * Math.min(1, dt * 4);
   hooks.drawShip(ctx, shipDark * 0.82);
   ctx.restore();
