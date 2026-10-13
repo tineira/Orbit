@@ -94,6 +94,8 @@ test("trySpawnComet fires once then is spent", () => {
   assert.equal(trySpawnComet(sim), true);
   assert.equal(sim.cometSpent, true);
   assert.ok(sim.comet);
+  assert.equal(sim.comet.unmarked, true);
+  assert.equal(sim.comet.card, undefined);
   assert.equal(sim.cometEntered, false);
   assert.equal(trySpawnComet(sim), false);
   assert.equal(sim.cometSpent, true);

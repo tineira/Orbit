@@ -38,7 +38,7 @@ Hasta que exista el spec del chase, el salto al rumbo es un **stub reservado**: 
 9. **Saltar a ese rumbo no llama `createSystem`.** Stub: no transit, no lost, no estrella al azar. Tira la velocidad bajo `WARP_JUMP_SPEED` para que el check no dispare cada frame.
 10. **`KeyC` es el probe `?dev`; un tiro por chart.** `consumeComet() && devTools` (ese orden), luego `trySpawnComet(sim)` desde `sim.ts`. Fases `landed` | `flight`. Title / transit / crashed **sin gastar**. `rebootSim` **no** recarga. Warp a estrella y `createSim` / KeyN **sí**.
 11. **SFX de entrada es one-shot al cruzar al chart, no al pulsar C.** No llames `audio.warn()`.
-12. **Spawn natural queda para después; el flag `cometSpent` se comparte.** Primera pasada = sólo C. Después: a lo más un visitante por chart, no un timer.
+12. **Spawn natural queda para después; el flag `cometSpent` se comparte.** Primera pasada = sólo C. Después: a lo más un visitante por chart, no un timer. Un lugar de campaña no usa ese tope: la carta no marcada repite el roce, con pausa, hasta dejar rumbo, y la marcada manda el chorro de salida. `KeyC` sigue siendo un tiro por chart y el actor queda abierto (`unmarked`), así no hereda la carta del lugar.
 13. **Reduced motion salta sólo la animación de cola.** Pip, flecha leftover y aviso quedan.
 14. **Sin cloud rollout, sin reabrir occupancy.** Rollback es git revert. Civ en el cometa (HUSH, Descubrimiento) es un flag del **actor**, no PlanetKind.
 15. **Combate del minijuego: sólo intención.** En el *chase*, el núcleo usa `LAND_SPEED` / `vn`. La cola es drag + ticks de casco. Números, cámara y layout **no** están lockeados.

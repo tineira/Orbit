@@ -101,9 +101,30 @@ function finishNtr(ship: Fueled, hold: { ntrHold: number }) {
   legalizeLoadout(ship);
 }
 
+/**
+ * Deep H2 skim while NTR liters remain. The liters wait in `hold` for the Workshop.
+ * The tank stays NTR, so the skim does not dump the jump you still have.
+ */
+export function bankH2OverNtr(ship: Fueled, liters: number, hold: { ntrHold: number }): boolean {
+  if (liters <= 0 || ship.fuelKind !== "ntr" || ship.fuel <= 1e-9) return false;
+  hold.ntrHold += liters;
+  return true;
+}
+
 /** Convert H2 already in the tank. `hold.ntrHold` keeps the liters refined so far. */
 export function refineNtr(ship: Fueled, dt: number, hold: { ntrHold: number }, active: boolean) {
-  if (ship.fuelKind !== "h2" || !active) return;
+  if (!active) return;
+  if (ship.fuelKind === "ntr") {
+    if (hold.ntrHold <= 1e-9 || dt <= 0) return;
+    const room = ship.fuelCapacity - ship.fuel;
+    if (room <= 1e-9) return;
+    const step = Math.min(hold.ntrHold, NTR_REFINE_RATE * dt, room);
+    hold.ntrHold -= step;
+    ship.fuel += step;
+    syncFuelMass(ship);
+    return;
+  }
+  if (ship.fuelKind !== "h2") return;
   if (ship.fuel <= 1e-9 && hold.ntrHold > 0) {
     finishNtr(ship, hold);
     return;

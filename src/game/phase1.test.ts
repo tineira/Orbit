@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { campaignShipFrom, newCampaign, writeCheckpoint, type CampaignState, type Grant } from "./campaign.ts";
 import { PHASE1_CIV, PHASE1_LEGS, PHASE1_PLACES, PHASE1_SHIPS } from "./campaign/phase1.ts";
 import { applyLoadout, syncFuelMass } from "./fuel.ts";
+import { bankH2OverNtr, NTR_REFINE_RATE, refineNtr, skimLiters } from "./refill.ts";
 import {
   chartCampaignWarp,
   hasCanonicalRefill,
@@ -22,11 +23,12 @@ import {
   storyPlaceById,
   type StoryPlace,
 } from "./place.ts";
-import { applyCampaignBoot, createSim, stepSim } from "./sim.ts";
+import { applyCampaignBoot, COMET_GRAZE_GAP_S, createSim, stepSim, trySpawnComet } from "./sim.ts";
 import { runTriggers, shipDeltaV, type GameEvent } from "./triggers.ts";
-import type { FuelKind, NearbyHeading, Ship } from "./types.ts";
+import type { NearbyHeading, Ship } from "./types.ts";
 import {
   createSystem,
+  getMinimapWorldR,
   getPlanets,
   getSystem,
   MASSIVE_STAR_ATMO_FACTOR,
@@ -92,6 +94,62 @@ function canRefineNtr(modules: Grant[]): boolean {
   return gas && shop;
 }
 
+function ntrShip(): Ship {
+  const ship = paperShip(0);
+  ship.fuelKind = "ntr";
+  ship.engineKind = "thermal";
+  ship.tankKind = "cryo";
+  applyLoadout(ship);
+  ship.fuel = ship.fuelCapacity;
+  syncFuelMass(ship);
+  return ship;
+}
+
+function jumpsLeft(ship: Ship): number {
+  return shipDeltaV(ship) / JUMP_DV;
+}
+
+/** Burn one jump of Δv. The liters left are what the next chart actually receives. */
+function spendJump(ship: Ship) {
+  const target = Math.max(0, shipDeltaV(ship) - JUMP_DV);
+  let lo = 0;
+  let hi = ship.fuel;
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    ship.fuel = mid;
+    syncFuelMass(ship);
+    if (shipDeltaV(ship) > target) hi = mid;
+    else lo = mid;
+  }
+  ship.fuel = lo;
+  syncFuelMass(ship);
+}
+
+/**
+ * Mid-cloud H2 skim (the depth a deep pass banks) while NTR remains, then the Workshop.
+ * Same two calls `stepFlightRefill` and the landed refine make.
+ */
+function refineLeftoverNtr(ship: Ship, salt: number) {
+  const planets = getPlanets();
+  assert.equal(ship.fuelKind, "ntr", `salt ${salt} still on NTR`);
+  assert.ok(ship.fuel > 1, `salt ${salt} arrived with leftover NTR`);
+  assert.ok(planets.some((planet) => planet.kind === "gas"), `salt ${salt} giant`);
+  assert.ok(
+    planets.some((planet) => planet.kicker === "Workshop" || planet.workshop === true),
+    `salt ${salt} workshop`,
+  );
+  const before = ship.fuel;
+  const hold = { ntrHold: 0 };
+  const banked = skimLiters(0.15) * 30;
+  assert.equal(bankH2OverNtr(ship, banked, hold), true, `salt ${salt} banks H2 over NTR`);
+  assert.equal(ship.fuel, before, `salt ${salt} skim does not dump NTR`);
+  assert.equal(ship.fuelKind, "ntr");
+  refineNtr(ship, banked / NTR_REFINE_RATE + 1, hold, true);
+  assert.ok(ship.fuel > before, `salt ${salt} workshop adds the skim as NTR`);
+  assert.equal(ship.fuelKind, "ntr");
+  assert.ok(jumpsLeft(ship) >= 1, `salt ${salt} range ${jumpsLeft(ship)} after refine`);
+}
+
 /** Leave D on a full NTR tank and take the headings this salt actually stamps. */
 function crossLeg4(salt: number): number {
   const state = newCampaign({
@@ -103,27 +161,23 @@ function crossLeg4(salt: number): number {
     modules: [{ module: "atmoTrap" }],
     ship: { fuelKind: "ntr", engineKind: "thermal", tankKind: "cryo", fuel: 100, hull: 100 },
   });
+  const ship = ntrShip();
   createSystem(55, {}, null, "Nu Pictoris", { nearby: { count: 3 } });
   stampCampaignHeadings(getSystem().nearby, state, false);
   let route = getSystem().nearby.find((item) => item.target?.leg === "leg-4");
   assert.ok(route, `salt ${salt} has no leg heading`);
-  const full = jumpsPerTank("ntr", "thermal", "cryo");
-  let range = full;
   let length = 0;
   let hops = 0;
   while (state.place !== "star-massive-1") {
-    assert.ok(range >= 1, `salt ${salt} hop ${hops} range ${range}`);
-    range -= 1;
+    assert.ok(jumpsLeft(ship) >= 1, `salt ${salt} hop ${hops} range ${jumpsLeft(ship)}`);
+    spendJump(ship);
     hops += 1;
     assert.ok(hops < 6, `salt ${salt} never arrived`);
     chartCampaignWarp(state, route, false, route.roll ?? 0, null, route.name);
     if (state.leg) {
       if (length === 0) length = state.leg.length ?? 0;
       if (state.leg.step === 0) assert.equal(canRefineNtr(state.modules), false, `salt ${salt} bridge`);
-      if (length >= 3 && state.leg.step > 0) {
-        assert.equal(canRefineNtr(state.modules), true, `salt ${salt} step ${state.leg.step}`);
-        range = full;
-      }
+      if (length >= 3 && state.leg.step > 0) refineLeftoverNtr(ship, salt);
     }
     if (state.place === "star-massive-1") break;
     stampCampaignHeadings(getSystem().nearby, state, false);
@@ -138,6 +192,47 @@ function crossLeg4(salt: number): number {
   return length;
 }
 
+function crossStamped(
+  salt: number,
+  legId: string,
+  from: { id: string; seed: number; name: string },
+  to: string,
+  check: (step: number) => void,
+): number {
+  const state = newCampaign({
+    salt,
+    seed: from.seed,
+    landedId: null,
+    place: from.id,
+    ship: { fuelKind: "ch4", engineKind: "v1", tankKind: "fuel", fuel: 100, hull: 100 },
+  });
+  state.revealed = [to];
+  createSystem(from.seed, {}, null, from.name, { nearby: { count: 3 } });
+  stampCampaignHeadings(getSystem().nearby, state, false);
+  let route = getSystem().nearby.find((item) => item.target?.leg === legId);
+  assert.ok(route, `salt ${salt} ${legId} has no leg heading`);
+  let length = 0;
+  let hops = 0;
+  while (state.place !== to) {
+    hops += 1;
+    assert.ok(hops < 8, `salt ${salt} ${legId} never arrived`);
+    chartCampaignWarp(state, route, false, route.roll ?? 0, null, route.name);
+    if (state.leg) {
+      if (length === 0) length = state.leg.length ?? 0;
+      check(state.leg.step);
+    }
+    if (state.place === to) break;
+    stampCampaignHeadings(getSystem().nearby, state, false);
+    const next = getSystem().nearby.find(
+      (item) => item.target?.leg === legId || item.target?.place === to,
+    );
+    assert.ok(next, `salt ${salt} ${legId} lost the route`);
+    route = next;
+  }
+  assert.equal(hops, length, `salt ${salt} ${legId} hops`);
+  return length;
+}
+
 function fire(card: StoryPlace, state: CampaignState, event: GameEvent) {
   return runTriggers(card.id, card.triggers, [event], state);
 }
@@ -148,12 +243,6 @@ function land(card: StoryPlace, ref: string, ship: Ship, state: CampaignState) {
   assert.ok(body, ref);
   applyBodyGrant(ship, body.grant, state);
   return effects;
-}
-
-function refill(legId: string, step: number, length: number, fuel: FuelKind, seed: number) {
-  const found = leg(legId);
-  createSystem(seed, {}, null, null, stepRecipe(found, step, length));
-  return hasCanonicalRefill(getPlanets(), fuel);
 }
 
 function heading(target: NearbyHeading["target"], name = "route"): NearbyHeading {
@@ -203,11 +292,16 @@ test("phase 1 walks marks and grants in order, and each leg fits the ship earned
   assert.deepEqual(leg1.length, [3, 4]);
   assert.deepEqual(leg1.codes, [115, 386]);
   assert.equal(leg1.fuel, "ch4");
-  for (const seed of [1, 8, 21]) {
-    for (const step of [0, 1, 2]) {
-      assert.equal(refill("leg-1", step, 4, "ch4", seed), true, `leg 1 ${step} ${seed}`);
-    }
+  const lengths1 = new Set<number>();
+  for (let salt = 0; salt < 48; salt++) {
+    lengths1.add(
+      crossStamped(salt, "leg-1", { id: "star-a", seed: 8, name: "Eta Caeli" }, "star-b", (step) => {
+        assert.equal(hasCanonicalRefill(getPlanets(), "ch4"), true, `leg 1 salt ${salt} step ${step}`);
+      }),
+    );
   }
+  assert.equal(lengths1.has(3), true);
+  assert.equal(lengths1.has(4), true);
 
   const starB = place("star-b");
   assert.equal(starB.headingRequires, "stationHeading");
@@ -243,12 +337,24 @@ test("phase 1 walks marks and grants in order, and each leg fits the ship earned
   applyBodyGrant(ship, trap.grant, state);
   const afterTrap = jumpsPerTank("nh3", "v2", "fuel");
   assert.ok(afterTrap >= 1, `ammonia hops need one jump, got ${afterTrap}`);
-  for (const seed of [1, 8, 21]) {
-    assert.equal(refill("leg-2", 1, 5, "ch4", seed), false, `leg 2 ch4 ${seed}`);
-    assert.equal(refill("leg-2", 1, 5, "nh3", seed), true, `leg 2 nh3 ${seed}`);
-    assert.equal(refill("leg-2", 2, 4, "ch4", seed), false, `leg 2 ch4 step 2 ${seed}`);
-    assert.equal(refill("leg-2", 2, 4, "nh3", seed), true, `leg 2 nh3 step 2 ${seed}`);
+  const lengths2 = new Set<number>();
+  for (let salt = 0; salt < 48; salt++) {
+    lengths2.add(
+      crossStamped(salt, "leg-2", { id: "star-b", seed: 21, name: "Theta Pyxidis" }, "star-c", (step) => {
+        if (step === 0) {
+          const trap = getPlanets()
+            .filter((planet) => planet.kind === "asteroid" && planet.landable)
+            .sort((a, b) => b.radius - a.radius)[0];
+          assert.deepEqual(trap?.grant, { module: "atmoTrap" }, `leg 2 salt ${salt} trap`);
+          return;
+        }
+        assert.equal(hasCanonicalRefill(getPlanets(), "ch4"), false, `leg 2 ch4 salt ${salt} step ${step}`);
+        assert.equal(hasCanonicalRefill(getPlanets(), "nh3"), true, `leg 2 nh3 salt ${salt} step ${step}`);
+      }),
+    );
   }
+  assert.equal(lengths2.has(4), true);
+  assert.equal(lengths2.has(5), true);
 
   const starC = place("star-c");
   assert.equal(starC.headingRequires, "transceiver");
@@ -275,12 +381,24 @@ test("phase 1 walks marks and grants in order, and each leg fits the ship earned
   assert.equal(leg3.fuel, "ch4");
   const afterMoon = jumpsPerTank("h2", "thermal", "cryo");
   assert.ok(afterMoon >= 1 && afterMoon < 2, `hydrogen needs the ice giant each hop, got ${afterMoon}`);
-  for (const seed of [1, 5, 8]) {
-    assert.equal(refill("leg-3", 0, 4, "ch4", seed), false, `leg 3 bridge ch4 ${seed}`);
-    assert.equal(refill("leg-3", 0, 4, "nh3", seed), false, `leg 3 bridge nh3 ${seed}`);
-    assert.equal(refill("leg-3", 2, 4, "h2", seed), true, `leg 3 ice ${seed}`);
-    assert.equal(refill("leg-3", 2, 5, "ch4", seed), false, `leg 3 later ch4 ${seed}`);
+  const lengths3 = new Set<number>();
+  for (let salt = 0; salt < 48; salt++) {
+    lengths3.add(
+      crossStamped(salt, "leg-3", { id: "star-c", seed: 34, name: "Kappa Fornacis" }, "star-d", (step) => {
+        const planets = getPlanets();
+        if (step === 0) {
+          assert.equal(hasCanonicalRefill(planets, "ch4"), false, `leg 3 bridge ch4 salt ${salt}`);
+          assert.equal(hasCanonicalRefill(planets, "nh3"), false, `leg 3 bridge nh3 salt ${salt}`);
+          assert.equal(hasCanonicalRefill(planets, "h2"), false, `leg 3 bridge h2 salt ${salt}`);
+          return;
+        }
+        assert.equal(hasCanonicalRefill(planets, "h2"), true, `leg 3 ice salt ${salt} step ${step}`);
+        assert.equal(hasCanonicalRefill(planets, "ch4"), false, `leg 3 later ch4 salt ${salt} step ${step}`);
+      }),
+    );
   }
+  assert.equal(lengths3.has(4), true);
+  assert.equal(lengths3.has(5), true);
 
   const starD = place("star-d");
   assert.equal(starD.headingRequires, "hasLongTank");
@@ -607,16 +725,67 @@ function flyCampaign(id: string, salt = 3) {
   return sim;
 }
 
+function pushCometOut(sim: ReturnType<typeof flyCampaign>) {
+  const actor = sim.comet;
+  assert.ok(actor);
+  const edge = getMinimapWorldR();
+  actor.x = edge + 40;
+  actor.y = 0;
+  actor.vx = 200;
+  actor.vy = 0;
+  sim.cometEntered = true;
+  stepSim(sim, 1 / 60, fly);
+}
+
 test("a campaign place spawns its comet and sets the card", () => {
   const e = flyCampaign("star-massive-1");
+  e.ship.fuelKind = "ch4";
+  e.ship.fuel = 40;
   assert.equal(Boolean(e.comet), false);
   stepSim(e, 1 / 60, fly);
   const grazed = e.comet;
   assert.ok(grazed);
-  assert.equal(e.cometSpent, true);
+  assert.equal(e.cometSpent, false);
   assert.deepEqual(grazed.card, cometCardFromPlace(place("star-massive-1")));
-  stepSim(e, 1 / 60, fly);
-  assert.equal(e.cometSpent, true);
+  pushCometOut(e);
+  assert.equal(Boolean(e.comet), false);
+  assert.equal(Boolean(e.cometHeading), false);
+
+  e.ship.fuelKind = "lumen";
+  e.ship.fuel = 5;
+  const waitFrames = Math.ceil((COMET_GRAZE_GAP_S + 2) * 60);
+  let returned = false;
+  for (let i = 0; i < waitFrames && !returned; i++) {
+    stepSim(e, 1 / 60, fly);
+    if (e.comet) returned = true;
+  }
+  const later = e.comet;
+  assert.ok(later, "a later graze still comes after the dry pass");
+  assert.deepEqual(later.card, cometCardFromPlace(place("star-massive-1")));
+  pushCometOut(e);
+  const earned = e.cometHeading;
+  assert.ok(earned);
+  assert.deepEqual(earned.comet, cometCardFromPlace(place("star-massive-1")));
+
+  const landed = flyCampaign("star-massive-1");
+  landed.phase = "landed";
+  landed.landedId = "e1";
+  landed.ship.fuelKind = "ch4";
+  landed.ship.fuel = 0;
+  stepSim(landed, 1 / 60, fly);
+  assert.ok(landed.comet, "a dry landing still sees the graze");
+  pushCometOut(landed);
+  assert.equal(Boolean(landed.cometHeading), false);
+  landed.ship.fuelKind = "lumen";
+  landed.ship.fuel = 1;
+  let again = false;
+  for (let i = 0; i < waitFrames && !again; i++) {
+    stepSim(landed, 1 / 60, fly);
+    if (landed.comet) again = true;
+  }
+  assert.ok(landed.comet, "the landed dry pass does not spend the graze");
+  pushCometOut(landed);
+  assert.ok(landed.cometHeading?.comet);
 
   const free = createSim();
   free.phase = "flight";
@@ -656,4 +825,14 @@ test("a campaign place spawns its comet and sets the card", () => {
   assert.deepEqual(marked.comet, cometCardFromPlace(place("star-f")));
   stepSim(f, 1 / 60, fly);
   assert.equal(Boolean(f.comet), false);
+
+  const dev = flyCampaign("star-f");
+  dev.campaign!.modules.push({ module: "hushDetector" });
+  assert.equal(trySpawnComet(dev), true);
+  const opened = dev.comet;
+  assert.ok(opened);
+  assert.equal(opened.unmarked, true);
+  assert.equal(opened.card, undefined);
+  pushCometOut(dev);
+  assert.equal(Boolean(dev.cometHeading), false, "a dev comet does not inherit the place card");
 });

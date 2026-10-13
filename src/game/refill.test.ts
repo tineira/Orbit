@@ -5,6 +5,7 @@ import { applyLoadout, sipField, syncFuelMass } from "./fuel.ts";
 import { applyStoryBodies, PROBE_PLACE } from "./place.ts";
 import {
   addGrade,
+  bankH2OverNtr,
   chargeHush,
   coronaHullPerSec,
   H2_LEAK_RATE,
@@ -172,6 +173,53 @@ test("a skim does not dump a higher grade that still has liters", () => {
     assert.equal(sim.ship.fuelKind, load.fuelKind);
     assert.equal(sim.ship.fuel, 40);
   }
+});
+
+test("leftover NTR keeps its liters and a deep H2 skim waits for the Workshop", () => {
+  const ship = tank(40, "ntr", "thermal", "cryo");
+  const hold = { ntrHold: 0 };
+  assert.equal(bankH2OverNtr(ship, 12, hold), true);
+  assert.equal(ship.fuelKind, "ntr");
+  assert.equal(ship.fuel, 40);
+  assert.equal(hold.ntrHold, 12);
+  refineNtr(ship, 12 / NTR_REFINE_RATE, hold, true);
+  assert.equal(ship.fuelKind, "ntr");
+  assert.equal(ship.engineKind, "thermal");
+  assert.ok(Math.abs(ship.fuel - 52) < 1e-6);
+  assert.ok(hold.ntrHold < 1e-9);
+
+  createSystem(4);
+  const sim = createSim();
+  const giant = sim.planets.find((p) => p.kind === "gas");
+  assert.ok(giant);
+  const shop = sim.planets.find((p) => p.kind === "rocky" && p.kicker !== "Home");
+  assert.ok(shop);
+  shop.kicker = "Workshop";
+  shop.landable = true;
+  fly(sim);
+  withTrap(sim);
+  sim.ship.fuelKind = "ntr";
+  sim.ship.engineKind = "thermal";
+  sim.ship.tankKind = "cryo";
+  applyLoadout(sim.ship);
+  sim.ship.fuel = 40;
+  syncFuelMass(sim.ship);
+  park(sim, giant, (1 + GAS_CLOUD_FACTOR) / 2);
+  stepSim(sim, 1, idle);
+  assert.equal(sim.ship.fuelKind, "ntr");
+  assert.ok(Math.abs(sim.ship.fuel - 40) < 1e-6);
+  assert.ok(sim.ntrHold > 1);
+  const banked = sim.ntrHold;
+  sim.phase = "landed";
+  sim.landedId = shop.id;
+  sim.ship.x = shop.x;
+  sim.ship.y = shop.y;
+  sim.ship.vx = shop.vx;
+  sim.ship.vy = shop.vy;
+  stepSim(sim, 1, idle);
+  assert.equal(sim.ship.fuelKind, "ntr");
+  assert.ok(sim.ship.fuel > 40);
+  assert.ok(sim.ntrHold < banked);
 });
 
 test("H2 leaks from a Fuel tank and stays in Cryo", () => {

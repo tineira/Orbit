@@ -149,6 +149,7 @@ import {
   coronaHullPerSec,
   deliverHush,
   deliverLumen,
+  bankH2OverNtr,
   deliverMoonOutpost,
   leakH2,
   lumenLiters,
@@ -249,6 +250,8 @@ export type Sim = {
   cometSpent: boolean;
   cometHeading: NearbyHeading | null;
   cometEntered: boolean;
+  /** Seconds until the next non-marked graze. A failed pass does not spend the chart. */
+  cometGrazeWait: number;
   /** Set while the ship is in the comet scene (nucleus frame). Null on a chart. */
   cometScene: CometScene | null;
   /** Story comet for this scene. Random flight and a comet with no card leave it null. */
@@ -390,6 +393,7 @@ export function createSim(): Sim {
     cometSpent: false,
     cometHeading: null,
     cometEntered: false,
+    cometGrazeWait: 0,
     cometZoomCarry: 0,
     cometScene: null,
     cometMark: null,
@@ -440,6 +444,7 @@ export function resetCometChart(sim: Sim) {
   sim.cometSpent = false;
   sim.cometHeading = null;
   sim.cometEntered = false;
+  sim.cometGrazeWait = 0;
   sim.cometMark = null;
   sim.cometJumpPlace = null;
   sim.cometLandedFor = false;
@@ -2054,7 +2059,10 @@ function stepFlightRefill(sim: Sim, dt: number) {
   const ship = sim.ship;
   leakH2(ship, dt);
   const skim = pickSkim(sim);
-  if (skim) addGrade(ship, skim.kind, skimLiters(skim.density) * dt);
+  if (skim) {
+    const liters = skimLiters(skim.density) * dt;
+    if (!(skim.kind === "h2" && bankH2OverNtr(ship, liters, sim))) addGrade(ship, skim.kind, liters);
+  }
   if (ship.fuelKind !== "lumen") return;
   const density = coronaDensity(sim);
   if (density <= 0) return;
@@ -2547,6 +2555,8 @@ function stepLiveComet(sim: Sim, dt: number) {
       const heading = makeCometHeading(separateCometHeading(Math.atan2(c.y, c.x), sim.nearby));
       if (card !== "open") heading.comet = { ...card };
       sim.cometHeading = heading;
+    } else if (c.card && !markedCometStream(c.card)) {
+      sim.cometGrazeWait = COMET_GRAZE_GAP_S;
     }
     sim.comet = null;
   }
@@ -2583,18 +2593,20 @@ function markLeavingComet(sim: Sim) {
   sim.comet.card = { ...card };
 }
 
-/** E grazes once. F keeps sending leaving comets until the marked one leaves a heading. */
+/** Pause after a graze that left no heading, before the next one. */
+export const COMET_GRAZE_GAP_S = 8;
+
+/** E keeps grazing until one leaves a heading. F keeps sending leaving comets until the marked one does. */
 function spawnCampaignComet(sim: Sim) {
   if (!sim.campaign || sim.comet || sim.cometHeading || sim.cometScene) return;
   if (sim.phase !== "landed" && sim.phase !== "flight") return;
   const card = placeCometCard(sim);
   if (!card) return;
   if (!markedCometStream(card)) {
-    if (sim.cometSpent) return;
+    if (sim.cometGrazeWait > 0) return;
     const comet = spawnComet(sim.planets, Math.random);
     comet.card = { ...card };
     sim.comet = comet;
-    sim.cometSpent = true;
     sim.cometEntered = false;
     return;
   }
@@ -2608,7 +2620,9 @@ function spawnCampaignComet(sim: Sim) {
 export function trySpawnComet(sim: Sim): boolean {
   if (sim.cometSpent || sim.cometScene) return false;
   if (sim.phase !== "landed" && sim.phase !== "flight") return false;
-  sim.comet = spawnComet(sim.planets, Math.random);
+  const comet = spawnComet(sim.planets, Math.random);
+  comet.unmarked = true;
+  sim.comet = comet;
   sim.cometSpent = true;
   sim.cometEntered = false;
   return true;
@@ -3251,6 +3265,7 @@ export function stepSim(
 
   stepSpectro(sim, dt);
   updateMoons(sim, dt);
+  if (sim.cometGrazeWait > 0) sim.cometGrazeWait = Math.max(0, sim.cometGrazeWait - dt);
   markLeavingComet(sim);
   spawnCampaignComet(sim);
   stepLiveComet(sim, dt);
