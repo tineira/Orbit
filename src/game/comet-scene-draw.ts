@@ -2,6 +2,7 @@ import type { Sim } from "./sim";
 import type { CometCave } from "./comet-scene";
 import {
   COMET_HOLD_S,
+  COMET_SCENE_EDGE,
   COMET_TRAVEL,
   NUCLEUS_GRAV_K,
   NUCLEUS_LOBES,
@@ -331,41 +332,45 @@ function relightNucleus(nuc: Nucleus, scene: NucleusLight) {
 
 let atmo: HTMLCanvasElement | null = null;
 let atmoKey = "";
-function atmosphere(scene: CometScene, cssW: number, cssH: number, dpr: number, zoom: number) {
-  // The glare and tail follow the star; while it swings round, repaint in steps.
-  const qa = Math.round(Math.atan2(scene.sun.y, scene.sun.x) / 0.05) * 0.05;
-  const toSun = { x: Math.cos(qa), y: Math.sin(qa) };
-  const key = `${cssW}x${cssH}x${dpr}x${zoom}x${scene.kind}x${qa.toFixed(2)}`;
-  if (atmo && atmoKey === key) return atmo;
-  atmoKey = key;
-  atmo = atmo ?? document.createElement("canvas");
-  atmo.width = Math.round(cssW * dpr);
-  atmo.height = Math.round(cssH * dpr);
-  const c = atmo.getContext("2d")!;
-  c.setTransform(dpr, 0, 0, dpr, 0, 0);
-  c.clearRect(0, 0, cssW, cssH);
-  const S = zoom;
-  const sun = scene.p.sun;
-  const cx = cssW / 2;
-  const cy = cssH / 2;
-  const px = -toSun.y;
-  const py = toSun.x;
+
+/** The star's direction in 0.05 rad steps, so a slow swing repaints rarely. */
+function quantSun(sun: { x: number; y: number }) {
+  const qa = Math.round(Math.atan2(sun.y, sun.x) / 0.05) * 0.05;
+  return { qa, x: Math.cos(qa), y: Math.sin(qa) };
+}
+
+/**
+ * Sunlight on the dust toward the star: the near side of the sky is a touch
+ * brighter. Fills the whole rect; `S` is pixels per scene unit.
+ */
+function paintWash(c: Draw, cx: number, cy: number, toSun: { x: number; y: number }, S: number, sun: number, w: number, h: number) {
   const sl = c.createLinearGradient(cx + toSun.x * 700 * S, cy + toSun.y * 700 * S, cx, cy);
   sl.addColorStop(0, `rgba(214,220,228,${0.05 * sun})`);
   sl.addColorStop(1, "rgba(214,220,228,0)");
   c.fillStyle = sl;
-  c.fillRect(0, 0, cssW, cssH);
+  c.fillRect(0, 0, w, h);
+}
+
+/** How far the coma, tail and shadow reach from the nucleus, in scene units. */
+const ATMO_REACH = 1460;
+
+/** Coma, faint dust tail and the shadow column, centred on the nucleus at (cx, cy). */
+function paintAtmosphere(c: Draw, cx: number, cy: number, toSun: { x: number; y: number }, S: number, sun: number, blur = 1) {
+  const px = -toSun.y;
+  const py = toSun.x;
   const coma = c.createRadialGradient(cx + toSun.x * 30 * S, cy + toSun.y * 30 * S, NUCLEUS_R * 0.6 * S, cx, cy, 300 * S);
   coma.addColorStop(0, `rgba(170,170,166,${0.07 * sun})`);
   coma.addColorStop(1, "rgba(170,170,166,0)");
   c.fillStyle = coma;
-  c.fillRect(0, 0, cssW, cssH);
+  c.beginPath();
+  c.arc(cx, cy, 300 * S, 0, TAU);
+  c.fill();
   const L = 900 * S;
   const tg = c.createLinearGradient(cx, cy, cx - toSun.x * L, cy - toSun.y * L);
   tg.addColorStop(0, `rgba(150,148,142,${0.07 * sun})`);
   tg.addColorStop(1, "rgba(150,148,142,0)");
   c.save();
-  c.filter = `blur(${22 * S}px)`;
+  c.filter = `blur(${22 * S * blur}px)`;
   c.fillStyle = tg;
   c.beginPath();
   c.moveTo(cx + px * NUCLEUS_R * 0.7 * S, cy + py * NUCLEUS_R * 0.7 * S);
@@ -379,7 +384,7 @@ function atmosphere(scene: CometScene, cssW: number, cssH: number, dpr: number, 
   const U = 1400 * S;
   const w0 = NUCLEUS_R * 0.95 * S;
   c.save();
-  c.filter = `blur(${7 * S}px)`;
+  c.filter = `blur(${7 * S * blur}px)`;
   const ug = c.createLinearGradient(cx, cy, cx - toSun.x * U, cy - toSun.y * U);
   ug.addColorStop(0, "rgba(0,0,0,0.8)");
   ug.addColorStop(1, "rgba(0,0,0,0.45)");
@@ -392,7 +397,88 @@ function atmosphere(scene: CometScene, cssW: number, cssH: number, dpr: number, 
   c.closePath();
   c.fill();
   c.restore();
+}
+
+function atmosphere(scene: CometScene, cssW: number, cssH: number, dpr: number, zoom: number) {
+  // The glare and tail follow the star; while it swings round, repaint in steps.
+  const toSun = quantSun(scene.sun);
+  const key = `${cssW}x${cssH}x${dpr}x${zoom}x${scene.kind}x${toSun.qa.toFixed(2)}`;
+  if (atmo && atmoKey === key) return atmo;
+  atmoKey = key;
+  atmo = atmo ?? document.createElement("canvas");
+  atmo.width = Math.round(cssW * dpr);
+  atmo.height = Math.round(cssH * dpr);
+  const c = atmo.getContext("2d")!;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, cssW, cssH);
+  paintWash(c, cssW / 2, cssH / 2, toSun, zoom, scene.p.sun, cssW, cssH);
+  paintAtmosphere(c, cssW / 2, cssH / 2, toSun, zoom, scene.p.sun);
   return atmo;
+}
+
+let chartAtmo: HTMLCanvasElement | null = null;
+let chartAtmoKey = "";
+const CHART_ATMO_MAX = 2048;
+
+/**
+ * The same coma, tail and shadow column for the comet on the chart, so the
+ * far view is the scene seen from further out. Call with the chart's world
+ * transform set; `scale` is chart units per scene unit. `wash` (0..1) brings
+ * in the sunlit sky as the camera hands over to the scene's. Canvas blur is in
+ * bitmap pixels and the scene paints its blur in CSS-sized pixels, so `dpr`
+ * keeps the edges equally soft on both sides of the crossing.
+ */
+export function drawCometAtmosphere(
+  ctx: Draw,
+  x: number,
+  y: number,
+  scale: number,
+  sunDir: { x: number; y: number },
+  sun: number,
+  wash: number,
+  dpr: number,
+) {
+  const m = ctx.getTransform();
+  const W = ctx.canvas.width;
+  const H = ctx.canvas.height;
+  const S = Math.abs(m.a) * scale; // device px per scene unit
+  if (!(S > 0)) return;
+  const p = m.transformPoint({ x, y });
+  const toSun = quantSun(sunDir);
+  const diag = Math.hypot(W, H);
+  const half = Math.min(ATMO_REACH * S, diag);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const ga = ctx.globalAlpha;
+  // The wash is a half-plane of sky, not bounded by the nucleus: never culled with it.
+  if (wash > 0) {
+    ctx.globalAlpha = ga * wash;
+    paintWash(ctx, p.x, p.y, toSun, S, sun, W, H);
+    ctx.globalAlpha = ga;
+  }
+  if (p.x < -half || p.y < -half || p.x > W + half || p.y > H + half) {
+    ctx.restore();
+    return;
+  }
+  const sq = Math.exp(Math.floor(Math.log(S) / 0.04) * 0.04);
+  const hq = Math.min(ATMO_REACH * sq, diag);
+  const res = Math.min(1, CHART_ATMO_MAX / (2 * hq));
+  const side = Math.max(2, Math.ceil(2 * hq * res));
+  const blur = 1 / Math.max(1, dpr);
+  const key = `${side}x${sq}x${res}x${sun}x${blur}x${toSun.qa.toFixed(2)}`;
+  if (!chartAtmo || chartAtmoKey !== key) {
+    chartAtmoKey = key;
+    chartAtmo = chartAtmo ?? document.createElement("canvas");
+    chartAtmo.width = side;
+    chartAtmo.height = side;
+    const c = chartAtmo.getContext("2d")!;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, side, side);
+    paintAtmosphere(c, side / 2, side / 2, toSun, sq * res, sun, blur);
+  }
+  const k = S / (sq * res);
+  ctx.drawImage(chartAtmo, p.x - (side / 2) * k, p.y - (side / 2) * k, side * k, side * k);
+  ctx.restore();
 }
 
 let grainCv: HTMLCanvasElement | null = null;
@@ -439,6 +525,7 @@ const FROST_PLUME = "rgb(255,210,165)";
 const FROST_GLINT = "rgb(240,248,255)";
 
 function drawFrost(ctx: Draw, sim: Sim, scene: CometScene) {
+  const fade = ctx.globalAlpha;
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
   for (const g of scene.gas) {
@@ -455,17 +542,17 @@ function drawFrost(ctx: Draw, sim: Sim, scene: CometScene) {
     const a = (1 - u) * (g.b === 1 ? 0.55 : 0.32) * tw * Math.min(1, vis);
     const z = g.b === 1 ? 1.6 : 1.1;
     // One fixed color per kind and alpha on the context: no style string per particle.
-    ctx.globalAlpha = a;
+    ctx.globalAlpha = a * fade;
     ctx.fillStyle = L > 0.05 ? FROST_PLUME : FROST;
     ctx.fillRect(g.x - z / 2, g.y - z / 2, z, z);
     if (tw > 0.96 && u < 0.6) {
-      ctx.globalAlpha = a * 0.6;
+      ctx.globalAlpha = a * 0.6 * fade;
       ctx.fillStyle = FROST_GLINT;
       ctx.fillRect(g.x - z * 1.6, g.y - 0.4, z * 3.2, 0.8);
       ctx.fillRect(g.x - 0.4, g.y - z * 1.6, 0.8, z * 3.2);
     }
   }
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = fade;
   for (const j of scene.jets) {
     if (!j.on || j.fade < 1) continue;
     const { x, y } = surfacePoint(scene, j.a);
@@ -538,8 +625,11 @@ function rockPath(ctx: Draw, r: CometScene["rocks"][number]) {
 }
 
 /** Charcoal rocks: a hard sliver of light on the sun side; in the shadow only a silhouette, or the plume's glow. */
-function drawRocks(ctx: Draw, sim: Sim, scene: CometScene) {
+function drawRocks(ctx: Draw, sim: Sim, scene: CometScene, fade: number) {
   for (const r of scene.rocks) {
+    // Fading out toward the edge, but never a rock close to the ship.
+    const near = 1 - Math.max(0, Math.min(1, (Math.hypot(r.x - sim.ship.x, r.y - sim.ship.y) - 150) / 200));
+    ctx.globalAlpha = Math.max(fade, near);
     rockPath(ctx, r);
     ctx.fillStyle = "#0c0c0d";
     ctx.fill();
@@ -574,6 +664,7 @@ function drawRocks(ctx: Draw, sim: Sim, scene: CometScene) {
     ctx.fill();
     ctx.restore();
   }
+  ctx.globalAlpha = 1;
 }
 
 /** A rock landing on the nucleus: a dust puff that rises and thins, and grit thrown out. */
@@ -758,18 +849,27 @@ export function drawCometScene(
   ctx.drawImage(layer, (cssW * dpr - lw) / 2 + shakeX * dpr, (cssH * dpr - lh) / 2 + shakeY * dpr, lw, lh);
   ctx.restore();
 
+  // Once the comet is in orbit, its loose frost and rocks thin out toward the
+  // edge: the chart never shows them, so leaving has nothing to pop.
+  const fade = scene.arrived
+    ? Math.max(0, Math.min(1, (COMET_SCENE_EDGE - Math.hypot(sim.ship.x, sim.ship.y)) / (COMET_SCENE_EDGE - 600)))
+    : 1;
   ctx.save();
   ctx.translate(cssW / 2 + shakeX, cssH / 2 + shakeY);
   ctx.scale(zoom, zoom);
+  ctx.globalAlpha = fade;
   drawFrost(ctx, sim, scene);
+  ctx.globalAlpha = 1;
   const buried = inCave(scene, sim.ship.x, sim.ship.y);
   // Exhaust in the cave stays under the rock; only its light reaches the walls.
   if (buried) hooks.drawParticles(ctx);
   drawNucleus(ctx, scene);
   drawPlumeOnGround(ctx, sim, scene);
-  drawRocks(ctx, sim, scene);
+  drawRocks(ctx, sim, scene, fade);
+  ctx.globalAlpha = fade;
   drawImpacts(ctx, scene);
   drawBursts(ctx, scene);
+  ctx.globalAlpha = 1;
   drawTrajectory(ctx, sim, scene, zoom);
   if (!buried) hooks.drawParticles(ctx);
   const dt = Math.max(0, Math.min(0.1, scene.t - lastT));

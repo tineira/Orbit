@@ -29,7 +29,7 @@ import {
   COMET_SCENES,
   cometViewUnits,
   cometEntryPose,
-  COMET_ENTRY_DIST,
+  COMET_REENTRY_DIST,
   NUCLEUS_OMEGA,
   NUCLEUS_R,
   COMET_TRAVEL,
@@ -1071,7 +1071,7 @@ function tryEnterParkedComet(sim: Sim) {
   const k = cometSceneScale(c);
   const dx = sim.ship.x - c.x;
   const dy = sim.ship.y - c.y;
-  if (Math.hypot(dx, dy) > COMET_ENTRY_DIST * k) return;
+  if (Math.hypot(dx, dy) > COMET_REENTRY_DIST * k) return;
   const kind = isCometSceneKind(c.parked.kind) ? c.parked.kind : COMET_SCENE_DEFAULT;
   const star = sim.planets.find((p) => p.kind === "star");
   const sun = { x: (star?.x ?? 0) - c.x, y: (star?.y ?? 0) - c.y };

@@ -56,7 +56,7 @@ import {
 import { asteroidWorldPath, surfaceRadius } from "./asteroid";
 import { COMET_RED, warpHeadings } from "./comet";
 import { COMET_ORBIT_VIGNETTE, drawCometScene } from "./comet-scene-draw";
-import { drawChartComet, drawChartCometMark, drawChartCometPath } from "./comet-chart-draw";
+import { chartCometShipShade, drawChartComet, drawChartCometMark, drawChartCometPath } from "./comet-chart-draw";
 import {
   asteroidMine,
   MINE_BEACON_PERIOD_MS,
@@ -191,7 +191,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
       if (!isGhostBody(p)) drawPlanet(ctx, p, cam, star, sim.planets, now, sim.reducedMotion);
     }
     drawSolarFlares(ctx, sim);
-    drawChartComet(ctx, sim, now);
+    drawChartComet(ctx, sim);
     drawOrbitShell(ctx, sim);
     drawLagrangePoints(ctx, sim, cam);
     drawRelativePath(ctx, sim);
@@ -204,7 +204,10 @@ export function drawFrame(ctx: CanvasRenderingContext2D, sim: Sim, opts: DrawOpt
   if (!particlesOver) drawParticles(ctx, sim.particles);
   if (fade > 0.04) drawGravityArrows(ctx, sim);
   const star = sim.planets.find((b) => b.kind === "star") ?? null;
-  const shipUmbra = star ? pointUmbraMax(sim.ship.x, sim.ship.y, sim.planets, star, null) : 0;
+  const shipUmbra = Math.max(
+    star ? pointUmbraMax(sim.ship.x, sim.ship.y, sim.planets, star, null) : 0,
+    chartCometShipShade(sim),
+  );
   drawWarpRings(ctx, sim);
   drawShip(ctx, sim, shipUmbra, dpr);
   if (particlesOver) drawParticles(ctx, sim.particles);

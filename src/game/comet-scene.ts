@@ -94,6 +94,8 @@ export const COMET_ENTRY_DIST = 640;
 export const COMET_ENTRY_SPEED = 70;
 /** Past this the comet outruns you. */
 export const COMET_SCENE_EDGE = 1100;
+/** Flying back to a parked comet you enter its scene here: close to the edge you left by, with a little slack so you do not flicker across. */
+export const COMET_REENTRY_DIST = COMET_SCENE_EDGE - 100;
 /** The view fits this many scene units on its short side. */
 export const COMET_VIEW_UNITS = 640;
 /** Far out the view opens up to this many units, so the approach shows the whole comet. */

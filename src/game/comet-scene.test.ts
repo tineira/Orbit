@@ -3,7 +3,7 @@ import { test } from "node:test";
 import {
   COMET_CRASH_NUCLEUS,
   COMET_CRASH_ROCKS,
-  COMET_ENTRY_DIST,
+  COMET_REENTRY_DIST,
   COMET_ARRIVE_S,
   COMET_HOLD_S,
   COMET_SCENE_EDGE,
@@ -418,7 +418,7 @@ test("closing in on a parked comet hands the chart camera to the scene's without
     Object.assign(sim.ship, { x: c.x + COMET_SCENE_EDGE * k, y: c.y, vx: c.vx, vy: c.vy });
     stepSim(sim, STEP, idle);
   }
-  const out = COMET_ENTRY_DIST * k + 0.5;
+  const out = COMET_REENTRY_DIST * k + 0.5;
   sim.ship.x = c.x + out;
   sim.ship.y = c.y;
   sim.ship.vx = c.vx - 20;
@@ -432,9 +432,11 @@ test("closing in on a parked comet hands the chart camera to the scene's without
   const zScene = sim.camera.zoom;
   assert.ok(Math.abs(zChart * k - zScene) < zScene * 0.03, `zoom ${zChart * k} vs ${zScene}`);
   assert.ok(Math.abs(sim.ship.x * zScene - onScreen) < 3, "the ship stays where it was on screen");
-  // The stars do not jump: the sky is drawn from camera + drift on both sides.
-  // (Checked on the way out below too.)
+});
 
+test("you enter a parked comet about where you left it", () => {
+  assert.ok(COMET_REENTRY_DIST < COMET_SCENE_EDGE, "slack so you do not flicker across");
+  assert.ok(COMET_REENTRY_DIST >= COMET_SCENE_EDGE * 0.85, "but close to the edge you left by");
 });
 
 test("the sky stays put across the comet crossing, both ways", () => {
@@ -446,7 +448,7 @@ test("the sky stays put across the comet crossing, both ways", () => {
   assert.ok(Math.hypot(out.x - before.x, out.y - before.y) < 1, "leaving");
   const c = sim.comet!;
   const k = cometSceneScale(c);
-  Object.assign(sim.ship, { x: c.x + COMET_ENTRY_DIST * k - 1, y: c.y, vx: c.vx, vy: c.vy });
+  Object.assign(sim.ship, { x: c.x + COMET_REENTRY_DIST * k - 1, y: c.y, vx: c.vx, vy: c.vy });
   const pre = sky();
   stepSim(sim, STEP, idle);
   assert.ok(sim.cometScene);
