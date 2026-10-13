@@ -496,3 +496,30 @@ test("landedFor fires at its seconds, and the jump waits until the scene has arr
     assert.equal(sim.landedId, cp.landedId);
   });
 });
+
+test("under reduced motion the comet ride's arrival is still the checkpoint", () => {
+  withProbe(() => {
+    PROBE_PLACE.triggers = [
+      ...PROBE_PLACE.triggers,
+      { on: "landedFor", ref: "comet", seconds: 1, effects: [{ revealHeading: "probe-end" }] },
+    ];
+    const sim = boot(1);
+    attach(sim);
+    sim.reducedMotion = true;
+    openMarked(sim, { ref: "comet" });
+    drop(sim);
+    sim.cometScene!.anchored = true;
+    for (let i = 0; i < 90 && !sim.campaignEvents.some((event) => event.on === "landedFor"); i++) {
+      stepSim(sim, STEP, idle);
+    }
+    runTriggers(PROBE_PLACE.id, PROBE_PLACE.triggers, sim.campaignEvents.splice(0), sim.campaign!);
+    sim.cometScene!.held = COMET_HOLD_S - 0.05;
+    for (let i = 0; i < 60 * (COMET_ARRIVE_S + 4) && sim.cometScene; i++) stepSim(sim, STEP, idle);
+    assert.equal(sim.cometScene, null);
+    assert.equal(sim.phase, "flight");
+    assert.equal(sim.cometRideCheckpoint, false);
+    assert.equal(sim.campaign!.checkpoint.place, PROBE_END.id);
+    assert.equal(sim.campaign!.checkpoint.seed, PROBE_END.seed);
+    assert.ok(sim.campaignEvents.some((event) => event.on === "enterSystem"));
+  });
+});

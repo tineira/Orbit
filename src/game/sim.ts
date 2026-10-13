@@ -996,8 +996,8 @@ function beginCometStoryJump(sim: Sim, placeId: string) {
     kind: "star",
     target: { place: placeId },
   };
-  enterWarp(sim, false);
   sim.cometRideCheckpoint = true;
+  enterWarp(sim, false);
 }
 
 /**
@@ -1413,7 +1413,17 @@ export function enterWarp(sim: Sim, lost = false) {
     const sp = Math.hypot(sim.ship.vx, sim.ship.vy);
     sim.warpCharge = warpCharge(sp);
     sim.warpApproach = warpApproach(sp);
+    arriveInSystem(sim);
   }
+}
+
+/** The warp is over and the ship flies in the new chart. */
+function arriveInSystem(sim: Sim) {
+  if (sim.cometRideCheckpoint) {
+    sim.cometRideCheckpoint = false;
+    commitArrivalCheckpoint(sim);
+  }
+  pushCampaignEvent(sim, { on: "enterSystem" });
 }
 
 function streakSpan(sim: Sim) {
@@ -1593,11 +1603,7 @@ function stepTransit(sim: Sim, dt: number) {
   sim.warpApproach = warpApproach(WARP_BRAKE_SPEED);
   sim.orbitHint = null;
   sim.status = "deep";
-  if (sim.cometRideCheckpoint) {
-    sim.cometRideCheckpoint = false;
-    commitArrivalCheckpoint(sim);
-  }
-  pushCampaignEvent(sim, { on: "enterSystem" });
+  arriveInSystem(sim);
 }
 
 export function bodyMu(p: Planet, gravityScale: number) {

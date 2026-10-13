@@ -341,7 +341,7 @@ La única fase que **sí** cambia el modo aleatorio. Lo pidió Tomás el 11 oct.
 
 **Estado (13 oct):** el PR 1 está en `main` (lo hizo Claude directo). El PR 2 espera a que la campaña tenga voces y a que Tomás la juegue entera; queda como tarea en Linear (TIN-89).
 
-1. **Aleatorios a veces sin Home.** ✅ Hecho: `randomHome` y `hasLivingHome` en `world.ts`; la semilla de la tirada es `seed ^ 0x686f6d65`. Corre solo si la receta queda vacía (sin receta ni flags de URL). Del snapshot solo cambió la semilla 13 (`none`).
+1. **Aleatorios a veces sin Home.** ✅ Hecho: `randomHome` y `hasLivingHome` en `world.ts`; la semilla de la tirada es `seed ^ 0x686f6d65`. Corre solo si la receta queda vacía (sin receta ni flags de URL). Del snapshot solo cambió la semilla 13 (`none`). Los desvíos de campaña (sistemas fuera de ruta, sin receta) también pueden salir sin Home; el checkpoint no depende de Home, así que no rompe nada.
    - En `makeSystem` sin receta, 1 de cada 6 sistemas sale sin Home habitada: la mitad con `home: "abandoned"` y la otra mitad con `home: "none"`. La decisión es función de la semilla con un **RNG aparte** (`mulberry32(seed ^ K)`, sin `Math.random`), para no correr los sorteos del resto del sistema. La proporción va en una constante (`RANDOM_HOMELESS_RATE = 1 / 6`) para ajustarla jugando.
    - El sistema con el que empieza la página siempre tiene Home habitada: en `?free`, la primera carga se tira con receta `home: "active"` (no se cambia la semilla).
    - Choque en modo aleatorio en un sistema sin Home: `rebootSim` tira una semilla nueva hasta tener Home habitada y te deja ahí con `freshShip()`, como hoy.
