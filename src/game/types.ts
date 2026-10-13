@@ -253,6 +253,8 @@ export type Comet = {
   mass: number;
   /** Story mark. A flyby copies it onto the leftover heading when the ask is met. */
   card?: CometCard;
+  /** Leaving comet that is not the marked one. It does not inherit the place card. */
+  unmarked?: boolean;
   /** A comet that rode in and stays in orbit: fly close and you are back in its scene. */
   /** On a rail around the system's star: orbit radius, angle and angular speed (rad/s). */
   parked?: {

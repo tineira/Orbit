@@ -61,6 +61,52 @@ export function spawnComet(planets: Planet[], rng: () => number): Comet {
   };
 }
 
+/**
+ * A leaving comet: already inside the chart, on a wide outbound chord.
+ * It is not a sun graze. `spawnComet` stays the close pass.
+ */
+export function spawnLeavingComet(planets: Planet[], rng: () => number): Comet {
+  const R = getMinimapWorldR();
+  const star = planets.find((p) => p.kind === "star");
+  const floor = COMET_PERI_CLEAR(star ?? { radius: 250 });
+  const speed = (2 * R) / COMET_CROSS_MIN_S;
+  let x = 0;
+  let y = 0;
+  let vx = 0;
+  let vy = 0;
+  for (let i = 0; i < 8; i++) {
+    const theta = rng() * Math.PI * 2;
+    const r = Math.max(floor * 1.6, R * 0.62);
+    const px = Math.cos(theta) * Math.min(r, R * 0.78);
+    const py = Math.sin(theta) * Math.min(r, R * 0.78);
+    const tangent = (rng() < 0.5 ? 1 : -1) * 0.22;
+    let ux = Math.cos(theta) - Math.sin(theta) * tangent;
+    let uy = Math.sin(theta) + Math.cos(theta) * tangent;
+    const mag = Math.hypot(ux, uy) || 1;
+    ux /= mag;
+    uy /= mag;
+    x = px;
+    y = py;
+    vx = ux * speed;
+    vy = uy * speed;
+    const clear = planets.every((p) => {
+      const d = Math.hypot(px - p.x, py - p.y);
+      if (p.kind === "star") return d > floor;
+      if (p.radius <= 0) return true;
+      return d > p.radius * 1.4;
+    });
+    if (clear) break;
+  }
+  return {
+    x,
+    y,
+    vx,
+    vy,
+    radius: COMET_NUCLEUS_R,
+    mass: COMET_NUCLEUS_R * COMET_NUCLEUS_R * 0.35,
+  };
+}
+
 function aimChord(theta: number, spawnR: number, b: number, sign: number, speed: number) {
   const ux = Math.cos(theta);
   const uy = Math.sin(theta);

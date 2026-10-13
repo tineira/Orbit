@@ -278,14 +278,30 @@ export function stampCampaignHeadings(
       return;
     }
     const step = onStep ? onStep.step + 1 : 0;
-    const salt = onStep ? onStep.seed : getSystem().seed;
-    const roll = legRoll(leg, step, salt);
+    const roll = legRoll(leg, step, campaign.salt);
     slot.roll = roll;
     const named = legStarName(leg, roll);
     if (named) slot.name = named;
     return;
   }
   if (target.leg) slot.name = target.leg;
+}
+
+/** Length salt. A step of -1 keeps it off the step-seed stream. */
+function lengthSalt(leg: Leg, campaignSalt: number): number {
+  return legRoll(leg, -1, campaignSalt);
+}
+
+/** Chart one generated step the way a heading charts it: same name, same grant. */
+export function chartLegStep(
+  leg: Leg,
+  step: number,
+  length: number,
+  seed: number,
+  starName: string | null = null,
+): void {
+  createSystem(seed, {}, null, legChartName(leg, seed, starName), stepRecipe(leg, step, length));
+  stampStepGrant(leg, step, length);
 }
 
 function stampStepGrant(leg: Leg, step: number, length: number) {
@@ -342,8 +358,7 @@ function chartLegHeading(
   const current = campaign.leg;
   if (current && current.id === leg.id && aside) {
     const length = resolvedLength(leg, current.length);
-    createSystem(current.seed, {}, null, legChartName(leg, current.seed, null), stepRecipe(leg, current.step, length));
-    stampStepGrant(leg, current.step, length);
+    chartLegStep(leg, current.step, length, current.seed, null);
     campaign.place = null;
     return { aside: false, placeId: null };
   }
@@ -351,16 +366,14 @@ function chartLegHeading(
     const length = resolvedLength(leg, current.length);
     const next = current.step + 1;
     if (next > lastLegStep(length)) return chartPlace(campaign, leg.to, seed);
-    createSystem(seed, {}, null, legChartName(leg, seed, starName), stepRecipe(leg, next, length));
-    stampStepGrant(leg, next, length);
+    chartLegStep(leg, next, length, seed, starName);
     campaign.place = null;
     campaign.leg = { id: leg.id, step: next, seed: getSystem().seed, length };
     return { aside: false, placeId: null };
   }
-  const length = pickLength(leg, seed);
+  const length = pickLength(leg, lengthSalt(leg, campaign.salt));
   if (lastLegStep(length) < 0) return chartPlace(campaign, leg.to, seed);
-  createSystem(seed, {}, null, legChartName(leg, seed, starName), stepRecipe(leg, 0, length));
-  stampStepGrant(leg, 0, length);
+  chartLegStep(leg, 0, length, seed, starName);
   campaign.place = null;
   campaign.leg = { id: leg.id, step: 0, seed: getSystem().seed, length };
   return { aside: false, placeId: null };

@@ -20,7 +20,7 @@ import type {
   CometCard,
   NearbyHeading,
 } from "./types.ts";
-import { COMET_NUCLEUS_R, cometRequireMet, makeCometHeading, separateCometHeading, spawnComet, warpHeadings } from "./comet.ts";
+import { COMET_NUCLEUS_R, cometRequireMet, makeCometHeading, separateCometHeading, spawnComet, spawnLeavingComet, warpHeadings } from "./comet.ts";
 import {
   COMET_CRASH_NUCLEUS,
   COMET_CRASH_ROCKS,
@@ -176,10 +176,10 @@ import {
 import { applyBodyGrant, chartStoryPlace, cometCardFromPlace, storyHeadingName, storyPlaceById, type StoryPlace } from "./place.ts";
 import {
   chartCampaignWarp,
+  chartLegStep,
   legById,
   resolvedLength,
   stampCampaignHeadings,
-  stepRecipe,
 } from "./leg.ts";
 import {
   approachCrossings,
@@ -635,7 +635,7 @@ function rechartToCheckpoint(sim: Sim, seed: number) {
   const leg = legState ? legById(legState.id) : null;
   if (leg && legState && seed === legState.seed) {
     const length = resolvedLength(leg, legState.length);
-    chartIntoSim(sim, () => createSystem(seed, {}, null, null, stepRecipe(leg, legState.step, length)));
+    chartIntoSim(sim, () => chartLegStep(leg, legState.step, length, seed));
     sim.campaignAside = false;
     sim.campaignPlaceId = null;
     bindCampaignChart(sim);
@@ -1237,7 +1237,7 @@ function stepCometSim(
     if (scene.done) scene.doneT += dt;
     if (sim.phase === "landed") noteCometLanded(sim, scene);
     decayParticles(sim, dt);
-    if (sim.phase === "landed") cometCamera(sim, dt);
+    cometCamera(sim, dt);
     return;
   }
 
@@ -2552,16 +2552,57 @@ function stepLiveComet(sim: Sim, dt: number) {
   }
 }
 
+function placeCometCard(sim: Sim): CometCard | null {
+  const placeId = sim.campaign?.place;
+  const place = placeId ? storyPlaceById(placeId) : null;
+  if (!place || place.seed !== getSystem().seed) return null;
+  return cometCardFromPlace(place);
+}
+
+/** Marked comets copy the card onto one leaving actor. The place card is not a fallback. */
+function markedCometStream(card: CometCard): boolean {
+  return card.civ === true || card.scene === "marked";
+}
+
 /** Free mode always leaves a heading. A campaign leaves one only when the card's ask holds. */
 function cometCardForHeading(sim: Sim): CometCard | "open" | null {
   if (!sim.campaign) return "open";
-  const placeId = sim.campaign.place;
-  const place = placeId ? storyPlaceById(placeId) : null;
-  const fromPlace = place && place.seed === getSystem().seed ? cometCardFromPlace(place) : null;
-  const card = sim.comet?.card ?? fromPlace;
+  if (sim.comet?.unmarked && !sim.comet.card) return null;
+  const card = sim.comet?.card ?? placeCometCard(sim);
   if (!card) return null;
   if (card.requires && !cometRequireMet(sim.ship, sim.campaign, card.requires)) return null;
   return card;
+}
+
+/** The mass spec marks the comet that is already leaving. The next one, if none is up. */
+function markLeavingComet(sim: Sim) {
+  if (!sim.campaign?.flags.includes("hushMarked") || !sim.comet || sim.comet.card) return;
+  const card = placeCometCard(sim);
+  if (!card || !markedCometStream(card)) return;
+  sim.comet.unmarked = undefined;
+  sim.comet.card = { ...card };
+}
+
+/** E grazes once. F keeps sending leaving comets until the marked one leaves a heading. */
+function spawnCampaignComet(sim: Sim) {
+  if (!sim.campaign || sim.comet || sim.cometHeading || sim.cometScene) return;
+  if (sim.phase !== "landed" && sim.phase !== "flight") return;
+  const card = placeCometCard(sim);
+  if (!card) return;
+  if (!markedCometStream(card)) {
+    if (sim.cometSpent) return;
+    const comet = spawnComet(sim.planets, Math.random);
+    comet.card = { ...card };
+    sim.comet = comet;
+    sim.cometSpent = true;
+    sim.cometEntered = false;
+    return;
+  }
+  const comet = spawnLeavingComet(sim.planets, Math.random);
+  if (sim.campaign.flags.includes("hushMarked")) comet.card = { ...card };
+  else comet.unmarked = true;
+  sim.comet = comet;
+  sim.cometEntered = Math.hypot(comet.x, comet.y) <= getMinimapWorldR();
 }
 
 export function trySpawnComet(sim: Sim): boolean {
@@ -3210,6 +3251,8 @@ export function stepSim(
 
   stepSpectro(sim, dt);
   updateMoons(sim, dt);
+  markLeavingComet(sim);
+  spawnCampaignComet(sim);
   stepLiveComet(sim, dt);
   tryEnterParkedComet(sim);
   if (sim.cometScene) return;

@@ -138,6 +138,18 @@ test("a save without revealed headings still loads", () => {
   assert.ok(loaded);
   assert.deepEqual(loaded.revealed, []);
   assert.deepEqual(loaded.checkpoint.revealed, []);
+  delete raw.salt;
+  delete checkpoint.salt;
+  mem.set(CAMPAIGN_STORAGE_KEY, JSON.stringify(raw));
+  const aged = loadCampaign(storage);
+  assert.ok(aged);
+  assert.equal(aged.salt, 0);
+  assert.equal(aged.checkpoint.salt, 0);
+  raw.salt = "nope";
+  mem.set(CAMPAIGN_STORAGE_KEY, JSON.stringify(raw));
+  assert.equal(loadCampaign(storage), null);
+  raw.salt = 1;
+  checkpoint.salt = 1;
   raw.revealed = 4;
   mem.set(CAMPAIGN_STORAGE_KEY, JSON.stringify(raw));
   assert.equal(loadCampaign(storage), null);

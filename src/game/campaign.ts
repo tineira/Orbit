@@ -26,6 +26,8 @@ export type CampaignCheckpoint = {
   firedTriggers: string[];
   /** Heading ids revealed by triggers. Missing on old saves, which load as []. */
   revealed: string[];
+  /** Mixes this playthrough's leg lengths and step seeds. Missing on old saves, which load as 0. */
+  salt: number;
   ship: CampaignShip;
   modules: Grant[];
 };
@@ -38,6 +40,8 @@ export type CampaignState = {
   firedTriggers: string[];
   /** Heading ids revealed by triggers. Missing on old saves, which load as []. */
   revealed: string[];
+  /** Mixes this playthrough's leg lengths and step seeds. Missing on old saves, which load as 0. */
+  salt: number;
   ship: CampaignShip;
   modules: Grant[];
   checkpoint: CampaignCheckpoint;
@@ -90,7 +94,10 @@ export function newCampaign(opts: {
   flags?: CampaignFlag[];
   firedTriggers?: string[];
   modules?: Grant[];
+  /** Omit to roll a new playthrough. Pass one to keep a test or a reload stable. */
+  salt?: number;
 }): CampaignState {
+  const salt = opts.salt == null ? (Math.random() * 0x100000000) >>> 0 : opts.salt >>> 0;
   const state: CampaignState = {
     version: 1,
     place: opts.place ?? null,
@@ -98,9 +105,10 @@ export function newCampaign(opts: {
     flags: (opts.flags ?? []).slice(),
     firedTriggers: (opts.firedTriggers ?? []).slice(),
     revealed: [],
+    salt,
     ship: { ...opts.ship },
     modules: (opts.modules ?? []).map(cloneGrant),
-    checkpoint: blankCheckpoint(opts.seed, opts.landedId, opts.ship),
+    checkpoint: blankCheckpoint(opts.seed, opts.landedId, opts.ship, salt),
   };
   return writeCheckpoint(state, {
     seed: opts.seed,
@@ -144,6 +152,7 @@ export function writeCheckpoint(state: CampaignState, snap: CheckpointSnap): Cam
     flags: flags.slice(),
     firedTriggers: firedTriggers.slice(),
     revealed: revealed.slice(),
+    salt: state.salt,
     ship: { ...ship },
     modules: modules.map(cloneGrant),
   };
@@ -168,6 +177,7 @@ export function restoreCampaignFields(state: CampaignState): CampaignState {
   state.flags = cp.flags.slice();
   state.firedTriggers = cp.firedTriggers.slice();
   state.revealed = cp.revealed.slice();
+  state.salt = cp.salt;
   state.ship = { ...cp.ship };
   state.modules = cp.modules.map(cloneGrant);
   return state;
@@ -212,7 +222,12 @@ function defaultStorage(): CampaignStorage | null {
   }
 }
 
-function blankCheckpoint(seed: number, landedId: string | null, ship: CampaignShip): CampaignCheckpoint {
+function blankCheckpoint(
+  seed: number,
+  landedId: string | null,
+  ship: CampaignShip,
+  salt: number,
+): CampaignCheckpoint {
   return {
     seed: seed >>> 0,
     landedId,
@@ -221,6 +236,7 @@ function blankCheckpoint(seed: number, landedId: string | null, ship: CampaignSh
     flags: [],
     firedTriggers: [],
     revealed: [],
+    salt,
     ship: { ...ship },
     modules: [],
   };
@@ -248,6 +264,7 @@ function parseCampaign(value: unknown): CampaignState | null {
   const flags = parseFlags(row.flags);
   const firedTriggers = parseIds(row.firedTriggers);
   const revealed = parseOptionalIds(row.revealed);
+  const salt = parseSalt(row.salt);
   const modules = parseGrants(row.modules);
   const place = parsePlace(row.place);
   const leg = parseLeg(row.leg);
@@ -257,6 +274,7 @@ function parseCampaign(value: unknown): CampaignState | null {
     !flags ||
     !firedTriggers ||
     !revealed ||
+    salt == null ||
     !modules ||
     place === undefined ||
     leg === undefined
@@ -270,6 +288,7 @@ function parseCampaign(value: unknown): CampaignState | null {
     flags,
     firedTriggers,
     revealed,
+    salt,
     ship,
     modules,
     checkpoint,
@@ -284,6 +303,7 @@ function parseCheckpoint(value: unknown): CampaignCheckpoint | null {
   const flags = parseFlags(row.flags);
   const firedTriggers = parseIds(row.firedTriggers);
   const revealed = parseOptionalIds(row.revealed);
+  const salt = parseSalt(row.salt);
   const modules = parseGrants(row.modules);
   const place = parsePlace(row.place);
   const leg = parseLeg(row.leg);
@@ -294,6 +314,7 @@ function parseCheckpoint(value: unknown): CampaignCheckpoint | null {
     !flags ||
     !firedTriggers ||
     !revealed ||
+    salt == null ||
     !modules ||
     place === undefined ||
     leg === undefined ||
@@ -301,7 +322,7 @@ function parseCheckpoint(value: unknown): CampaignCheckpoint | null {
   ) {
     return null;
   }
-  return { seed, landedId, place, leg, flags, firedTriggers, revealed, ship, modules };
+  return { seed, landedId, place, leg, flags, firedTriggers, revealed, salt, ship, modules };
 }
 
 function parseShip(value: unknown): CampaignShip | null {
@@ -324,6 +345,12 @@ function parseShip(value: unknown): CampaignShip | null {
 function parseSeed(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 0xffffffff) return null;
   return value;
+}
+
+/** Absent means an older save. A present non-integer is corrupt. */
+function parseSalt(value: unknown): number | null {
+  if (value == null) return 0;
+  return parseSeed(value);
 }
 
 function parsePlace(value: unknown): string | null | undefined {

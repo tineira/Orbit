@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { newCampaign, type CampaignState } from "./campaign.ts";
+import { campaignShipFrom, newCampaign, writeCheckpoint, type CampaignState, type Grant } from "./campaign.ts";
 import { PHASE1_CIV, PHASE1_LEGS, PHASE1_PLACES, PHASE1_SHIPS } from "./campaign/phase1.ts";
 import { applyLoadout, syncFuelMass } from "./fuel.ts";
 import {
@@ -22,6 +22,7 @@ import {
   storyPlaceById,
   type StoryPlace,
 } from "./place.ts";
+import { applyCampaignBoot, createSim, stepSim } from "./sim.ts";
 import { runTriggers, shipDeltaV, type GameEvent } from "./triggers.ts";
 import type { FuelKind, NearbyHeading, Ship } from "./types.ts";
 import {
@@ -73,12 +74,68 @@ function paperShip(fuel: number): Ship {
   return ship;
 }
 
-function campaign(): CampaignState {
+function campaign(salt = 1): CampaignState {
   return newCampaign({
+    salt,
     seed: 1,
     landedId: null,
     ship: { fuelKind: "ch4", engineKind: "v1", tankKind: "fuel", fuel: 12, hull: 100 },
   });
+}
+
+/** H2 from a deep skim (atmo trap + a gas giant) and a Workshop to refine it. */
+function canRefineNtr(modules: Grant[]): boolean {
+  if (!modules.some((grant) => "module" in grant && grant.module === "atmoTrap")) return false;
+  const planets = getPlanets();
+  const gas = planets.some((planet) => planet.kind === "gas" && planet.radius > 0);
+  const shop = planets.some((planet) => planet.kicker === "Workshop" || planet.workshop === true);
+  return gas && shop;
+}
+
+/** Leave D on a full NTR tank and take the headings this salt actually stamps. */
+function crossLeg4(salt: number): number {
+  const state = newCampaign({
+    salt,
+    seed: 55,
+    landedId: null,
+    place: "star-d",
+    flags: ["cometHeading"],
+    modules: [{ module: "atmoTrap" }],
+    ship: { fuelKind: "ntr", engineKind: "thermal", tankKind: "cryo", fuel: 100, hull: 100 },
+  });
+  createSystem(55, {}, null, "Nu Pictoris", { nearby: { count: 3 } });
+  stampCampaignHeadings(getSystem().nearby, state, false);
+  let route = getSystem().nearby.find((item) => item.target?.leg === "leg-4");
+  assert.ok(route, `salt ${salt} has no leg heading`);
+  const full = jumpsPerTank("ntr", "thermal", "cryo");
+  let range = full;
+  let length = 0;
+  let hops = 0;
+  while (state.place !== "star-massive-1") {
+    assert.ok(range >= 1, `salt ${salt} hop ${hops} range ${range}`);
+    range -= 1;
+    hops += 1;
+    assert.ok(hops < 6, `salt ${salt} never arrived`);
+    chartCampaignWarp(state, route, false, route.roll ?? 0, null, route.name);
+    if (state.leg) {
+      if (length === 0) length = state.leg.length ?? 0;
+      if (state.leg.step === 0) assert.equal(canRefineNtr(state.modules), false, `salt ${salt} bridge`);
+      if (length >= 3 && state.leg.step > 0) {
+        assert.equal(canRefineNtr(state.modules), true, `salt ${salt} step ${state.leg.step}`);
+        range = full;
+      }
+    }
+    if (state.place === "star-massive-1") break;
+    stampCampaignHeadings(getSystem().nearby, state, false);
+    const next = getSystem().nearby.find(
+      (item) => item.target?.leg === "leg-4" || item.target?.place === "star-massive-1",
+    );
+    assert.ok(next, `salt ${salt} lost the route`);
+    route = next;
+  }
+  assert.equal(hops, length, `salt ${salt} hops`);
+  assert.ok(length === 2 || length === 3, `salt ${salt} length ${length}`);
+  return length;
 }
 
 function fire(card: StoryPlace, state: CampaignState, event: GameEvent) {
@@ -245,11 +302,12 @@ test("phase 1 walks marks and grants in order, and each leg fits the ship earned
   assert.ok(afterNtr >= 2.2, `ntr ${afterNtr} clears 2.2`);
   assert.ok(afterNtr >= 2 && afterNtr < 3, `ntr ${afterNtr} crosses length 2 and not length 3`);
   const step1 = stepRecipe(leg4, 1, 3);
-  assert.notEqual(step1.rocky?.roles?.includes("workshop"), true);
-  for (const seed of [1, 5, 8]) {
-    assert.equal(refill("leg-4", 0, 2, "ntr", seed), false, `leg 4 bridge ${seed}`);
-    assert.equal(refill("leg-4", 0, 3, "ntr", seed), false, `leg 4 step 0 ${seed}`);
-  }
+  assert.equal(step1.gas, "ammonia");
+  assert.equal(step1.rocky?.roles?.includes("workshop"), true);
+  const lengths = new Set<number>();
+  for (let salt = 0; salt < 48; salt++) lengths.add(crossLeg4(salt));
+  assert.equal(lengths.has(2), true);
+  assert.equal(lengths.has(3), true);
 
   const starE = place("star-massive-1");
   assert.equal(starE.headingRequires, "cometHeading");
@@ -271,13 +329,9 @@ test("phase 1 walks marks and grants in order, and each leg fits the ship earned
   fire(starF, state, { on: "takeoff", ref: "f1" });
   assert.ok(state.flags.includes("hasDetector"));
   assert.ok(state.flags.includes("hushMarked"));
-  assert.ok(state.revealed.includes("star-g"));
+  assert.equal(state.revealed.includes("star-g"), false);
   assert.equal(legFrom("star-f"), null);
-
-  const starG = place("star-g");
-  assert.equal(starG.headingRequires, "hushDetector");
-  assert.equal(starG.triggers.length, 0);
-  assert.equal(legFrom("star-g"), null);
+  assert.equal(storyPlaceById("star-g"), null);
 
   assert.deepEqual(state.flags, [
     "sawCrew",
@@ -300,7 +354,6 @@ test("phase 1 walks marks and grants in order, and each leg fits the ship earned
     "star-d",
     "star-massive-1",
     "star-f",
-    "star-g",
   ]);
   assert.deepEqual(state.modules, [
     { module: "transceiver" },
@@ -321,7 +374,7 @@ test("F has no star name, cards A–E use the closed names, and leg stars are LV
   assert.equal(storyHeadingName("star-d"), "Nu Pictoris");
   assert.equal(storyHeadingName("star-massive-1"), "Mu Doradus");
   assert.equal(storyHeadingName("star-f"), "");
-  assert.equal(storyHeadingName("star-g"), "star-g");
+  assert.equal(storyPlaceById("star-g"), null);
   assert.equal(storyHeadingName("probe-end"), "probe-end");
 
   const names: Record<string, { star: string; ref: string; code: string; nickname: string }> = {
@@ -372,21 +425,15 @@ test("F has no star name, cards A–E use the closed names, and leg stars are LV
   assert.deepEqual(chartStoryPlace(starF, true), []);
   assert.equal(getSystem().name, "");
   assert.equal(getPlanets().find((planet) => planet.kind === "star")?.name, "");
-  assert.equal(cometCardFromPlace(starF), null);
-  const glitch = starF.triggers.find((trigger) => trigger.on === "enterSystem");
-  assert.ok(glitch);
-  assert.equal(glitch.effects.some((effect) => "halleyGlitch" in effect && effect.halleyGlitch === 4), true);
-
-  const starG = place("star-g");
-  assert.equal(starG.starName, undefined);
-  assert.deepEqual(chartStoryPlace(starG, true), []);
-  assert.notEqual(getSystem().name, "");
-  assert.deepEqual(cometCardFromPlace(starG), {
+  assert.deepEqual(cometCardFromPlace(starF), {
     requires: { module: "hushDetector" },
     civ: true,
     scene: "marked",
     ref: "comet",
   });
+  const glitch = starF.triggers.find((trigger) => trigger.on === "enterSystem");
+  assert.ok(glitch);
+  assert.equal(glitch.effects.some((effect) => "halleyGlitch" in effect && effect.halleyGlitch === 4), true);
 
   createSystem(1, {}, null, "");
   assert.equal(getSystem().name, "");
@@ -468,4 +515,145 @@ test("F has no star name, cards A–E use the closed names, and leg stars are LV
   const probeHeading = getSystem().nearby.find((item) => item.target?.leg === "probe-leg");
   assert.equal(probeHeading?.name, "probe-leg");
   assert.equal(probeHeading?.roll, undefined);
+});
+
+function legHeading(legId: string) {
+  return getSystem().nearby.find((item) => item.target?.leg === legId);
+}
+
+test("two playthroughs roll different legs, and one save keeps its systems", () => {
+  function firstRoll(salt: number) {
+    const state = campaign(salt);
+    state.place = "star-a";
+    createSystem(8, {}, null, "Eta Caeli", { nearby: { count: 2 } });
+    stampCampaignHeadings(getSystem().nearby, state, false);
+    const route = legHeading("leg-1");
+    assert.ok(route?.roll != null && route.name);
+    chartCampaignWarp(state, route, false, route.roll, null, route.name);
+    return { roll: route.roll, name: getSystem().name, length: state.leg?.length };
+  }
+  const a = firstRoll(1);
+  const b = firstRoll(2);
+  assert.notEqual(a.roll, b.roll);
+  assert.equal(firstRoll(1).name, a.name);
+  assert.equal(firstRoll(1).length, a.length);
+  assert.equal(firstRoll(1).roll, a.roll);
+});
+
+test("recharting a leg step keeps the LV name and the step grant", () => {
+  const state = campaign(4);
+  state.place = "star-b";
+  createSystem(21, {}, null, "Theta Pyxidis", { nearby: { count: 3 } });
+  stampCampaignHeadings(getSystem().nearby, state, false);
+  const route = legHeading("leg-2");
+  assert.ok(route?.roll != null);
+  chartCampaignWarp(state, route, false, route.roll, null, route.name);
+  assert.equal(state.leg?.step, 0);
+  const name = getSystem().name;
+  assert.match(name, /^LV-/);
+  const trap = getPlanets()
+    .filter((planet) => planet.kind === "asteroid" && planet.landable)
+    .sort((a, b) => b.radius - a.radius)[0];
+  assert.ok(trap);
+  assert.deepEqual(trap.grant, { module: "atmoTrap" });
+  stampCampaignHeadings(getSystem().nearby, state, false);
+  const next = legHeading("leg-2");
+  assert.ok(next?.roll != null);
+  const nextName = next.name;
+  const nextRoll = next.roll;
+  writeCheckpoint(state, {
+    seed: state.leg!.seed,
+    landedId: trap.id,
+    ship: state.ship,
+    place: null,
+    leg: state.leg,
+  });
+  createSystem(3);
+  const sim = createSim();
+  sim.campaign = state;
+  applyCampaignBoot(sim);
+  assert.equal(getSystem().name, name);
+  const again = getPlanets()
+    .filter((planet) => planet.kind === "asteroid" && planet.landable)
+    .sort((a, b) => b.radius - a.radius)[0];
+  assert.ok(again);
+  assert.deepEqual(again.grant, { module: "atmoTrap" });
+  const restamped = legHeading("leg-2");
+  assert.equal(restamped?.name, nextName);
+  assert.equal(restamped?.roll, nextRoll);
+});
+
+const fly = { steer: 0, forward: false, reverse: false, aimYaw: null, aimThrust: false };
+
+function flyCampaign(id: string, salt = 3) {
+  const card = place(id);
+  chartStoryPlace(card, false);
+  const sim = createSim();
+  sim.campaign = newCampaign({
+    salt,
+    seed: getSystem().seed,
+    landedId: null,
+    place: card.id,
+    ship: campaignShipFrom(sim.ship),
+  });
+  sim.campaignPlaceId = card.id;
+  sim.phase = "flight";
+  sim.padZoomLock = false;
+  sim.landedId = null;
+  sim.ship.x = 50000;
+  sim.ship.y = 20000;
+  sim.ship.vx = 0;
+  sim.ship.vy = 0;
+  return sim;
+}
+
+test("a campaign place spawns its comet and sets the card", () => {
+  const e = flyCampaign("star-massive-1");
+  assert.equal(Boolean(e.comet), false);
+  stepSim(e, 1 / 60, fly);
+  const grazed = e.comet;
+  assert.ok(grazed);
+  assert.equal(e.cometSpent, true);
+  assert.deepEqual(grazed.card, cometCardFromPlace(place("star-massive-1")));
+  stepSim(e, 1 / 60, fly);
+  assert.equal(e.cometSpent, true);
+
+  const free = createSim();
+  free.phase = "flight";
+  free.padZoomLock = false;
+  stepSim(free, 1 / 60, fly);
+  assert.equal(free.comet, null);
+
+  const f = flyCampaign("star-f");
+  stepSim(f, 1 / 60, fly);
+  const passer = f.comet;
+  assert.ok(passer);
+  assert.equal(passer.card, undefined);
+  assert.equal(passer.unmarked, true);
+  assert.equal(Boolean(f.cometHeading), false);
+  let left = false;
+  for (let i = 0; i < 900 && !left; i++) {
+    stepSim(f, 1 / 30, fly);
+    if (!f.comet && !f.cometHeading) left = true;
+  }
+  assert.equal(left, true, "an unmarked comet leaves no heading");
+  for (let i = 0; i < 30 && !f.comet; i++) stepSim(f, 1 / 60, fly);
+  const next = f.comet;
+  assert.ok(next, "another comet comes");
+  assert.equal(next.card, undefined);
+  f.campaign!.flags.push("hushMarked");
+  f.campaign!.modules.push({ module: "hushDetector" });
+  stepSim(f, 1 / 60, fly);
+  assert.deepEqual(f.comet?.card, cometCardFromPlace(place("star-f")));
+  let heading = false;
+  for (let i = 0; i < 900 && !heading; i++) {
+    stepSim(f, 1 / 30, fly);
+    if (f.cometHeading) heading = true;
+  }
+  assert.equal(heading, true);
+  const marked = f.cometHeading;
+  assert.ok(marked);
+  assert.deepEqual(marked.comet, cometCardFromPlace(place("star-f")));
+  stepSim(f, 1 / 60, fly);
+  assert.equal(Boolean(f.comet), false);
 });

@@ -32,7 +32,7 @@ El **qué** vive en Notion; aquí está el **cómo**. Si este doc y Notion discr
 | Cometa (cambiado 12 oct): inatrapable; su rumbo aparece con LUMEN (E) o el detector de hush (G); saltar entra a una escena propia donde solo hay que aterrizar entre chorros y rocas. El look lo fija Tomás | Fase 9 |
 | La civilización se llama `civ` en el código; su nombre queda pendiente | Fase 9 y 10 |
 | Transceptor rescatado de una nave desguazada en el hangar de la estación | Fase 10 |
-| Lugares en línea, A→G; cada uno revela el siguiente | Fase 10 |
+| Lugares en línea, A→F; G es el cometa marcado que sale de F | Fase 10 |
 | Saltos por tramo como en el Mapa (13–17 en total) | Fase 10 |
 | Posado ~120 s en el cometa E antes de que desacelere | Fase 10 |
 | Nombres: homenaje a Alien (tabla en el Mapa) | Fase 10 |
@@ -302,14 +302,17 @@ Cambió el 12 oct (Tomás). Ya no se iguala la velocidad del cometa en el chart:
 ### Fase 10: datos de la fase 1
 
 - **Del cometa (viene de la fase 9):**
-  - **El rumbo del cometa aparece cuando la nave puede.** `sim.cometHeading` solo se crea si se cumple lo que pide la ficha: `cometRequires?: CampaignFlag | Grant | { fuel: FuelKind }` en `StoryPlace` o en el `comet` que trae el rumbo. El cometa E pide `{ fuel: "lumen" }` (LUMEN en el tanque), el G pide el módulo `hushDetector`. Sin eso, el cometa cruza y se va sin dejar rumbo. En modo libre, como hoy (`?dev` + C) y sin requisito.
-  - Flag `civ` en el cometa. Aterrizar en uno con `civ` y con `hushDetector` entrega HUSH × Coil + Hold (fila de Descubrimiento).
-  - "Quedarse posado" en un cometa de ficha lleva a otra ficha: disparador `{ on: "landedFor"; ref; seconds }` + `revealHeading` + salto automático. Si despegas antes, el contador vuelve a cero.
+  - **El rumbo del cometa aparece cuando la nave puede.** `sim.cometHeading` solo se crea si se cumple lo que pide la ficha. El tipo enviado es `CometRequires` (`types.ts`): un string (marca de campaña), `{ fuel: FuelKind }`, `{ engine: EngineKind }`, `{ tank: TankKind }` o `{ module: CampaignModule }`. Vive en `StoryPlace.cometRequires` y se copia a `CometCard.requires` (`Comet.card`) cuando el cometa sale del chart. El cometa E pide `{ fuel: "lumen" }` (LUMEN en el tanque). El cometa marcado de F pide `{ module: "hushDetector" }`. Sin eso, el cometa cruza y se va sin dejar rumbo. En modo libre, como hoy (`?dev` + C) y sin requisito.
+  - **La ficha spawnea su cometa en campaña.** E tira un solo roce a la estrella masiva (`spawnComet`) y le pone la carta. F tira cometas que entran y se van (`spawnLeavingComet`); el despegue de `f1` marca `hushMarked` en uno que se va, y ese lleva `Comet.card`. El rumbo queda cuando ese cometa sale y el detector está a bordo. `cometCardFromPlace("star-f")` no es null.
+  - Flag `civ` en el cometa (`CometCard.civ`, no en un planeta). Aterrizar en uno con `civ` y con `hushDetector` entrega HUSH × Coil + Hold (fila de Descubrimiento). G no es una estrella: es ese cometa marcado. No hay ficha `star-g`.
+  - "Quedarse posado" en el cometa E lleva a F: disparador `{ on: "landedFor"; ref; seconds }` + `revealHeading` + salto automático. Si despegas antes, el contador vuelve a cero. La escena del cometa no se toca.
 
-- `src/game/campaign/phase1.ts`: las fichas A–G y los tramos 1–4 del Mapa en Notion, traducidos a datos. Todo texto por id. Sin copy.
+- `src/game/campaign/phase1.ts`: las fichas A–F y los tramos 1–4 del Mapa en Notion, traducidos a datos. Todo texto por id. Sin copy. G es el cometa marcado de F.
 - Ids de cuerpos y marcas en inglés corto (`a1`, `a2`, `a3`, `hasV2`, `sawWall`).
 - Las semillas de las fichas se eligen jugando: busca semillas cuyo sistema tirado se vea bien y deja el número fijo.
-- **En línea:** A→B→C→D→E→F→G. Cada ficha revela el rumbo a la siguiente (`revealHeading`); no hay otro orden. Largos de tramo como en el Mapa: tramo 1 `[3, 4]`, tramo 2 `[4, 5]`, tramo 3 `[4, 5]`, tramo 4 `[2, 3]`.
+- **En línea:** A→B→C→D→E→F, y G es el cometa marcado que sale de F (no un `revealHeading` a otra estrella). Cada ficha de estrella revela el rumbo a la siguiente. Largos de tramo como en el Mapa: tramo 1 `[3, 4]`, tramo 2 `[4, 5]`, tramo 3 `[4, 5]`, tramo 4 `[2, 3]`.
+- **Sal de la partida.** Al empezar una campaña se tira `CampaignState.salt` (también va en el checkpoint). Entra en el largo del tramo y en la semilla de cada paso. Una recarga, un choque o un checkpoint conservan la sal, así que los sistemas y los nombres `LV-` no cambian. Una partida nueva tira otra sal. Un guardado viejo sin el campo carga `0`.
+- **Tramo 4.** El largo sigue en `[2, 3]`. Sales de D con el tanque de NTR lleno: el largo 2 se cruza; el largo 3 no, si no recargas. El paso que tiene el Workshop (paso 1) garantiza un gigante de gas con H2 al lado (`guarantee`), así puedes refinar NTR a mitad de tramo. Los dos largos se cruzan con los sistemas que la sal tira de verdad.
 - **Estación (B):** el transceptor es una entrega al aterrizar junto a la nave desguazada del hangar (un `BodyOverride` con `grant: "transceiver"`), no un depósito ni una compra.
 - **Cometa E:** disparador `landedFor` con `seconds: 120` (unos 2 minutos sin despegar). Si despegas antes, el contador vuelve a cero.
 - **Glitch de Halley (nuevo efecto):** agrega `{ halleyGlitch: number }` a `Effect` (segundos). Sube el daño de la señal de Halley (`halley.ts`: CRT y audio) a 1 durante esos segundos y vuelve solo al valor de la nave, sin tocar `hull`. Si suena un clip, se traba y se repite como en el daño máximo. Curva: sube a 1 en 0,3 s, se sostiene el resto y baja al valor de la nave en 0,8 s. Prende el CRT de Halley aunque no suene ningún clip. Lo usa la ficha F en `enterSystem` (`halleyGlitch: 4`), junto con la línea de llegada por id. Sin manifest, el glitch corre igual (es visual). Test puro de la curva: sube, se sostiene y vuelve.
@@ -329,7 +332,7 @@ Cambió el 12 oct (Tomás). Ya no se iguala la velocidad del cometa en el chart:
   - Los sistemas de los tramos llevan como estrella un código `LV-` con un número dentro del rango del tramo (tramo 1: 115–386, tramo 2: 388–920, tramo 3: 922–1205, tramo 4: 1207–1539). El nombre lo pone el **rumbo** que lleva a ese paso del tramo (el `NearbyHeading` con `target.leg`, que hoy nombra `rollNearby` en el sistema de origen) y viaja como `starName` al tirar el sistema. El número sale de la semilla del paso del tramo con un RNG aparte (`mulberry32(seed ^ 0x4c56)` o similar), para no correr los demás sorteos. Los rumbos de desvío siguen con los nombres al azar de hoy.
   - Naves (ids, por ahora no se muestran): la tuya `pcss-patna`, la del cometa `pcss-tremolino`, la misión muerta `pcss-torrens`.
   - Civilización: `civ`. Si un tipo o una función necesita nombre, usa `civ`; el nombre real se decide después.
-- **Aceptación:** un test recorre la campaña "en papel" (marcas y grants en orden) y comprueba que cada tramo es cruzable con la nave que se gana antes de él, usando `jumpsPerTank`. Otro test comprueba que F no tiene nombre y que las fichas A–E usan los de la tabla.
+- **Aceptación:** un test recorre la campaña "en papel" (marcas y grants en orden) y comprueba que cada tramo es cruzable con la nave que se gana antes de él. El tramo 4 camina los sistemas que tira la sal, con las reglas de recarga de verdad (trampa de atmósfera, H2 en un gigante y Workshop), no con "hay un Workshop". Otro test comprueba que F no tiene nombre, que su cometa es el marcado, y que las fichas A–E usan los de la tabla. Recargar un paso de tramo conserva el nombre `LV-` y el grant de ese paso.
 
 ### Fase 11: el modo aleatorio cambia (a propósito)
 

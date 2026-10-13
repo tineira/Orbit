@@ -15,7 +15,7 @@ const HOLD_S = 120;
 
 /**
  * Phase 1 cards. Text is ids. Seeds are the first charts that hold each card's bodies.
- * `star-g` is the marked comet: the map names no place id for it.
+ * G is not a star. At F, one leaving comet is marked; landing on it is G.
  */
 export const PHASE1_PLACES: StoryPlace[] = [
   {
@@ -239,6 +239,10 @@ export const PHASE1_PLACES: StoryPlace[] = [
     seed: 13,
     starName: "",
     recipe: { twins: "on", star: "hot", rocky: { count: 3 } },
+    cometRequires: { module: "hushDetector" },
+    cometCiv: true,
+    cometScene: "marked",
+    cometRef: "comet",
     bodies: [
       {
         ref: "f1",
@@ -263,21 +267,9 @@ export const PHASE1_PLACES: StoryPlace[] = [
       {
         on: "takeoff",
         ref: "f1",
-        effects: [{ setFlag: "hushMarked" }, { revealHeading: "star-g" }],
+        effects: [{ setFlag: "hushMarked" }],
       },
     ],
-  },
-  {
-    id: "star-g",
-    seed: 3,
-    headingRequires: "hushDetector",
-    recipe: { belt: "soft" },
-    cometRequires: { module: "hushDetector" },
-    cometCiv: true,
-    cometScene: "marked",
-    cometRef: "comet",
-    bodies: [],
-    triggers: [],
   },
 ];
 
@@ -330,6 +322,7 @@ export const PHASE1_LEGS: Leg[] = [
     base: { activePads: 0, home: "none", belt: "none", gas: "none", star: "warm" },
     steps: {
       0: { bridge: true },
+      1: { guarantee: { gas: "ammonia", rocky: { count: 1, roles: ["workshop"] } } },
     },
   },
 ];
