@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { campaignShipFrom, newCampaign, writeCheckpoint, type CampaignState, type Grant } from "./campaign.ts";
 import { PHASE1_CIV, PHASE1_LEGS, PHASE1_PLACES, PHASE1_SHIPS } from "./campaign/phase1.ts";
 import { applyLoadout, syncFuelMass } from "./fuel.ts";
-import { bankH2OverNtr, NTR_REFINE_RATE, refineNtr, skimLiters } from "./refill.ts";
+import { bankH2OverNtr, campaignHasModule, NTR_REFINE_RATE, refineNtr, skimLiters } from "./refill.ts";
 import {
   chartCampaignWarp,
   hasCanonicalRefill,
@@ -23,7 +23,7 @@ import {
   storyPlaceById,
   type StoryPlace,
 } from "./place.ts";
-import { applyCampaignBoot, COMET_GRAZE_GAP_S, createSim, stepSim, trySpawnComet } from "./sim.ts";
+import { applyCampaignBoot, commitArrivalCheckpoint, COMET_GRAZE_GAP_S, createSim, rebootSim, stepSim, trySpawnComet } from "./sim.ts";
 import { runTriggers, shipDeltaV, type GameEvent } from "./triggers.ts";
 import type { NearbyHeading, Ship } from "./types.ts";
 import {
@@ -835,4 +835,21 @@ test("a campaign place spawns its comet and sets the card", () => {
   assert.equal(opened.card, undefined);
   pushCometOut(dev);
   assert.equal(Boolean(dev.cometHeading), false, "a dev comet does not inherit the place card");
+});
+
+test("arriving at F on the E comet is a checkpoint off the detector world", () => {
+  const f = flyCampaign("star-f");
+  assert.equal(commitArrivalCheckpoint(f), true);
+  const cp = f.campaign!.checkpoint;
+  assert.equal(cp.place, "star-f");
+  assert.equal(cp.seed, place("star-f").seed);
+  const seat = f.planets.find((p) => p.id === cp.landedId);
+  assert.ok(seat);
+  assert.notEqual(seat.placeRef, "f1");
+  assert.equal(seat.grant, undefined);
+  f.phase = "crashed";
+  rebootSim(f);
+  assert.equal(f.phase, "landed");
+  assert.equal(getSystem().seed, place("star-f").seed);
+  assert.equal(campaignHasModule(f.campaign!.modules, "hushDetector"), false);
 });

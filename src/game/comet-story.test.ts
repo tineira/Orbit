@@ -14,7 +14,7 @@ import {
 import { applyLoadout, syncFuelMass } from "./fuel.ts";
 import { PROBE_END, PROBE_PLACE } from "./place.ts";
 import { deliverHush } from "./refill.ts";
-import { createSim, enterCometScene, stepSim, takeoff, type Sim } from "./sim.ts";
+import { createSim, enterCometScene, rebootSim, stepSim, takeoff, type Sim } from "./sim.ts";
 import { runTriggers, type Trigger } from "./triggers.ts";
 import type { EngineKind, FuelKind, TankKind } from "./types.ts";
 import { createSystem, getMinimapWorldR, getSystem, SHIP_FUEL_CAPACITY, SHIP_HULL, SHIP_MASS, STEP } from "./world.ts";
@@ -478,5 +478,21 @@ test("landedFor fires at its seconds, and the jump waits until the scene has arr
     assert.equal(sim.phase, "flight");
     assert.equal(sim.campaign?.place, PROBE_END.id);
     assert.equal(getSystem().seed, PROBE_END.seed);
+
+    // The ride is not flown again: the arrival is the checkpoint.
+    const cp = sim.campaign!.checkpoint;
+    assert.equal(cp.place, PROBE_END.id);
+    assert.equal(cp.seed, PROBE_END.seed);
+    assert.ok(cp.revealed.includes("probe-end"));
+    const seat = sim.planets.find((p) => p.id === cp.landedId);
+    assert.ok(seat && (seat.kind === "rocky" || seat.kind === "moon"));
+    assert.equal(seat.grant, undefined);
+    sim.phase = "crashed";
+    rebootSim(sim);
+    assert.equal(sim.phase, "landed");
+    assert.equal(sim.cometScene, null);
+    assert.equal(getSystem().seed, PROBE_END.seed);
+    assert.equal(sim.campaign?.place, PROBE_END.id);
+    assert.equal(sim.landedId, cp.landedId);
   });
 });

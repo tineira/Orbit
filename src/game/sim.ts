@@ -260,6 +260,8 @@ export type Sim = {
   cometJumpPlace: string | null;
   /** This sit already queued `landedFor`. Cleared when the hold resets. */
   cometLandedFor: boolean;
+  /** The warp under way is a comet's ride to a story place: its arrival is the next checkpoint. */
+  cometRideCheckpoint: boolean;
   /** Log of the scene camera's lag carried onto the chart when you leave a comet; it eases out. */
   cometZoomCarry: number;
   warpTarget: NearbyHeading | null;
@@ -399,6 +401,7 @@ export function createSim(): Sim {
     cometMark: null,
     cometJumpPlace: null,
     cometLandedFor: false,
+    cometRideCheckpoint: false,
     warpTarget: null,
     warpLost: false,
     crashAge: 0,
@@ -520,6 +523,7 @@ export function applySimViewPrefs(sim: Sim, prefs: SimViewPrefs) {
 export function rebootSim(sim: Sim) {
   const campaign = sim.campaign;
   sim.cometScene = null;
+  sim.cometRideCheckpoint = false;
   if (!campaign) sim.ship = freshShip();
   else {
     restoreCampaignFields(campaign);
@@ -609,6 +613,31 @@ export function commitStoryCheckpoint(sim: Sim, placeId: string): boolean {
     landedId: sim.landedId,
     ship: campaignShipFrom(sim.ship),
     place: placeId,
+    leg: null,
+  });
+  saveCampaign(sim.campaign);
+  return true;
+}
+
+/**
+ * A comet ride ended in a story system. The ride is not flown again: a crash
+ * here comes back to this chart, sat on a body that holds no story of its own.
+ */
+export function commitArrivalCheckpoint(sim: Sim): boolean {
+  const placeId = sim.campaign?.place;
+  const place = placeId ? storyPlaceById(placeId) : null;
+  if (!sim.campaign || !place || place.seed !== getSystem().seed) return false;
+  const solid = (p: Planet) => p.kind === "rocky" || p.kind === "moon";
+  const body =
+    sim.planets.find((p) => solid(p) && p.placeRef == null && !p.grant) ??
+    sim.planets.find((p) => solid(p) && !p.grant) ??
+    null;
+  if (!body) return false;
+  writeCheckpoint(sim.campaign, {
+    seed: getSystem().seed,
+    landedId: body.id,
+    ship: campaignShipFrom(sim.ship),
+    place: place.id,
     leg: null,
   });
   saveCampaign(sim.campaign);
@@ -956,6 +985,7 @@ function beginCometStoryJump(sim: Sim, placeId: string) {
     target: { place: placeId },
   };
   enterWarp(sim, false);
+  sim.cometRideCheckpoint = true;
 }
 
 /**
@@ -1551,6 +1581,10 @@ function stepTransit(sim: Sim, dt: number) {
   sim.warpApproach = warpApproach(WARP_BRAKE_SPEED);
   sim.orbitHint = null;
   sim.status = "deep";
+  if (sim.cometRideCheckpoint) {
+    sim.cometRideCheckpoint = false;
+    commitArrivalCheckpoint(sim);
+  }
   pushCampaignEvent(sim, { on: "enterSystem" });
 }
 
