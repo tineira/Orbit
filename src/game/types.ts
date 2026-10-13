@@ -1,3 +1,4 @@
+import type { CampaignModule } from "./campaign.ts";
 import type { VoiceSnapshot } from "./voice.ts";
 
 export type PlanetKind = "star" | "rocky" | "gas" | "moon" | "asteroid" | "barycenter";
@@ -201,6 +202,23 @@ export type CrashKind = "burn" | "wreck" | "sink" | "lost" | "airlock" | "starve
 
 export type NearbyHeadingKind = "star" | "comet";
 
+/** What a story comet asks before it leaves a heading. A string is a campaign flag. */
+export type CometRequires =
+  | string
+  | { fuel: FuelKind }
+  | { engine: EngineKind }
+  | { tank: TankKind }
+  | { module: CampaignModule };
+
+/** Story fields on a comet heading. Random charts leave the whole object unset. */
+export type CometCard = {
+  requires?: CometRequires;
+  /** Civilization on this comet. Not a planet civ. */
+  civ?: boolean;
+  /** `landedFor` ref. The trigger's `seconds` is the threshold. */
+  ref?: string;
+};
+
 export type NearbyHeading = {
   angle: number;
   color: string;
@@ -211,6 +229,8 @@ export type NearbyHeading = {
   requires?: string;
   /** Story route. Random charts leave this unset, so the snapshot stays the same. */
   target?: { place?: string; leg?: string };
+  /** Story comet. Random charts leave this unset, so the snapshot stays the same. */
+  comet?: CometCard;
 };
 
 export type Comet = {
@@ -221,9 +241,20 @@ export type Comet = {
   radius: number;
   /** Felt by nothing. Present so a later minigame can land. */
   mass: number;
+  /** Story mark. A flyby copies it onto the leftover heading when the ask is met. */
+  card?: CometCard;
   /** A comet that rode in and stays in orbit: fly close and you are back in its scene. */
   /** On a rail around the system's star: orbit radius, angle and angular speed (rad/s). */
-  parked?: { kind: string; seed: number; r: number; a: number; w: number; rot: number };
+  parked?: {
+    kind: string;
+    seed: number;
+    r: number;
+    a: number;
+    w: number;
+    rot: number;
+    civ?: boolean;
+    ref?: string;
+  };
   /** Nucleus spin angle, as in its scene. */
   rot?: number;
 };

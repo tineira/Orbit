@@ -1,7 +1,7 @@
 import type { CampaignState } from "./campaign.ts";
 import { grant as grantPiece } from "./fuel.ts";
 import type { Trigger } from "./triggers.ts";
-import type { Planet, PlanetKind, Settlement, Ship } from "./types.ts";
+import type { CometCard, CometRequires, Planet, PlanetKind, Settlement, Ship } from "./types.ts";
 import { createSystem, G, getPlanets, GRAVITY_BASE, keplerRail, type Recipe } from "./world.ts";
 
 export type BodyMatch = {
@@ -32,7 +32,26 @@ export type StoryPlace = {
   triggers: Trigger[];
   start?: { ref: string; fuel: number };
   headingRequires?: string;
+  /** The flyby leaves a heading only when this holds. Free mode ignores it. */
+  cometRequires?: CometRequires;
+  /** Civilization on this place's comet. Not a planet civ. */
+  cometCiv?: boolean;
+  /** `landedFor` ref for this place's comet. Defaults to that trigger's ref. */
+  cometRef?: string;
 };
+
+/** The comet this place asks for, or null when the card has no comet. */
+export function cometCardFromPlace(place: StoryPlace): CometCard | null {
+  const landed = place.triggers.find((trigger) => trigger.on === "landedFor");
+  const asks = place.cometRequires != null || place.cometCiv === true || place.cometRef != null || landed != null;
+  if (!asks) return null;
+  const card: CometCard = {};
+  if (place.cometRequires != null) card.requires = place.cometRequires;
+  if (place.cometCiv) card.civ = true;
+  const ref = place.cometRef ?? (landed?.on === "landedFor" ? landed.ref : undefined);
+  if (ref) card.ref = ref;
+  return card;
+}
 
 /** Not a story place. The hand-test door is `/?campaign&place=probe`. */
 export const PROBE_PLACE: StoryPlace = {

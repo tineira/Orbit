@@ -1,4 +1,6 @@
-import type { Comet, NearbyHeading, Planet } from "./types.ts";
+import type { CampaignState } from "./campaign.ts";
+import { campaignHasModule } from "./refill.ts";
+import type { Comet, CometRequires, NearbyHeading, Planet, Ship } from "./types.ts";
 import { angDiff, G, GRAVITY_BASE, getMinimapWorldR, HEADING_MIN_SEP } from "./world.ts";
 
 export const COMET_RED = "#e24b3a";
@@ -135,6 +137,19 @@ export function warpHeadings(
 ): NearbyHeading[] {
   if (!cometHeading) return nearby;
   return nearby.concat(cometHeading);
+}
+
+/** True when the ship meets a story comet's ask. Free mode never calls this. */
+export function cometRequireMet(
+  ship: Pick<Ship, "fuel" | "fuelKind" | "engineKind" | "tankKind">,
+  campaign: Pick<CampaignState, "flags" | "modules"> | null,
+  requires: CometRequires,
+): boolean {
+  if (typeof requires === "string") return !!campaign?.flags.includes(requires);
+  if ("fuel" in requires) return ship.fuelKind === requires.fuel && ship.fuel > 0;
+  if ("module" in requires) return campaignHasModule(campaign?.modules, requires.module);
+  if ("engine" in requires) return ship.engineKind === requires.engine;
+  return ship.tankKind === requires.tank;
 }
 
 export function makeCometHeading(angle: number): NearbyHeading {

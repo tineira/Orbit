@@ -14,7 +14,9 @@ export type GameEvent =
   | { on: "land"; ref: string }
   | { on: "takeoff"; ref: string }
   | { on: "warpAttempt"; heading: string }
-  | { on: "flag"; flag: string };
+  | { on: "flag"; flag: string }
+  /** `seconds` is time continuously landed. The trigger's `seconds` is the threshold. */
+  | { on: "landedFor"; ref: string; seconds: number };
 
 export type Effect =
   | { halley: string }
@@ -132,6 +134,8 @@ function eventMatches(trigger: Trigger, event: GameEvent): boolean {
       return trigger.on === "warpAttempt" && trigger.heading === event.heading;
     case "flag":
       return trigger.on === "flag" && trigger.flag === event.flag;
+    case "landedFor":
+      return trigger.on === "landedFor" && trigger.ref === event.ref && event.seconds >= trigger.seconds;
     default:
       return false;
   }

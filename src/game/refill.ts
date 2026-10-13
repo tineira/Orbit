@@ -126,3 +126,9 @@ export function deliverMoonOutpost(ship: Fueled) {
 export function deliverLumen(ship: Fueled) {
   grant(ship, { engine: "lumen" });
 }
+
+/** Discovery row on a comet with civ. Coil, then Hold. Liters that fit stay. */
+export function deliverHush(ship: Fueled) {
+  grant(ship, { engine: "coil" });
+  grant(ship, { tank: "hold" });
+}

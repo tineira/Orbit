@@ -17,9 +17,10 @@ import type {
   WarpRing,
   IonWisp,
   LostCopy,
+  CometCard,
   NearbyHeading,
 } from "./types.ts";
-import { COMET_NUCLEUS_R, makeCometHeading, separateCometHeading, spawnComet, warpHeadings } from "./comet.ts";
+import { COMET_NUCLEUS_R, cometRequireMet, makeCometHeading, separateCometHeading, spawnComet, warpHeadings } from "./comet.ts";
 import {
   COMET_CRASH_NUCLEUS,
   COMET_CRASH_ROCKS,
@@ -146,6 +147,7 @@ import {
   campaignHasModule,
   chargeHush,
   coronaHullPerSec,
+  deliverHush,
   deliverLumen,
   deliverMoonOutpost,
   leakH2,
@@ -171,7 +173,7 @@ import {
   writeCheckpoint,
   type CampaignState,
 } from "./campaign.ts";
-import { applyBodyGrant, chartStoryPlace, storyPlaceById, type StoryPlace } from "./place.ts";
+import { applyBodyGrant, chartStoryPlace, cometCardFromPlace, storyPlaceById, type StoryPlace } from "./place.ts";
 import {
   chartCampaignWarp,
   legById,
@@ -249,6 +251,12 @@ export type Sim = {
   cometEntered: boolean;
   /** Set while the ship is in the comet scene (nucleus frame). Null on a chart. */
   cometScene: CometScene | null;
+  /** Story comet for this scene. Random flight and a comet with no card leave it null. */
+  cometMark: CometCard | null;
+  /** Place id a finished `landedFor` warps to, once the scene has arrived. */
+  cometJumpPlace: string | null;
+  /** This sit already queued `landedFor`. Cleared when the hold resets. */
+  cometLandedFor: boolean;
   /** Log of the scene camera's lag carried onto the chart when you leave a comet; it eases out. */
   cometZoomCarry: number;
   warpTarget: NearbyHeading | null;
@@ -384,6 +392,9 @@ export function createSim(): Sim {
     cometEntered: false,
     cometZoomCarry: 0,
     cometScene: null,
+    cometMark: null,
+    cometJumpPlace: null,
+    cometLandedFor: false,
     warpTarget: null,
     warpLost: false,
     crashAge: 0,
@@ -429,6 +440,9 @@ export function resetCometChart(sim: Sim) {
   sim.cometSpent = false;
   sim.cometHeading = null;
   sim.cometEntered = false;
+  sim.cometMark = null;
+  sim.cometJumpPlace = null;
+  sim.cometLandedFor = false;
 }
 
 function freshShip(): Ship {
@@ -742,6 +756,7 @@ export function enterCometScene(
   seed?: number,
   arrived?: { sun: { x: number; y: number } },
 ) {
+  const chased = !arrived && sim.warpTarget?.kind === "comet" ? (sim.warpTarget.comet ?? null) : null;
   clearFlightLocks(sim);
   // A parked comet stays on its chart; a comet you chased is left behind with it.
   if (!arrived) resetCometChart(sim);
@@ -759,6 +774,11 @@ export function enterCometScene(
   sim.status = "approach";
   sim.padZoomLock = false;
   sim.warpTarget = null;
+  if (!arrived) {
+    sim.cometMark = chased;
+    sim.cometJumpPlace = null;
+    sim.cometLandedFor = false;
+  }
   sim.warpLost = false;
   sim.warpBlockHeading = null;
   sim.warpCharge = 0;
@@ -871,6 +891,8 @@ function noteScene(scene: CometScene, msg: string) {
 function leaveSite(sim: Sim, scene: CometScene, speed: number) {
   scene.held = 0;
   scene.anchored = false;
+  sim.cometLandedFor = false;
+  sim.cometJumpPlace = null;
   const pt = surfacePoint(scene, scene.site);
   const ux = Math.cos(pt.w);
   const uy = Math.sin(pt.w);
@@ -883,6 +905,52 @@ function leaveSite(sim: Sim, scene: CometScene, speed: number) {
   sim.phase = "flight";
   sim.landedId = null;
   sim.status = "approach";
+}
+
+/** Queue `landedFor` once this sit crosses the card's seconds. Jump only after arrival. */
+function noteCometLanded(sim: Sim, scene: CometScene) {
+  const mark = sim.cometMark;
+  const placeId = sim.campaign?.place;
+  if (mark?.ref && placeId) {
+    const place = storyPlaceById(placeId);
+    if (place && place.seed === getSystem().seed) {
+      const trigger = place.triggers.find(
+        (t) => t.on === "landedFor" && t.ref === mark.ref && scene.held >= t.seconds,
+      );
+      if (!trigger) {
+        sim.cometLandedFor = false;
+        sim.cometJumpPlace = null;
+      } else if (!sim.cometLandedFor) {
+        sim.cometLandedFor = true;
+        pushCampaignEvent(sim, { on: "landedFor", ref: mark.ref, seconds: scene.held });
+        for (const effect of trigger.effects) {
+          if ("revealHeading" in effect) {
+            sim.cometJumpPlace = effect.revealHeading;
+            break;
+          }
+        }
+      }
+    }
+  }
+  if (scene.arrived && sim.cometJumpPlace) beginCometStoryJump(sim, sim.cometJumpPlace);
+}
+
+/** The card's comet, after it has arrived: warp to the place `revealHeading` named. */
+function beginCometStoryJump(sim: Sim, placeId: string) {
+  sim.cometScene = null;
+  sim.cometMark = null;
+  sim.cometJumpPlace = null;
+  sim.cometLandedFor = false;
+  sim.landedId = null;
+  sim.warpTarget = {
+    angle: 0,
+    color: "#d7d2c8",
+    pal: ["#d7d2c8", "#d7d2c8", "#d7d2c8"],
+    name: placeId,
+    kind: "star",
+    target: { place: placeId },
+  };
+  enterWarp(sim, false);
 }
 
 /**
@@ -962,11 +1030,12 @@ export function cometSceneScale(c: Comet) {
  */
 function leaveArrivedComet(sim: Sim, scene: CometScene) {
   const { x: sx, y: sy, vx: svx, vy: svy } = sim.ship;
+  const mark = sim.cometMark;
   sim.cometScene = null;
   let c = sim.comet?.parked ? sim.comet : null;
   if (!c) {
     chartNewSystem(sim);
-    c = parkComet(sim, scene);
+    c = parkComet(sim, scene, mark);
   }
   c.parked!.rot = scene.rot;
   sim.comet = c;
@@ -1017,7 +1086,7 @@ function leaveArrivedComet(sim: Sim, scene: CometScene) {
  * the side the scene showed the star: the light came from ahead, so the star
  * lies along the comet's travel.
  */
-function parkComet(sim: Sim, scene: CometScene): Comet {
+function parkComet(sim: Sim, scene: CometScene, mark: CometCard | null): Comet {
   const star = sim.planets.find((p) => p.kind === "star");
   const sx = star?.x ?? 0;
   const sy = star?.y ?? 0;
@@ -1059,6 +1128,8 @@ function parkComet(sim: Sim, scene: CometScene): Comet {
       a: Math.atan2(-COMET_TRAVEL.y, -COMET_TRAVEL.x),
       w: v / best,
       rot: scene.rot,
+      ...(mark?.civ ? { civ: true } : {}),
+      ...(mark?.ref ? { ref: mark.ref } : {}),
     },
   };
   return c;
@@ -1073,6 +1144,12 @@ function tryEnterParkedComet(sim: Sim) {
   const dy = sim.ship.y - c.y;
   if (Math.hypot(dx, dy) > COMET_REENTRY_DIST * k) return;
   const kind = isCometSceneKind(c.parked.kind) ? c.parked.kind : COMET_SCENE_DEFAULT;
+  const parkedCard: CometCard = {};
+  if (c.parked.civ) parkedCard.civ = true;
+  if (c.parked.ref) parkedCard.ref = c.parked.ref;
+  sim.cometMark = parkedCard.civ || parkedCard.ref ? parkedCard : null;
+  sim.cometJumpPlace = null;
+  sim.cometLandedFor = false;
   const star = sim.planets.find((p) => p.kind === "star");
   const sun = { x: (star?.x ?? 0) - c.x, y: (star?.y ?? 0) - c.y };
   const rvx = sim.ship.vx - c.vx;
@@ -1141,6 +1218,12 @@ function stepCometSim(
       cometCamera(sim, dt);
       return;
     }
+    // A finished sit jumps as soon as the comet is in orbit, before a vent can lift the ship.
+    if (scene.arrived && sim.cometJumpPlace) {
+      beginCometStoryJump(sim, sim.cometJumpPlace);
+      decayParticles(sim, dt);
+      return;
+    }
     const vent = ventUnderSite(scene, scene.site);
     // While the comet slows down you ride it out on the ground; after that it is a comet like any other.
     if (vent && !scene.anchored && (!scene.done || scene.arrived)) {
@@ -1152,8 +1235,9 @@ function stepCometSim(
       startArrival(scene);
     }
     if (scene.done) scene.doneT += dt;
+    if (sim.phase === "landed") noteCometLanded(sim, scene);
     decayParticles(sim, dt);
-    cometCamera(sim, dt);
+    if (sim.phase === "landed") cometCamera(sim, dt);
     return;
   }
 
@@ -1222,6 +1306,7 @@ function stepCometSim(
       sim.status = "landed";
       ship.thrusting = false;
       ship.reverse = false;
+      if (sim.cometMark?.civ && campaignHasModule(sim.campaign?.modules, "hushDetector")) deliverHush(ship);
     } else {
       wreckInScene(sim, COMET_CRASH_NUCLEUS);
     }
@@ -2455,9 +2540,26 @@ function stepLiveComet(sim: Sim, dt: number) {
   const r1 = Math.hypot(c.x, c.y);
   if (r1 <= R) sim.cometEntered = true;
   if (sim.cometEntered && r1 > R) {
-    sim.cometHeading = makeCometHeading(separateCometHeading(Math.atan2(c.y, c.x), sim.nearby));
+    const card = cometCardForHeading(sim);
+    if (card) {
+      const heading = makeCometHeading(separateCometHeading(Math.atan2(c.y, c.x), sim.nearby));
+      if (card !== "open") heading.comet = { ...card };
+      sim.cometHeading = heading;
+    }
     sim.comet = null;
   }
+}
+
+/** Free mode always leaves a heading. A campaign leaves one only when the card's ask holds. */
+function cometCardForHeading(sim: Sim): CometCard | "open" | null {
+  if (!sim.campaign) return "open";
+  const placeId = sim.campaign.place;
+  const place = placeId ? storyPlaceById(placeId) : null;
+  const fromPlace = place && place.seed === getSystem().seed ? cometCardFromPlace(place) : null;
+  const card = sim.comet?.card ?? fromPlace;
+  if (!card) return null;
+  if (card.requires && !cometRequireMet(sim.ship, sim.campaign, card.requires)) return null;
+  return card;
 }
 
 export function trySpawnComet(sim: Sim): boolean {
