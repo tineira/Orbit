@@ -1442,8 +1442,8 @@
         {
           "name": "Vela",
           "kind": "rocky",
-          "kicker": "Home",
-          "settlement": "active",
+          "kicker": "Workshop",
+          "settlement": "unexplored",
           "radius": 86.3238,
           "orbitR": 3797.1552,
           "orbitA": 5.7469,
@@ -1453,8 +1453,8 @@
         {
           "name": "Orin",
           "kind": "rocky",
-          "kicker": "Workshop",
-          "settlement": "unexplored",
+          "kicker": "Archive",
+          "settlement": "abandoned",
           "radius": 86.7907,
           "orbitR": 6103.1095,
           "orbitA": 2.2954,
@@ -1464,8 +1464,8 @@
         {
           "name": "Brane",
           "kind": "rocky",
-          "kicker": "Archive",
-          "settlement": "abandoned",
+          "kicker": "Signal",
+          "settlement": "unexplored",
           "radius": 59.1643,
           "orbitR": 8344.7502,
           "orbitA": 3.329,

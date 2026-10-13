@@ -1409,7 +1409,8 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     if (forced && !resume) chartStoryPlace(forced, import.meta.env.DEV);
     else if (savedPlace) chartStoryPlace(savedPlace, import.meta.env.DEV);
     else if (loaded) createSystem(loaded.checkpoint.seed);
-    else createSystem();
+    // The first chart of a page always has a living Home to start on.
+    else createSystem(undefined, {}, null, null, { home: "active" });
     sim = createSim();
     if (campaignOn) {
       if (forced && !resume) {

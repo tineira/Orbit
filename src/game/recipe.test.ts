@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { MATTER_PROFILES } from "./matter.ts";
 import { occupancyLegal, padHasFuel } from "./occupancy.ts";
-import { flareBaseWidth } from "./sim.ts";
+import { createSim, flareBaseWidth, rebootSim } from "./sim.ts";
 import type { MatterProfileId, Planet } from "./types.ts";
 import type { GasRecipe, Recipe } from "./world.ts";
 import {
   chartFlagsFromSearch,
   createSystem,
+  hasLivingHome,
+  RANDOM_HOMELESS_RATE,
+  randomHome,
   MASSIVE_STAR_ATMO_FACTOR,
   MASSIVE_STAR_PALETTE,
   recipeFromChartFlags,
@@ -32,7 +35,8 @@ function shape(planets: Planet[]) {
 }
 
 test("an empty recipe matches a chart with no flags", () => {
-  for (const seed of [1, 7, 13]) {
+  // Seed 13 rolls homeless since phase 11, so the neutral recipe no longer matches it.
+  for (const seed of [1, 7, 14]) {
     const plain = createSystem(seed);
     const empty = chart(seed, { home: "active", activePads: "natural" });
     assert.deepEqual(shape(empty.planets), shape(plain.planets));
@@ -384,4 +388,52 @@ test("a recipe star still honors a forced belt", () => {
   assert.equal(sys.planets[0]!.matter, "star-hot");
   const n = sys.planets.filter((p) => p.kind === "asteroid").length;
   assert.ok(n >= 5 && n <= 7, String(n));
+});
+
+test("about one random chart in six has no living Home", () => {
+  let homeless = 0;
+  const kinds = new Set<string>();
+  for (let seed = 1; seed <= 600; seed++) {
+    const home = randomHome(seed);
+    if (!home) continue;
+    homeless++;
+    kinds.add(home);
+  }
+  const rate = homeless / 600;
+  assert.ok(rate > 1 / 8 && rate < 1 / 4.5, `rate ${rate}`);
+  assert.deepEqual([...kinds].sort(), ["abandoned", "none"]);
+  assert.equal(RANDOM_HOMELESS_RATE, 1 / 6);
+});
+
+test("a homeless roll changes the Home and leaves the rest of the chart", () => {
+  const seed = Array.from({ length: 200 }, (_, i) => i + 1).find((s) => randomHome(s) === "abandoned")!;
+  const rolled = createSystem(seed);
+  const kept = createSystem(seed, {}, null, null, { home: "active" });
+  assert.equal(hasLivingHome(kept.planets), true);
+  assert.equal(hasLivingHome(rolled.planets), false);
+  assert.equal(rolled.planets.find((p) => p.kicker === "Home")?.settlement, "abandoned");
+  assert.deepEqual(
+    rolled.planets.map((p) => [p.name, p.kind, p.radius, p.orbitR]),
+    kept.planets.map((p) => [p.name, p.kind, p.radius, p.orbitR]),
+  );
+});
+
+test("a recipe skips the homeless roll", () => {
+  const seed = Array.from({ length: 200 }, (_, i) => i + 1).find((s) => randomHome(s) === "none")!;
+  assert.equal(hasLivingHome(createSystem(seed).planets), false);
+  assert.equal(hasLivingHome(createSystem(seed, {}, null, null, { home: "active" }).planets), true);
+  assert.equal(hasLivingHome(createSystem(seed, {}, null, null, { star: "warm" }).planets), true);
+});
+
+test("a random-mode crash with no living Home reboots on a chart that has one", () => {
+  const seed = Array.from({ length: 200 }, (_, i) => i + 1).find((s) => randomHome(s) === "none")!;
+  createSystem(seed);
+  const sim = createSim();
+  assert.equal(hasLivingHome(sim.planets), false);
+  sim.phase = "crashed";
+  rebootSim(sim);
+  assert.equal(sim.phase, "landed");
+  assert.equal(hasLivingHome(sim.planets), true);
+  assert.equal(sim.planets.find((p) => p.id === sim.landedId)?.kicker, "Home");
+  assert.equal(sim.ship.fuel, sim.ship.fuelCapacity);
 });

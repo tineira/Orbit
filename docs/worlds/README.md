@@ -219,7 +219,7 @@ Cada fase deja el juego jugable, con el modo aleatorio idéntico. Cada test nuev
 
 - Nuevo módulo `src/game/campaign.ts` (puro, sin DOM) con `CampaignState`, `newCampaign()`, `saveCampaign()`/`loadCampaign()` sobre `localStorage` (clave `orbit.campaign.v1`, envuelto en try/catch: si falla, la campaña sigue en memoria).
 - Modo: `?campaign` activa la campaña. Sin `?campaign`, nada cambia. (Tomás decidió el 11 oct que la campaña será el modo por defecto: eso es la fase 11, no esta.)
-- **Checkpoint:** se guarda al aterrizar en una ficha y al terminar de cargar combustible en cualquier pad. Guarda nave, módulos, marcas, ficha o tramo y semilla.
+- **Checkpoint:** se guarda al aterrizar en una ficha, al terminar de cargar combustible en cualquier pad y al llegar a una ficha montado en un cometa (`commitArrivalCheckpoint`, 13 oct: así un choque en F no te devuelve a E a repetir los 120 s; quedas posado en un cuerpo de F sin ref ni entrega). Guarda nave, módulos, marcas, ficha o tramo y semilla.
 - **Choque o muerte a la deriva en campaña:** en vez de `freshShip()` en Home, `restoreCheckpoint()` (en el código quedó como `rechartToCheckpoint` en `sim.ts`): mismo sistema (misma semilla), misma nave, posado donde se guardó. En modo aleatorio, `rebootSim` sigue igual.
 - **Aceptación:** tests de serialización, de restaurar, y de que el modo aleatorio no lee ni escribe `localStorage`.
 
@@ -306,6 +306,7 @@ Cambió el 12 oct (Tomás). Ya no se iguala la velocidad del cometa en el chart:
   - **La ficha spawnea su cometa en campaña.** E tira el roce a la estrella masiva (`spawnComet`) y le pone la carta. Si ese roce sale sin dejar rumbo (todavía no hay LUMEN en el tanque), vuelve otro tras una pausa, hasta que uno deja el rumbo. F tira cometas que entran y se van (`spawnLeavingComet`); el despegue de `f1` marca `hushMarked` en uno que se va, y ese lleva `Comet.card`. El rumbo queda cuando ese cometa sale y el detector está a bordo. `cometCardFromPlace("star-f")` no es null. `KeyC` en `?dev` spawnea un cometa abierto (`unmarked`): no hereda la carta del lugar.
   - Flag `civ` en el cometa (`CometCard.civ`, no en un planeta). Aterrizar en uno con `civ` y con `hushDetector` entrega HUSH × Coil + Hold (fila de Descubrimiento). G no es una estrella: es ese cometa marcado. No hay ficha `star-g`.
   - "Quedarse posado" en el cometa E lleva a F: disparador `{ on: "landedFor"; ref; seconds }` + `revealHeading` + salto automático. Si despegas antes, el contador vuelve a cero. La escena del cometa no se toca.
+  - Al terminar ese salto, la llegada a F es checkpoint (ver fase 3).
 
 - `src/game/campaign/phase1.ts`: las fichas A–F y los tramos 1–4 del Mapa en Notion, traducidos a datos. Todo texto por id. Sin copy. G es el cometa marcado de F.
 - Ids de cuerpos y marcas en inglés corto (`a1`, `a2`, `a3`, `hasV2`, `sawWall`).
@@ -338,7 +339,9 @@ Cambió el 12 oct (Tomás). Ya no se iguala la velocidad del cometa en el chart:
 
 La única fase que **sí** cambia el modo aleatorio. Lo pidió Tomás el 11 oct. Va al final, cuando la campaña de la fase 10 se puede jugar entera. Dos PR, en este orden.
 
-1. **Aleatorios a veces sin Home.**
+**Estado (13 oct):** el PR 1 está en `main` (lo hizo Claude directo). El PR 2 espera a que la campaña tenga voces y a que Tomás la juegue entera; queda como tarea en Linear (TIN-89).
+
+1. **Aleatorios a veces sin Home.** ✅ Hecho: `randomHome` y `hasLivingHome` en `world.ts`; la semilla de la tirada es `seed ^ 0x686f6d65`. Corre solo si la receta queda vacía (sin receta ni flags de URL). Del snapshot solo cambió la semilla 13 (`none`).
    - En `makeSystem` sin receta, 1 de cada 6 sistemas sale sin Home habitada: la mitad con `home: "abandoned"` y la otra mitad con `home: "none"`. La decisión es función de la semilla con un **RNG aparte** (`mulberry32(seed ^ K)`, sin `Math.random`), para no correr los sorteos del resto del sistema. La proporción va en una constante (`RANDOM_HOMELESS_RATE = 1 / 6`) para ajustarla jugando.
    - El sistema con el que empieza la página siempre tiene Home habitada: en `?free`, la primera carga se tira con receta `home: "active"` (no se cambia la semilla).
    - Choque en modo aleatorio en un sistema sin Home: `rebootSim` tira una semilla nueva hasta tener Home habitada y te deja ahí con `freshShip()`, como hoy.

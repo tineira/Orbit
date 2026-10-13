@@ -97,7 +97,9 @@ test("charted bodies carry a legal locked mix; barycenters stay empty", () => {
       assert.equal(mixLegal(p.kind, "atmosphere", p.atmosphere).ok, true, `${p.name} atmo`);
       seen.add(p.matter!);
     }
-    const home = sys.home;
+    // Some random charts have no Home at all (phase 11); a Home, when there is one, is still this mix.
+    const home = sys.planets.find((p) => p.kicker === "Home");
+    if (!home) continue;
     assert.equal(home.matter, "rocky-home");
     assert.ok(home.atmosphere.some((e) => e.id === "n2"));
   }

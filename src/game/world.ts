@@ -1864,6 +1864,25 @@ function startBody(planets: Planet[]): Planet {
   );
 }
 
+/** Share of random charts with no living Home: half abandoned, half with none at all. */
+export const RANDOM_HOMELESS_RATE = 1 / 6;
+
+/**
+ * A chart with no recipe at all sometimes has no living Home. The roll has its
+ * own RNG, so every other roll in the system stays where it was.
+ */
+export function randomHome(seed: number): HomeMode | undefined {
+  const r = mulberry32((seed ^ 0x686f6d65) >>> 0)();
+  if (r < RANDOM_HOMELESS_RATE / 2) return "abandoned";
+  if (r < RANDOM_HOMELESS_RATE) return "none";
+  return undefined;
+}
+
+/** A Home someone still runs: the random-mode start and its reboot need one. */
+export function hasLivingHome(planets: Planet[]) {
+  return planets.some((p) => p.kicker === "Home" && p.settlement === "active");
+}
+
 export function createSystem(
   seed = (Math.random() * 0xffffffff) >>> 0,
   flags: ChartFlags = {},
@@ -1873,7 +1892,11 @@ export function createSystem(
 ): ChartedSystem {
   const fromUrl = typeof window !== "undefined" ? chartFlagsFromSearch(window.location.search) : {};
   const rng = mulberry32(seed ^ 0x51ed);
-  const merged = mergeRecipe(recipeFromChartFlags({ ...fromUrl, ...flags }), recipe);
+  let merged = mergeRecipe(recipeFromChartFlags({ ...fromUrl, ...flags }), recipe);
+  if (Object.keys(merged).length === 0) {
+    const home = randomHome(seed);
+    if (home) merged = { home };
+  }
   const planets = makeSystem(seed, merged, starPal, starName);
   const home = startBody(planets);
   const star = planets.find((p) => p.kind === "star");

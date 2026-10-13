@@ -66,6 +66,7 @@ import {
   orbitShellAlts,
   keplerMinR,
   keplerRail,
+  hasLivingHome,
   isGhostBody,
   twinOf,
   starAtmoFactor,
@@ -524,8 +525,10 @@ export function rebootSim(sim: Sim) {
   const campaign = sim.campaign;
   sim.cometScene = null;
   sim.cometRideCheckpoint = false;
-  if (!campaign) sim.ship = freshShip();
-  else {
+  if (!campaign) {
+    sim.ship = freshShip();
+    if (!hasLivingHome(sim.planets)) chartIntoSim(sim, chartLivingHome);
+  } else {
     restoreCampaignFields(campaign);
     sim.campaignAside = false;
     rechartToCheckpoint(sim, campaign.checkpoint.seed);
@@ -581,6 +584,15 @@ export function rebootSim(sim: Sim) {
   sim.camera.starDriftY = 0;
   for (const p of sim.particles) p.alive = false;
   sim.ionTrail = [];
+}
+
+/** Random mode after a crash with no one to take you in: roll charts until one has a living Home. */
+function chartLivingHome() {
+  for (let i = 0; i < 64; i++) {
+    createSystem();
+    if (hasLivingHome(getPlanets())) return;
+  }
+  createSystem(undefined, {}, null, null, { home: "active" });
 }
 
 /** Page load: sit on the checkpoint with the saved ship. Leaves the title phase alone. */
