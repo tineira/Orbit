@@ -59,6 +59,27 @@ export function halleyDamage(hull: number) {
   return clamp01(1 - hull / HULL_MAX);
 }
 
+/** Rise to full signal damage, then the fall back to the ship's own damage. */
+export const HALLEY_GLITCH_RISE_S = 0.3;
+export const HALLEY_GLITCH_FALL_S = 0.8;
+
+/**
+ * Story glitch curve. `t` is seconds since it started. `seconds` is how long it
+ * holds at 1, including the rise. The fall takes `HALLEY_GLITCH_FALL_S` after that.
+ * Does not read or write hull: `ship` is the hull-derived damage to return to.
+ */
+export function halleyGlitchDamage(t: number, seconds: number, ship: number): number {
+  const rise = HALLEY_GLITCH_RISE_S;
+  const fall = HALLEY_GLITCH_FALL_S;
+  const hold = Math.max(0, seconds);
+  if (!(t >= 0) || hold <= 0) return ship;
+  if (t < rise) return ship + (1 - ship) * (t / rise);
+  if (t < hold) return 1;
+  if (t >= hold + fall) return ship;
+  const u = (t - hold) / fall;
+  return 1 + (ship - 1) * u;
+}
+
 /** Tomás's worst settings at d = 1 (11 oct 2026); a healthy ship still crackles a little. */
 export function halleySignal(d: number): HalleySignal {
   const t = clamp01(d);
@@ -196,6 +217,8 @@ export type HalleyView = {
   freezeUntil: number;
   /** Last rewind / unfreeze; drives a big tear for `HALLEY_GLITCH_MS`. */
   glitchAt: number;
+  /** Signal damage for this frame. Absent falls back to the hull. */
+  damage?: number;
 };
 
 export function createHalleyView(): HalleyView {

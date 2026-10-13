@@ -25,7 +25,9 @@ export type Effect =
   | { logFragment: number }
   | { grant: Grant }
   | { setFlag: CampaignFlag }
-  | { revealHeading: string };
+  | { revealHeading: string }
+  /** Seconds the Halley signal spends at full damage. Visual: it runs with no manifest. */
+  | { halleyGlitch: number };
 
 export type Trigger = GameEvent & {
   when?: { has?: CampaignFlag[]; not?: CampaignFlag[] };

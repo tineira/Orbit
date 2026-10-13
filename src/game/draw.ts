@@ -3419,7 +3419,7 @@ function drawHalley(
     return;
   }
 
-  const d = halleyDamage(sim.ship.hull);
+  const d = view.damage ?? halleyDamage(sim.ship.hull);
   const sig = halleySignal(d);
   const tt = reduced ? 1234 : now;
   const lost = halleyLost(d, hash(Math.floor(now / HALLEY_LOST_WINDOW_MS) * 1.37), reduced);

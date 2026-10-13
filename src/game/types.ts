@@ -210,6 +210,9 @@ export type CometRequires =
   | { tank: TankKind }
   | { module: CampaignModule };
 
+/** Which comet scene a story card opens. Free charts leave it unset. */
+export type CometSceneName = "perihelion" | "inbound" | "marked";
+
 /** Story fields on a comet heading. Random charts leave the whole object unset. */
 export type CometCard = {
   requires?: CometRequires;
@@ -217,6 +220,8 @@ export type CometCard = {
   civ?: boolean;
   /** `landedFor` ref. The trigger's `seconds` is the threshold. */
   ref?: string;
+  /** Scene to open. Absent uses the default inbound scene. */
+  scene?: CometSceneName;
 };
 
 export type NearbyHeading = {
@@ -229,6 +234,11 @@ export type NearbyHeading = {
   requires?: string;
   /** Story route. Random charts leave this unset, so the snapshot stays the same. */
   target?: { place?: string; leg?: string };
+  /**
+   * Seed the next leg step will roll, chosen when the heading is stamped.
+   * Random charts leave this unset, so the snapshot stays the same.
+   */
+  roll?: number;
   /** Story comet. Random charts leave this unset, so the snapshot stays the same. */
   comet?: CometCard;
 };

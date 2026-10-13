@@ -6,7 +6,10 @@ import {
   crtPowerEnvelope,
   halleyClipUrls,
   halleyCorruptStep,
+  HALLEY_GLITCH_FALL_S,
+  HALLEY_GLITCH_RISE_S,
   halleyDamage,
+  halleyGlitchDamage,
   halleyLost,
   halleyMaxSkips,
   halleySignal,
@@ -31,6 +34,21 @@ test("damage is 0 on a full hull and 1 when breached", () => {
   assert.equal(halleyDamage(0), 1);
   assert.equal(halleyDamage(-5), 1);
   assert.equal(halleyDamage(HULL_MAX * 2), 0);
+});
+
+test("a glitch rises to full damage, holds, and returns to the ship", () => {
+  const ship = 0.25;
+  const seconds = 4;
+  const hull = 80;
+  assert.equal(halleyGlitchDamage(0, seconds, ship), ship);
+  assert.equal(halleyGlitchDamage(HALLEY_GLITCH_RISE_S, seconds, ship), 1);
+  assert.equal(halleyGlitchDamage(seconds / 2, seconds, ship), 1);
+  assert.equal(halleyGlitchDamage(seconds, seconds, ship), 1);
+  const midFall = seconds + HALLEY_GLITCH_FALL_S / 2;
+  const falling = halleyGlitchDamage(midFall, seconds, ship);
+  assert.ok(falling < 1 && falling > ship);
+  assert.equal(halleyGlitchDamage(seconds + HALLEY_GLITCH_FALL_S, seconds, ship), ship);
+  assert.equal(hull, 80);
 });
 
 test("signal interpolates Tomás's healthy and worst values", () => {

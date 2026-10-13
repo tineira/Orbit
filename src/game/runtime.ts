@@ -77,7 +77,9 @@ import {
   createHalleyView,
   halleyClipUrls,
   halleyCorruptStep,
+  HALLEY_GLITCH_FALL_S,
   halleyDamage,
+  halleyGlitchDamage,
   halleySignal,
   isHalleyClipId,
   type HalleyManifest,
@@ -499,7 +501,33 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     return halleyBase;
   };
 
-  const halleySignalNow = () => halleySignal(halleyDamage(sim?.ship.hull ?? HULL_MAX));
+  let glitch: { started: number; seconds: number; ownsCrt: boolean } | null = null;
+
+  const halleyDamageNow = () => {
+    const shipD = halleyDamage(sim?.ship.hull ?? HULL_MAX);
+    if (!glitch) return shipD;
+    const t = (performance.now() - glitch.started) / 1000;
+    if (t >= glitch.seconds + HALLEY_GLITCH_FALL_S) {
+      if (glitch.ownsCrt) halleyPowerOff();
+      glitch = null;
+      return shipD;
+    }
+    return halleyGlitchDamage(t, glitch.seconds, shipD);
+  };
+
+  const startHalleyGlitch = (seconds: number) => {
+    const now = performance.now();
+    const ownsCrt = !halley.on;
+    if (ownsCrt) {
+      halley.on = true;
+      halley.onAt = now;
+      if (!halley.frame) halley.frame = halleyBaseImage();
+      audio.spectroPower(true);
+    }
+    glitch = { started: now, seconds: Math.max(0, seconds), ownsCrt };
+  };
+
+  const halleySignalNow = () => halleySignal(halleyDamageNow());
 
   const cancelHalley = () => {
     halleyGen++;
@@ -536,6 +564,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
    * The subtitle is the `ship` voice line; Mute keeps it.
    */
   const speakHalley = (clipId: string | null, text: string) => {
+    if (glitch) glitch.ownsCrt = false;
     cancelHalley();
     const gen = halleyGen;
     const vgen = ++voiceGen;
@@ -632,7 +661,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
           halley.glitchAt = nowMs;
         }
         const step = halleyCorruptStep(
-          halleyDamage(sim?.ship.hull ?? HULL_MAX),
+          halleyDamageNow(),
           v.currentTime,
           skips,
           halley.freezeUntil > 0,
@@ -741,6 +770,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
     const effects = runTriggers(place.id, place.triggers, events, campaign);
     for (const effect of effects) {
       if ("grant" in effect) applyBodyGrant(sim.ship, effect.grant, campaign);
+      if ("halleyGlitch" in effect) startHalleyGlitch(effect.halleyGlitch);
       const line = spokenLine(effect, halleyManifest, pilotManifest);
       if (!line) continue;
       if (line.source === "ship" && isHalleyClipId(line.id)) speakHalley(line.id, line.text);
@@ -1340,6 +1370,7 @@ export function startGame(canvas: HTMLCanvasElement, onUi: GameUiHandler): GameH
       audio.bump(sim.camera.trauma);
     prevTrauma = sim.camera.trauma;
 
+    halley.damage = halleyDamageNow();
     drawFrame(ctx, sim, {
       w: canvas.width,
       h: canvas.height,

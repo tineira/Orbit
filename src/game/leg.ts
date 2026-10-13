@@ -1,11 +1,13 @@
+import { PHASE1_LEGS } from "./campaign/phase1.ts";
 import type { CampaignState, Grant } from "./campaign.ts";
 import { applyLoadout, syncFuelMass } from "./fuel.ts";
 import { padHasFuel } from "./occupancy.ts";
-import { chartStoryPlace, storyPlaceById } from "./place.ts";
+import { chartStoryPlace, storyHeadingName, storyPlaceById } from "./place.ts";
 import { shipDeltaV } from "./triggers.ts";
 import type { EngineKind, FuelKind, NearbyHeading, Planet, TankKind } from "./types.ts";
 import {
   createSystem,
+  getPlanets,
   getSystem,
   WARP_BRAKE_SPEED,
   WARP_JUMP_SPEED,
@@ -17,6 +19,8 @@ export type LegStep = {
   /** Dry for the leg's fuel. Merged last so it wins over the base recipe. */
   bridge?: boolean;
   guarantee?: Recipe;
+  /** Stamped on the largest landable asteroid when this step is charted. */
+  grant?: Grant;
 };
 
 export type Leg = {
@@ -33,6 +37,8 @@ export type Leg = {
    * The type sketch omitted this. Absent means methane pads.
    */
   fuel?: FuelKind;
+  /** Inclusive LV- number range for this leg's step stars. Absent keeps today's heading label. */
+  codes?: [number, number];
 };
 
 /** Hand-test leg. Three jumps: a chart, a dry chart, then `probe-end`. */
@@ -51,6 +57,7 @@ export const PROBE_LEG: Leg = {
 const LEGS: Record<string, Leg> = {
   [PROBE_LEG.id]: PROBE_LEG,
 };
+for (const leg of PHASE1_LEGS) LEGS[leg.id] = leg;
 
 export function legById(id: string): Leg | null {
   return LEGS[id] ?? null;
@@ -68,6 +75,32 @@ export function pickLength(leg: Leg, salt: number): number {
   const hi = Math.trunc(Math.max(leg.length[0], leg.length[1]));
   if (hi <= lo) return Math.max(1, lo);
   return lo + ((salt >>> 0) % (hi - lo + 1));
+}
+
+function mulberry32(seed: number) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** LV code for one leg step. A side RNG, so the chart's own rolls stay put. */
+export function legStarName(leg: Leg, seed: number): string | null {
+  if (!leg.codes) return null;
+  const lo = Math.trunc(Math.min(leg.codes[0], leg.codes[1]));
+  const hi = Math.trunc(Math.max(leg.codes[0], leg.codes[1]));
+  const n = lo + Math.floor(mulberry32((seed ^ 0x4c56) >>> 0)() * (hi - lo + 1));
+  return `LV-${n}`;
+}
+
+/** Stable seed for the next step, known when the heading is stamped. */
+function legRoll(leg: Leg, step: number, salt: number): number {
+  let h = (salt ^ 0x4c56 ^ Math.imul(step + 1, 0x9e3779b1)) >>> 0;
+  for (let i = 0; i < leg.id.length; i++) h = Math.imul(h ^ leg.id.charCodeAt(i), 0x01000193);
+  return h >>> 0;
 }
 
 export function resolvedLength(leg: Leg, stored?: number): number {
@@ -232,8 +265,48 @@ export function stampCampaignHeadings(
   const slot = nearby.find((heading) => heading.target == null);
   if (!slot) return;
   slot.target = { ...target };
-  const label = target.place ?? target.leg;
-  if (label) slot.name = label;
+  if (target.place) {
+    slot.name = storyHeadingName(target.place);
+    return;
+  }
+  const leg = target.leg ? legById(target.leg) : null;
+  if (leg?.codes) {
+    const onStep = campaign.leg?.id === leg.id ? campaign.leg : null;
+    if (aside && onStep) {
+      const back = legStarName(leg, onStep.seed);
+      if (back) slot.name = back;
+      return;
+    }
+    const step = onStep ? onStep.step + 1 : 0;
+    const salt = onStep ? onStep.seed : getSystem().seed;
+    const roll = legRoll(leg, step, salt);
+    slot.roll = roll;
+    const named = legStarName(leg, roll);
+    if (named) slot.name = named;
+    return;
+  }
+  if (target.leg) slot.name = target.leg;
+}
+
+function stampStepGrant(leg: Leg, step: number, length: number) {
+  const keyed = leg.steps?.[step];
+  const tail = step === lastLegStep(length) ? leg.steps?.[-1] : undefined;
+  const piece = keyed?.grant ?? tail?.grant;
+  if (!piece) return;
+  let host: Planet | null = null;
+  for (const rock of getPlanets()) {
+    if (rock.kind !== "asteroid" || !rock.landable) continue;
+    if (!host || rock.radius > host.radius) host = rock;
+  }
+  if (!host) return;
+  if ("module" in piece) host.grant = { module: piece.module };
+  else if ("engine" in piece) host.grant = { engine: piece.engine };
+  else host.grant = { tank: piece.tank };
+  if ("module" in piece) {
+    host.settlement = "active";
+    host.civ = "human";
+    host.pad = "on";
+  }
 }
 
 function chartPlace(campaign: CampaignState, placeId: string, seed: number) {
@@ -249,7 +322,18 @@ function chartPlace(campaign: CampaignState, placeId: string, seed: number) {
   return { aside: false, placeId: place.id };
 }
 
-function chartLegHeading(campaign: CampaignState, legId: string, aside: boolean, seed: number) {
+function legChartName(leg: Leg, seed: number, starName: string | null): string | null {
+  if (starName != null) return starName;
+  return legStarName(leg, seed);
+}
+
+function chartLegHeading(
+  campaign: CampaignState,
+  legId: string,
+  aside: boolean,
+  seed: number,
+  starName: string | null,
+) {
   const leg = legById(legId);
   if (!leg) {
     createSystem(seed);
@@ -258,7 +342,8 @@ function chartLegHeading(campaign: CampaignState, legId: string, aside: boolean,
   const current = campaign.leg;
   if (current && current.id === leg.id && aside) {
     const length = resolvedLength(leg, current.length);
-    createSystem(current.seed, {}, null, null, stepRecipe(leg, current.step, length));
+    createSystem(current.seed, {}, null, legChartName(leg, current.seed, null), stepRecipe(leg, current.step, length));
+    stampStepGrant(leg, current.step, length);
     campaign.place = null;
     return { aside: false, placeId: null };
   }
@@ -266,14 +351,16 @@ function chartLegHeading(campaign: CampaignState, legId: string, aside: boolean,
     const length = resolvedLength(leg, current.length);
     const next = current.step + 1;
     if (next > lastLegStep(length)) return chartPlace(campaign, leg.to, seed);
-    createSystem(seed, {}, null, null, stepRecipe(leg, next, length));
+    createSystem(seed, {}, null, legChartName(leg, seed, starName), stepRecipe(leg, next, length));
+    stampStepGrant(leg, next, length);
     campaign.place = null;
     campaign.leg = { id: leg.id, step: next, seed: getSystem().seed, length };
     return { aside: false, placeId: null };
   }
   const length = pickLength(leg, seed);
   if (lastLegStep(length) < 0) return chartPlace(campaign, leg.to, seed);
-  createSystem(seed, {}, null, null, stepRecipe(leg, 0, length));
+  createSystem(seed, {}, null, legChartName(leg, seed, starName), stepRecipe(leg, 0, length));
+  stampStepGrant(leg, 0, length);
   campaign.place = null;
   campaign.leg = { id: leg.id, step: 0, seed: getSystem().seed, length };
   return { aside: false, placeId: null };
@@ -292,7 +379,7 @@ export function chartCampaignWarp(
   starName: string | null = null,
 ): { aside: boolean; placeId: string | null } {
   if (heading?.target?.place) return chartPlace(campaign, heading.target.place, seed);
-  if (heading?.target?.leg) return chartLegHeading(campaign, heading.target.leg, aside, seed);
+  if (heading?.target?.leg) return chartLegHeading(campaign, heading.target.leg, aside, seed, starName);
   createSystem(seed, {}, pal, starName);
   const onRoute = campaign.leg != null || campaign.place != null;
   return { aside: onRoute, placeId: null };

@@ -1097,7 +1097,8 @@ export type HomeMode = "active" | "abandoned" | "none";
 export type GasRecipe = "none" | "ammonia" | "water" | "methane" | "ice" | "sulfur";
 export type RockyRoleId = "workshop" | "signal" | "archive" | "twin";
 /** `"soft"` is today's 5–7 belt. `"dense"` is debris: 11–14 rocks on a wider ring. */
-export type BeltRecipe = "none" | "soft" | "dense" | { camp?: boolean };
+/** `landable` forces that many belt rocks to be landable. Random charts omit it. */
+export type BeltRecipe = "none" | "soft" | "dense" | { camp?: boolean; landable?: number };
 export type MoonRecipe = { matter?: MatterProfileId; settlement?: Settlement };
 
 /**
@@ -1310,9 +1311,10 @@ function makeSystem(
   const massive = recipe.star === "massive";
   const starR = massive ? lerp(400, 500, starRoll) : lerp(220, 300, starRoll);
   const starG = massive ? lerp(38, 52, starGRoll) : lerp(22, 30, starGRoll);
-  const starName = starNameForced
-    ? (used.add(starNameForced.toLowerCase()), starNameForced)
-    : takeName(rng, STAR_NAMES, used);
+  // null is a random name. "" is an unnamed star: it must not fall through to the pool.
+  const starName =
+    starNameForced == null ? takeName(rng, STAR_NAMES, used) : starNameForced;
+  if (starName) used.add(starName.toLowerCase());
   let pal = starPal ?? pick(rng, STAR_PALETTES);
   if (recipe.star === "hot") pal = STAR_PALETTES[3]!;
   else if (recipe.star === "warm") pal = STAR_PALETTES[0]!;
@@ -1442,18 +1444,17 @@ function makeSystem(
       const campRoll = rng() < 0.2;
       const camp = flags.camp === true ? true : flags.camp === false ? false : campRoll;
       const extraLand = flags.mine === "both" || (n >= 6 && rng() < 0.4);
+      const forceLand = typeof recipe.belt === "object" ? recipe.belt.landable : undefined;
       for (let i = 0; i < n; i++) {
         const primary = i === 0;
         const medium = i === 1 && extraLand;
-        const landable = primary || medium;
-        const radius = primary
-          ? lerp(28, 40, rng())
-          : medium
-            ? lerp(16, 22, rng())
-            : lerp(8, 14, rng());
-        const surfaceG = primary
+        const landable = forceLand != null ? i < forceLand : primary || medium;
+        const big = forceLand != null ? landable && i === 0 : primary;
+        const mid = forceLand != null ? landable && i > 0 : medium;
+        const radius = big ? lerp(28, 40, rng()) : mid ? lerp(16, 22, rng()) : lerp(8, 14, rng());
+        const surfaceG = big
           ? lerp(1.8, 3.4, rng())
-          : medium
+          : mid
             ? lerp(1.1, 2.0, rng())
             : lerp(0.9, 1.55, rng());
         const name = takeName(rng, ROCK_NAMES, used);
@@ -1879,7 +1880,7 @@ export function createSystem(
   const pad = home.radius + SHIP_HULL * 0.85;
   system = {
     seed,
-    name: star?.name ?? "Lumen",
+    name: star ? star.name : "Lumen",
     nearby: rollNearby(rng, new Set(planets.map((p) => p.name.toLowerCase())), nearbyCount(merged)),
     planets,
     home,

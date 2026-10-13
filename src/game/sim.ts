@@ -173,7 +173,7 @@ import {
   writeCheckpoint,
   type CampaignState,
 } from "./campaign.ts";
-import { applyBodyGrant, chartStoryPlace, cometCardFromPlace, storyPlaceById, type StoryPlace } from "./place.ts";
+import { applyBodyGrant, chartStoryPlace, cometCardFromPlace, storyHeadingName, storyPlaceById, type StoryPlace } from "./place.ts";
 import {
   chartCampaignWarp,
   legById,
@@ -946,7 +946,7 @@ function beginCometStoryJump(sim: Sim, placeId: string) {
     angle: 0,
     color: "#d7d2c8",
     pal: ["#d7d2c8", "#d7d2c8", "#d7d2c8"],
-    name: placeId,
+    name: storyHeadingName(placeId),
     kind: "star",
     target: { place: placeId },
   };
@@ -1380,7 +1380,8 @@ function streakSpan(sim: Sim) {
 function chartNewSystem(sim: Sim) {
   const prefs = simViewPrefs(sim);
   if (sim.campaign) {
-    const seed = (Math.random() * 0x100000000) >>> 0;
+    const hinted = sim.warpTarget?.roll;
+    const seed = hinted != null ? hinted >>> 0 : (Math.random() * 0x100000000) >>> 0;
     const charted = chartCampaignWarp(
       sim.campaign,
       sim.warpTarget,
@@ -1477,7 +1478,8 @@ function stepTransit(sim: Sim, dt: number) {
   }
   if (!sim.transitPunched && sim.transitAge + dt >= punchAt) {
     if (sim.warpTarget?.kind === "comet") {
-      enterCometScene(sim);
+      const asked = sim.warpTarget.comet?.scene;
+      enterCometScene(sim, isCometSceneKind(asked) ? asked : undefined);
       return;
     }
     punchWarp(sim);
