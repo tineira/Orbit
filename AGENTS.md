@@ -19,7 +19,7 @@ A small 2D space flight: TanStack Start, React 19, Vite, Canvas 2D. Every load c
 
 - `git commit` / `git push` only on explicit request in that moment.
 - Local gate before a push: `npm run typecheck`, `npm run lint` (zero errors), `npm test`, `npm audit --omit=dev --audit-level=high`, and `npm run build`, plus a **Reviewer from another harness** on the diff (Grok unattended; never Codex unattended). Fix what the Reviewer finds before pushing.
-- No GitHub Actions here. The local gate is the gate. After a `git push` to `main`, the turn is done when the Vercel **production** deploy for that SHA is Ready (aliases `https://www.tineira.com` / `https://tineira.com`). On a Vercel failure, diagnose, fix, and push again (in scope of the original push).
+- No GitHub Actions here. The local gate is the gate. After a `git push` to `main`, the turn is done when the Vercel **production** deploy for that SHA is Ready (alias `https://orbit.tineira.com`). On a Vercel failure, diagnose, fix, and push again (in scope of the original push).
 - If GitHub Actions exists later, it is a backstop: before your **next** push, check the latest `main` run. Red → fix first. Network flake → rerun failed and move on.
 - Commits that touch no app code (docs, agent skills, CI config) may add `[skip ci] [skip deploy]` to the message: Actions (when present) and the Vercel build both skip (`vercel.json` `ignoreCommand`), and there is nothing to wait for.
 - `npm run build` runs `db:migrate`, which skips without `DATABASE_URL`. That is fine locally.

@@ -1,7 +1,17 @@
 {
   "ignoreCommand": "echo \"$VERCEL_GIT_COMMIT_MESSAGE\" | grep -qF '[skip deploy]'",
   "redirects": [
-    { "source": "/apc", "destination": "https://apc.tineira.com/", "permanent": true },
-    { "source": "/apc/:path*", "destination": "https://apc.tineira.com/:path*", "permanent": true }
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "tineira.com" }],
+      "destination": "https://apc.tineira.com/",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "tineira.com" }],
+      "destination": "https://apc.tineira.com/:path*",
+      "permanent": true
+    }
   ]
 }
