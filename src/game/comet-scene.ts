@@ -88,7 +88,7 @@ export const NUCLEUS_R = 78;
 export const NUCLEUS_OMEGA = 0.11;
 /** Nucleus gravity: a = K / d². Weak; you can hover with little thrust. */
 export const NUCLEUS_GRAV_K = 1.6e5;
-/** Seconds landed (summed across hops; a crash starts over) before the comet decelerates. */
+/** Seconds landed without a break before the comet decelerates: taking off, a vent throw or a crash starts it over. */
 export const COMET_HOLD_S = 120;
 export const COMET_ENTRY_DIST = 640;
 export const COMET_ENTRY_SPEED = 70;
