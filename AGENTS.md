@@ -28,7 +28,7 @@ A small 2D space flight: TanStack Start, React 19, Vite, Canvas 2D. Every load c
 
 ## Docs
 
-- Notion [Orbit](https://app.notion.com/p/3d9a554c3c4081739622ed800df2f0f5) holds definition, gameplay and story. `docs/` holds how it is built: types, files, tests, PR splits. Index: [`docs/README.md`](docs/README.md).
+- Notion [Orbit](https://app.notion.com/p/3d9a554c3c4081739622ed800df2f0f5) holds definition, gameplay and story. Build plans (PR splits, file lists, phases) live in the Linear issue. `docs/` only describes how the game works today. Index: [`docs/README.md`](docs/README.md). `npm run lint` fails if `docs/plans`, `docs/specs`, `docs/worlds` or similar plan folders come back (`scripts/check-docs-layout.mjs`).
 - Docs prose in **tuteo** (tú), never voseo. Code identifiers, comments, commits and PRs in English.
 - Each doc's **Decisiones cerradas** are final. Do not reopen them in a PR.
 - If a doc disagrees with the code, `src/game/` wins. Fix the doc in the same session.
@@ -60,7 +60,7 @@ Video and text-to-speech go through Grok. If you are Grok, make the file yoursel
 ## Do not
 
 - Commit `.env*` or any key.
-- Put PR plans, file lists or TypeScript sketches in Notion, or lore and line copy in `docs/`.
+- Put PR plans, file lists or TypeScript sketches in Notion or `docs/` (they go in the Linear issue), or lore and line copy in `docs/`.
 - Reopen a closed decision inside an implementation PR.
 
 ## Conflict

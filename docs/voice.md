@@ -1,160 +1,61 @@
 # Voz: canal del visor (pensamientos, nave, radio)
 
-| Campo | Valor |
-|---|---|
-| **Autor** | Orbit |
-| **Fecha** | 2026-09-18 |
-| **Estado** | Locked |
-| **Alcance** | Vuelo 2D en cliente (`src/game/*`). Headset del visor. Sin save de campaña, sin chat LLM, sin caminar en 3D. |
+Cómo funciona hoy el canal de voz del visor (vuelo 2D en cliente, `src/game/*`). Qué es el canal para el jugador (escalera de oyentes, radio, aliens, PTT) vive en Notion [Voz](https://app.notion.com/p/3dfa554c3c40812bb79eee3fb015c23b). Este archivo dice qué está construido y qué reglas no se reabren en un PR.
 
-Lock del canal de voz del visor. Las **Decisiones cerradas** son finales: no las reabras en un PR de implementación. **El copy de líneas no está lockeado.** Las frases viven en Historia y no se publican a GitHub hasta que estén cerradas ahí.
+Prosa en tuteo (tú). Las **Decisiones cerradas** son finales: no las reabras en un PR de implementación.
 
-Página canónica: [Voz](https://app.notion.com/p/3dfa554c3c40812bb79eee3fb015c23b) bajo Orbit `3d9a554c3c4081739622ed800df2f0f5`. Este archivo es un **espejo del lock de gameplay**, no un plan de PRs.
-
-El **canal** está lockeado. El **habla** (qué motor, qué boca por tag) es **WIP** — ver abajo. El visor shipped muestra gauges, hints y landing cards. El habla solo vive en el probe `?dev`.
-
-Hermanos: occupancy (`docs/occupancy.md`) — la radio **lee** `settlement` / `civ`, no agrega campos. Estética (Notion) — el canal es un instrumento de cabina. Combustible / Composición / Reabastecimiento / cometa siguen cerrados.
+**El copy de líneas no está cerrado.** Las frases viven en Historia (Notion) y no se publican a GitHub hasta cerrarse ahí. En código, cada línea se referencia por id (`halley-01`, `thought-01`) y su texto sale de un manifest en `public/dev/` que solo se carga con `?dev`.
 
 ---
 
-## Principio
+## El canal
 
-Un canal de visor. Cuatro oyentes. No cuatro UIs.
+Un canal de visor, varios oyentes, una sola UI: el strip bajo el visor. Eres el piloto; la nave es un aparato. Oyes y lees juntos: mute apaga el audio y deja el texto; reduced motion salta el pulso, no las palabras. Las landing cards siguen siendo voz del mundo (`flavorBody`, tercera persona) y no se mezclan con los pensamientos (primera persona).
 
-Eres el piloto. La nave es un aparato. First-person es el visor de la craft 2D, no un FPS a pie. Siempre hay un headset. Lo que cambia es **quién puede contestar**.
+No hay sintetizador. Las voces son clips pregrabados (Willow para Halley, Gus para el piloto, hechos con Grok) y quedan fuera del repo hasta cerrar el copy; los clips de ejemplo están en `public/dev/`.
 
-Las landing cards siguen siendo voz del mundo (`flavorBody`, tercera persona). Los pensamientos son primera persona. No los mezcles.
+| Tag | Qué suena | Filtro |
+|---|---|---|
+| `thought` | clip de audio (Gus) por evento, sin tick: primer despegue, primer aterrizaje, adrift, primer Camp en el scope; una vez por chart | pasa altos 58, low shelf 220 +4,2 dB, pasa bajos 2,9 kHz (tope) |
+| `ship` | Halley en el CRT de cabina: clip de video + audio por la cadena de cabina; sin clip, imagen base (`public/halley/halley-base.jpg`) + estática | crusher + banda + drive + estática |
+| `radio` | hiss + portadora, solo texto | bandpass + estático |
+| `alien` | bed grave, solo texto (preview de timbre en `?dev`) | — |
+| `static` | hiss, sin habla (radio abandoned) | — |
 
-Oyes y lees juntos. Mute apaga el audio; el texto queda. Reduced motion salta el pulso, no las palabras.
+Halley reacciona al daño de la nave (señal, memoria corrupta, envelope del CRT) en `halley.ts`. Los pensamientos se disparan desde `pilot.ts` y suenan solo cuando el build tiene los clips; usan una cola, se marcan al arrancar y un clip que termina de decodificar después de un cambio de chart no arranca (`voiceSeq` en `audio.ts`).
 
----
+Probe `?dev`: un botón por clip grabado, Halley (`halley-01`..`halley-04`, video) y el piloto (`thought-01`..`thought-06`, audio). El texto de cada botón sale de `public/dev/halley/manifest.json` y `public/dev/pilot/manifest.json`. No es PTT y no dispara eventos del mundo.
 
-## Escalera
+## Qué está y qué no
 
-| Cuándo | Tag | Quién habla | El jugador habla |
-|---|---|---|---|
-| Desde el primer despegue | `thought` | tú, a ti | no — automático |
-| Después del primer lock o aterrizaje | `ship` | el computador de cabina | después: hold-to-talk. Si no hay radio en rango, la tecla llega a la nave |
-| Cerca de humanos active (Camp, Home, pad staffed) | `radio` | gente en ese cuerpo | la misma tecla; el rango elige al oyente |
-| Cuando exista un civ 2 con nombre | `radio` (timbre distinto) | ellos | la misma tecla; quizá no se entiende todavía |
+Está: visor (`FlightVisor` en `Overlay.tsx`), `OrbitHint`, landing cards, audio de cabina (spec CRT, life support), mute, reduced motion, cola + strip + probe `?dev`, Halley en el CRT con clips, pensamientos por evento.
 
-Camp es el primer beat de “otros humanos cerca”. Signal abandoned es el beat contrario: el mástil apunta, nadie contesta.
-
----
-
-## Pensamientos
-
-Automáticos. Sin tecla. Cortos. Por **primeros y estados**, no un chatterbox.
-
-Audio seco, cerca, en la cabeza. Familia de instrumentos de cabina (no synth del mundo). La primera pasada puede ser texto + tick del visor, sin VO grabada.
-
-Disparos (una línea, después silencio):
-
-- primer despegue
-- primer orbit lock
-- primer aterrizaje
-- tanque vacío / reloj adrift
-- primer Camp en el scope
-- warning del cometa
-- warp / lost
-
-No loop. No recordatorio cada órbita. Historia dueña de las frases; el runtime dueño de **cuándo** disparan.
-
-Sabor procedural: la línea puede nombrar **este** Camp, y callar. No hay save de campaña.
-
----
-
-## Nave
-
-Mismo strip, tag `SHIP`. Instrumento de cabina: CRT, clip grabado. Hereda Estética, no Asteroids.
-
-No es un chatbot. Gramática chica sobre estado del sim: órbita, combustible, casco, “nadie en ese mástil”.
-
-**Hablarle** es hold-to-talk (no tipear, no menú). Una tecla, dos oyentes: radio si hay rango, si no la nave.
-
-Se enciende como aparato después del primer lock Kepler o el primer aterrizaje. El arranque sigue siendo sólo tu cabeza.
-
----
-
-## Radio
-
-Readout de occupancy. No es un campo nuevo del mundo.
-
-- **Active human** (Home, Camp, Workshop / Archive / Moon / Rock staffed): hay portadora, alguien contesta.
-- **Abandoned:** pulsas, estático, nadie contesta.
-- **Unexplored:** no hay portadora.
-- **Star / giant / barycenter:** occupancy null → no hay radio.
-
-Rango: **orbit lock o aterrizado en ese cuerpo**. No es un teléfono de espacio libre. Vuelas hasta ellos, después hablas.
-
-No se pausa el vuelo. Una o dos réplicas cortas, y callan. Después puedes aterrizar y leer la card.
-
----
-
-## Aliens
-
-No ahora. `CivId` sigue siendo `"human"`. Occupancy ya pide nombre + una diferencia mecánica (el copy basta) antes de civ 2. Cuando exista, es el mismo PTT con otro timbre, no una UI nueva.
-
-Hasta entonces la escalera es: pensamientos → nave → radio humana.
+No está: PTT, gramática de la nave, radio por rango, copy de Historia. Cuando se construya el canal de verdad: la cola sigue en `src/game/voice.ts` (`source` + `text` + `ttl`), se publica en `HudSnapshot`, se dibuja bajo el visor junto a `OrbitHint`, con beds de audio por source y triggers desde eventos que ya existen (takeoff, lock, land, adrift, comet enter, `settlement === "active"`).
 
 ---
 
 ## Decisiones cerradas
 
 1. **El punto de vista es el piloto.** La nave es un aparato. First-person = visor de la craft 2D, no caminar en 3D.
-2. **Un canal, cuatro oyentes.** No thought-log + consola + panel de radio + traductor.
+2. **Un canal, varios oyentes.** No thought-log + consola + panel de radio + traductor.
 3. **Oír y leer juntos.** Mute = audio off, texto on. Reduced motion no borra el texto.
-4. **Pensamientos primero, automáticos, por eventos.** Una línea por primer/estado.
+4. **Pensamientos automáticos, por eventos.** Una línea por primer/estado, sin loop.
 5. **Landing cards no se mezclan.** Siguen `flavorBody` (tercera persona). Pensamientos = primera persona.
 6. **Una tecla PTT.** El rango decide radio vs nave. No tipear. No LLM. No árbol de diálogo que pause el yaw/burn.
-7. **Radio lee occupancy.** Active contesta; abandoned = estático; unexplored = sin portadora; null = sin radio. Rango = lock o landed. Camp es el primer beat humano.
-8. **Aliens sólo con civ 2 nombrado.** No inventes radio alien ni campos de occupancy.
-9. **Occupancy, Composición, Reabastecimiento, cometa y el default Asteroids no se reabren.** El canal hereda la familia CRT de cabina.
-10. **Copy no está lockeada.** Las frases viven en Historia. No publiques líneas a GitHub hasta Decisiones cerradas ahí.
-11. **Tecla PTT, nombre de la nave y VO grabada vs tick no están lockeados.** `KeyV` quedó libre al sacar verbose; es candidata, no decisión.
-12. **Rollback es git revert.** No hay persistencia de “ya hablé con este Camp” entre charts.
-
----
+7. **La radio lee occupancy** ([`occupancy.md`](occupancy.md)). Active contesta; abandoned = estático; unexplored = sin portadora; null = sin radio. Rango = lock o landed. No agrega campos.
+8. **Aliens solo con una civ 2 con nombre.** No inventes radio alien ni campos de occupancy.
+9. **Sin sintetizador.** El habla son clips pregrabados.
+10. **El copy no está cerrado.** No publiques líneas a GitHub antes de cerrarlas en Historia.
+11. **Abierto, no decidido:** la tecla PTT (`KeyV` es candidata) y el nombre de la nave.
 
 ## Qué no
 
 - Cuatro UIs.
-- Tipear, chat LLM, o árboles RPG encima del vuelo.
+- Tipear, chat LLM o árboles RPG encima del vuelo.
 - Clips grabados en hail, spool, yaw, burn, warp.
-- Caminar en un Camp en 3D. La radio es el beat social; el aterrizaje sigue siendo el pad 2D.
 - Publicar copy a GitHub antes de Historia.
 - Campos nuevos de occupancy, fuel alien, o el cometa como voz.
 
----
+## Dónde está
 
-## Habla (WIP, 11 oct 2026)
-
-No es una decisión cerrada. No reabras el lock del canal para pelear el motor. VO grabada vs tick sigue abierta.
-
-Referencias de tono (no son assets, no se clonan):
-- Roles: NEW ORBIT (BLACKISH, 2012) — tú a ti, computador frío, otra persona en radio.
-- Pensamiento: *Memento*, escena "Okay, so what am I doing?" — bajo, cerca, inseguro, buscando. No un narrador seguro.
-
-**Sin sintetizador.** El 11 oct 2026 Tomás sacó Kitten TTS (`src/game/speak.ts`, `kitten-tts-js`). El juego no sintetiza voz: las voces son clips pregrabados (Grok: Willow para Halley, Gus para el piloto), fuera del repo hasta cerrar el copy en Historia. Ver `docs/art/README.md`.
-
-| Tag | Qué suena | Filtro |
-|---|---|---|
-| `thought` | clip de audio (Gus) por evento, sin tick (Tomás, 11 oct 2026: el pensamiento entra en silencio): primer despegue, primer aterrizaje, adrift, primer Camp en el scope; una vez por chart | pasa altos 58, low shelf 220 +4,2 dB, pasa bajos 2,9 kHz (tope de Tomás) |
-| `ship` | Halley en el CRT: clip de video + audio por la cadena de cabina; sin clip, imagen base + estática | crusher + banda + drive + estática |
-| `radio` | hiss + portadora, solo texto | bandpass + estático |
-| `alien` | bed grave, solo texto | — |
-| `static` | hiss, sin habla | — |
-
-Probe `?dev`: un botón por clip grabado. Halley (`halley-01`..`halley-04`, video) y el piloto (`thought-01`..`thought-06`, audio). El texto de cada botón sale de `public/dev/halley/manifest.json` y `public/dev/pilot/manifest.json`. Sin `?dev` el juego no carga esos manifests. Mute deja el texto.
-
-No es PTT. No dispara eventos del mundo. Los clips de ejemplo están en `public/dev/`. El copy que sigue abierto vive en Historia.
-
-Archivos: `src/game/voice.ts`, `Overlay.tsx` (`VoiceStrip` / `VoiceProbe`), `audio.ts` (`playVoice`, `playHalleyMedia`, `playHalleyStatic`, `playThought`), `halley.ts` (señal por daño, memoria corrupta, envelope CRT), `pilot.ts` (triggers y tope del filtro), `draw.ts` (`drawHalley`), `runtime.ts` (`speakHalley`, `speakThought`).
-
-## Qué hay en código y qué no
-
-Hecho: visor (`FlightVisor` en `Overlay.tsx`), `OrbitHint`, landing cards (`flavorBody`), occupancy `settlement` / `civ`, audio de cabina (spec CRT, life support), mute, reduced motion, cola + strip + probe `?dev`, Halley en el CRT con clips (fase 2 de arte).
-
-No ahora: PTT, gramática de la nave, radio por rango, copy de Historia. Los pensamientos por evento existen (`src/game/pilot.ts`) y suenan solo cuando el build tiene los clips.
-
-Cuando implementes el canal de verdad (no reabras este lock): deja la cola en `src/game/voice.ts` (`source` + `text` + `ttl`); publica en `HudSnapshot`; dibuja bajo el visor junto a `OrbitHint`; beds de audio por source; triggers desde eventos que ya existen (takeoff, lock, land, adrift, comet enter, `settlement === "active"`). El probe `?dev` sigue siendo probe. El habla son clips pregrabados; no hay sintetizador.
+`src/game/voice.ts`, `Overlay.tsx` (`VoiceStrip` / `VoiceProbe`), `audio.ts` (`playVoice`, `playHalleyMedia`, `playHalleyStatic`, `playThought`), `halley.ts`, `pilot.ts`, `draw.ts` (`drawHalley`), `runtime.ts` (`speakHalley`, `speakThought`). Tests: `voice.test.ts`, `halley.test.ts`, `pilot.test.ts`, en la lista explícita de `test` en `package.json`.

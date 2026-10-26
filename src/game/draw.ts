@@ -1613,7 +1613,7 @@ function drawMoonOutpost(
   ctx.restore();
 }
 
-/* ---- Planet surfaces, level 2 (docs/art/README.md, fase 4) ---- */
+/* ---- Planet surfaces, level 2 ---- */
 
 type Layer = { canvas: HTMLCanvasElement; key: number };
 
@@ -2406,7 +2406,7 @@ function drawArrivalFlash(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number,
   ctx.restore();
 }
 
-/* ---- Ship sprite: the Perihelion hauler (docs/art/README.md, fase 1) ---- */
+/* ---- Ship sprite: the Perihelion hauler ---- */
 
 let shipImage: HTMLImageElement | null = null;
 /** The PNG with Tomás's hull lift baked in, at native resolution. */
@@ -3315,7 +3315,7 @@ function drawSpectrograph(ctx: CanvasRenderingContext2D, sim: Sim, cssW: number,
   ctx.restore();
 }
 
-/* ---- Halley: the cabin CRT above the mass spec (docs/art/README.md, fase 2) ---- */
+/* ---- Halley: the cabin CRT above the mass spec (docs/voice.md) ---- */
 
 /**
  * Same width as the mass spec, ~1.25× its height, stacked above it with the

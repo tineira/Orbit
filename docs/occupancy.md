@@ -1,13 +1,8 @@
 # Occupancy: settlement y civilización en cuerpos chartados
 
-| Campo | Valor |
-|---|---|
-| **Autor** | Orbit |
-| **Fecha** | 2026-09-17 |
-| **Estado** | Locked (shipped) |
-| **Alcance** | Vuelo 2D en cliente (`src/game/*`). Charting procedural local. Sin persistencia de occupancy, sin sim de server, sin occupancy multiplayer. |
+Cómo funciona hoy la occupancy de los cuerpos (vuelo 2D en cliente, `src/game/*`). Se charta en `makeSystem` y se descarta con el sistema: no hay persistencia de occupancy, ni sim de server, ni occupancy multiplayer.
 
-Catálogo para el jugador: Notion [Mundos](https://app.notion.com/p/3dfa554c3c40810b838edf3fe5cceecd) (con fotos). **Este archivo es el lock de implementación** (tipos, pesos, flags). No copies planes de PRs de vuelta a Notion.
+Catálogo para el jugador: Notion [Mundos](https://app.notion.com/p/3dfa554c3c40810b838edf3fe5cceecd) (con fotos). Este archivo dice cómo está construido (tipos, pesos, flags).
 
 Prosa en tuteo (tú). Las **Decisiones cerradas** son finales: no las reabras en un PR.
 
@@ -145,9 +140,6 @@ Twins: occupancy **independiente** en cada cuerpo.
 
 ---
 
-## PRs (ya shipped)
+## Dónde está
 
-1. Tipos + helpers + stub pass 2: `padHasFuel` lee `settlement === "active"`. Sin pesos nuevos ni flags.
-2. Charting + copy + flags + prueba de pad seco: `assignOccupancy`, `?camp`, `?settlement=`, hull sigue reparando en pad seco.
-
-Código: `src/game/occupancy.ts`, `src/game/occupancy.test.ts`, `src/game/world.ts`, `src/game/sim.ts`. Tests en la lista explícita de `package.json`.
+Código: `src/game/occupancy.ts`, `src/game/world.ts` (`assignOccupancy`), `src/game/types.ts`, `src/game/sim.ts`. Tests: `src/game/occupancy.test.ts`, en la lista explícita de `test` en `package.json`.

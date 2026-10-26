@@ -1,7 +1,7 @@
 import { HULL_MAX } from "./hull.ts";
 
 /**
- * Halley: the cabin CRT above the mass spec (docs/art/README.md, fase 2).
+ * Halley: the cabin CRT above the mass spec (docs/voice.md).
  * Pure helpers: damage → signal, corrupt-memory rolls, the CRT power envelope.
  * Example clips live in `public/dev/halley/` and the runtime loads the manifest
  * only with `?dev`. The still is `public/halley/halley-base.jpg`.

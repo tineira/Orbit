@@ -1464,7 +1464,7 @@ export function createAudio(): AudioApi {
   };
 
   /**
-   * Halley's cabin speaker (docs/art/README.md, fase 2): crusher → highpass
+   * Halley's cabin speaker (docs/voice.md): crusher → highpass
    * 320 → peaking 1.9 kHz +5 dB → lowpass 3.4 kHz → tanh drive → 1.15, with a
    * static bed under it that crackles while she talks. Everything into `sfx`,
    * so Mute silences it and the subtitle stays.

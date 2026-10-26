@@ -1,5 +1,5 @@
 /**
- * Pilot thoughts (docs/art/README.md, fase 3): recorded lines, voice Gus,
+ * Pilot thoughts (docs/voice.md): recorded lines, voice Gus,
  * dry and close, once per "first time" as the Voz lock defines. Example clips
  * live in `public/dev/pilot/` and the runtime loads the manifest only with `?dev`.
  */

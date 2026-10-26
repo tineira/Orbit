@@ -1,5 +1,5 @@
 /**
- * Planet surfaces, level 2 (docs/art/README.md, fase 4). Pure pixel work:
+ * Planet surfaces, level 2. Pure pixel work:
  * albedo, clouds, night lights, gas bands and the lighting layers, as RGBA
  * buffers the renderer puts on cached canvases. The world is top-down, so a
  * rocky body's texture turns in the screen plane with `p.rotate` (like its

@@ -1,19 +1,20 @@
-# Docs de Orbit (implementación)
+# Docs de Orbit (cómo funciona hoy)
 
 Prosa en **tuteo** (tú / tienes / eres). Nunca voseo (vos / tenés / sos). Los identificadores de código quedan en inglés.
 
-Notion guarda **definición, gameplay e historia**. Esta carpeta guarda **cómo se construye**: tipos, archivos, tests, split de PRs.
+Dónde vive cada cosa:
 
-Espacio canónico: [Orbit](https://app.notion.com/p/3d9a554c3c4081739622ed800df2f0f5). Empieza ahí para producto. Empieza aquí antes de un PR.
+- **Notion** [Orbit](https://app.notion.com/p/3d9a554c3c4081739622ed800df2f0f5): definición, gameplay, historia y estética. Empieza ahí para producto.
+- **Linear** (proyecto Orbit): lo pendiente, y el plan de construcción de cada tarea (split de PRs, archivos, fases) en la descripción del issue.
+- **Esta carpeta:** cómo funciona hoy lo que ya está en `main`. Si un doc discrepa del código, gana `src/game/`; arregla el doc en la misma sesión.
 
-| Archivo | Qué es | Hermano en Notion (jugador) |
+| Archivo | Qué cubre | Hermano en Notion (jugador) |
 |---|---|---|
-| `occupancy.md` | Tipos settlement / civ, pesos, flags | [Mundos](https://app.notion.com/p/3dfa554c3c40810b838edf3fe5cceecd) |
-| `comet.md` | Actor visitante, rumbo leftover, KeyC | [Cometa](https://app.notion.com/p/3dfa554c3c408183b66cd95df28a84da) |
-| `voice.md` | Espejo del lock del canal del visor. Habla: clips pregrabados (Halley en CRT, pensamientos del piloto), sin sintetizador; los clips viven fuera del repo. El copy de líneas no va a GitHub. | [Voz](https://app.notion.com/p/3dfa554c3c40812bb79eee3fb015c23b) |
-| `art/README.md` | Plan en 4 fases para llevar la dirección de arte al juego (nave, Halley, pensamientos, planetas nivel 2), con sprite, imagen base y código de la maqueta en `art/`. Los clips de voz quedan fuera hasta cerrar el copy | [Estética](https://app.notion.com/p/3dca554c3c4081e688cfd840bc142f62) |
-| `worlds/README.md` | Spec de mundos guiados: recetas, fichas, tramos, puentes, campaña con guardado, escalera de recarga, escena del cometa y cambios del modo aleatorio, en 11 fases. Lo implementa Grok (`worlds/GROK.md`) y lo valida agy (`worlds/AGY.md`) | [Construcción de mundos](https://app.notion.com/p/3f6a554c3c4081a89556d1ab58f82edf), [Mapa de la fase 1](https://app.notion.com/p/3f6a554c3c4081cf961ed0d9604d76fe) |
+| [`campaign.md`](campaign.md) | Campaña guiada: recetas, fichas, tramos, puentes, disparadores, entregas, guardado, escalera de recarga y el modo aleatorio | [Construcción de mundos](https://app.notion.com/p/3f6a554c3c4081a89556d1ab58f82edf), [Mapa de la fase 1](https://app.notion.com/p/3f6a554c3c4081cf961ed0d9604d76fe) |
+| [`comet.md`](comet.md) | Cometa: visitante del chart y su escena | [Cometa](https://app.notion.com/p/3dfa554c3c408183b66cd95df28a84da) |
+| [`occupancy.md`](occupancy.md) | Settlement y civ en los cuerpos chartados: tipos, pesos, flags | [Mundos](https://app.notion.com/p/3dfa554c3c40810b838edf3fe5cceecd) |
+| [`voice.md`](voice.md) | Canal de voz del visor: pensamientos, Halley en el CRT, radio, probe `?dev` | [Voz](https://app.notion.com/p/3dfa554c3c40812bb79eee3fb015c23b) |
 
-No pongas planes de PRs, listas de archivos ni sketches de TypeScript en Notion. No pongas lore, copy de líneas ni tablas de producto cerradas aquí.
+No pongas planes de PRs, listas de archivos ni sketches de TypeScript aquí ni en Notion: van al issue de Linear. No pongas lore, copy de líneas ni tablas de producto cerradas aquí.
 
-Hechos de runtime: gana `src/game/` si una nota discrepa del código.
+Los planes ya construidos se borraron de esta carpeta el 26 oct 2026. Siguen en la historia de git: [`docs/` en `8cf67e5`](https://github.com/tineira/Orbit/tree/8cf67e5/docs) (`worlds/` con las 11 fases y las instrucciones de Grok y agy, `art/` con el plan en 4 fases, las imágenes fuente y el código de la maqueta, y el `comet.md` original). El `todo.md` de la raíz pasó a Linear (TIN-80).
