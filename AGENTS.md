@@ -65,5 +65,5 @@ Video and text-to-speech go through Grok. If you are Grok, make the file yoursel
 
 ## Conflict
 
-- **This file** wins for how to work in this repo.
+- **This file** wins over agentic-os defaults for how to work in this repo, except agentic-os `rules/base.md`, which always applies.
 - Notion Orbit wins for what the game is. If they disagree, update the loser in the same session.
