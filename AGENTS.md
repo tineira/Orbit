@@ -13,8 +13,8 @@ Agent rules: https://github.com/tineira/agentic-os (read `README.md` first). Thi
 | Adversarial review | on for multi-file or risky changes; off for small fixes — Tomas can override |
 | Backlog / status | Linear project "Orbit" (team Tineria) |
 | Specs and decisions | Notion page [Orbit](https://app.notion.com/p/3d9a554c3c4081739622ed800df2f0f5) |
-| Deploy | Vercel, production on push to `main` (alias `https://orbit.tineira.com`); project name TBD (Tomas) |
-| Database | Postgres via `DATABASE_URL` (opt-in auth schema), provider TBD (Tomas); local runs use the PGLite fallback, so not shared by localhost and prod |
+| Deploy | Vercel, production on push to `main` (alias `https://orbit.tineira.com`); project `orbit`, team `tineira1` |
+| Database | Postgres via `DATABASE_URL` (opt-in auth schema), Neon when `DATABASE_URL` is set (`src/lib/db.ts`). As of 2026-10-26 the Vercel project has no env vars, so production also runs on the PGLite fallback; not shared by localhost and prod |
 | Migration commands | `npm run db:migrate` (runs inside `npm run build`; skips without `DATABASE_URL`) |
 | Local gate before push | `npm run typecheck` + `npm run lint` + `npm test` + `npm audit --omit=dev --audit-level=high` + `npm run build` |
 | Freezes | none |
