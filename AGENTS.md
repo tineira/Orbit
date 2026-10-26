@@ -1,5 +1,25 @@
 # AGENTS.md — Orbit
 
+Shared agent rules live in [agentic-os](https://github.com/tineira/agentic-os); this file keeps Orbit's profile and repo rules.
+
+## Profile (agentic-os)
+
+Agent rules: https://github.com/tineira/agentic-os (read `README.md` first). This profile overrides its defaults.
+
+| Key | Value |
+|---|---|
+| Product copy language | en (UI strings, `<html lang="en">`). Visor line copy is not locked: closed in Notion first, never published to GitHub before |
+| Working language (docs, code, commits) | `docs/` prose in Spanish (tuteo); code, comments, commits and PRs in English |
+| Adversarial review | on for multi-file or risky changes; off for small fixes — Tomas can override |
+| Backlog / status | Linear project "Orbit" (team Tineria) |
+| Specs and decisions | Notion page [Orbit](https://app.notion.com/p/3d9a554c3c4081739622ed800df2f0f5) |
+| Deploy | Vercel, production on push to `main` (alias `https://orbit.tineira.com`); project name TBD (Tomas) |
+| Database | Postgres via `DATABASE_URL` (opt-in auth schema), provider TBD (Tomas); local runs use the PGLite fallback, so not shared by localhost and prod |
+| Migration commands | `npm run db:migrate` (runs inside `npm run build`; skips without `DATABASE_URL`) |
+| Local gate before push | `npm run typecheck` + `npm run lint` + `npm test` + `npm audit --omit=dev --audit-level=high` + `npm run build` |
+| Freezes | none |
+| Run scope (if a run is active) | none |
+
 **Short** session contract. Coding agents auto-load this file. Keep it under ~60 lines.
 
 ## What it is
@@ -18,6 +38,7 @@ A small 2D space flight: TanStack Start, React 19, Vite, Canvas 2D. Every load c
 ## Git (human owns)
 
 - `git commit` / `git push` only on explicit request in that moment.
+- Mode rules: see agentic-os rules/mode-interactive.md and rules/mode-run.md.
 - Local gate before a push: `npm run typecheck`, `npm run lint` (zero errors), `npm test`, `npm audit --omit=dev --audit-level=high`, and `npm run build`, plus a **Reviewer from another harness** on the diff (Grok unattended; never Codex unattended). Fix what the Reviewer finds before pushing.
 - No GitHub Actions here. The local gate is the gate. After a `git push` to `main`, the turn is done when the Vercel **production** deploy for that SHA is Ready (alias `https://orbit.tineira.com`). On a Vercel failure, diagnose, fix, and push again (in scope of the original push).
 - If GitHub Actions exists later, it is a backstop: before your **next** push, check the latest `main` run. Red → fix first. Network flake → rerun failed and move on.
@@ -44,5 +65,5 @@ Video and text-to-speech go through Grok. If you are Grok, make the file yoursel
 
 ## Conflict
 
-- **This file** wins for how to work in this repo.
+- **This file** wins over agentic-os defaults for how to work in this repo, except agentic-os `rules/base.md`, which always applies.
 - Notion Orbit wins for what the game is. If they disagree, update the loser in the same session.
