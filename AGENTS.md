@@ -17,6 +17,7 @@ Agent rules: https://github.com/tineira/agentic-os (read `README.md` first). Thi
 | Deploy | Vercel, production on push to `main` (alias `https://orbit.tineira.com`); project `orbit`, team `tineira1` |
 | Database | Postgres via `DATABASE_URL` (opt-in auth schema), Neon when `DATABASE_URL` is set (`src/lib/db.ts`). As of 2026-10-26 the Vercel project has no env vars, so production also runs on the PGLite fallback; not shared by localhost and prod |
 | Migration commands | `npm run db:migrate` (runs inside `npm run build`; skips without `DATABASE_URL`) |
+| Verify (run the change) | agentic-os `rules/review.md` § Run the change. **Start:** `npm run dev` → Vite on port 8080; no sign-in, no database needed (PGLite fallback). **Drive:** the built-in browser with the keyboard (Up/W burn, Down/S retro, Enter, N for a new system); the game is a canvas, so read screenshots, not the DOM; speech only behind `?dev`. **After a deploy:** the same flow once on `https://orbit.tineira.com`. `npm run preview:restart` works only in the Linux sandbox |
 | Local gate before push | `npm run typecheck` + `npm run lint` + `npm test` + `npm audit --omit=dev --audit-level=high` + `npm run build` |
 | Freezes | none |
 | Run scope (if a run is active) | none |
